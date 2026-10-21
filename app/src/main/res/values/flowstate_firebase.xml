@@ -1,5 +1,5 @@
 <resources>
-    <string name="flowstate_firebase_application_id" translatable="false"></string>
-    <string name="flowstate_firebase_api_key" translatable="false"></string>
-    <string name="flowstate_firebase_project_id" translatable="false"></string>
+    <string name="flowstate_firebase_application_id" translatable="false">1:26900370850:android:afc0bde593eafeb06b4efb</string>
+    <string name="flowstate_firebase_api_key" translatable="false">AIzaSyBg_5Fasuh5rKo-A3Fo9IMci3iOUktdQW8</string>
+    <string name="flowstate_firebase_project_id" translatable="false">flowstate-241f0</string>
 </resources>
