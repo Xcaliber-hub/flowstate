@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Flowstate</string>
+    <string name="channel_timer">Focus timer</string>
+    <string name="channel_alerts">Session alerts</string>
+    <string name="a11y_label">Flowstate focus blocker</string>
+    <string name="a11y_description">Detects which app is in the foreground during a focus session so Flowstate can send you back to your work. It never reads screen content.</string>
+</resources>
