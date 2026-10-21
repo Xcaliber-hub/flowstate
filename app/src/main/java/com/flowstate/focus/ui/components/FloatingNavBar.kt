@@ -8,6 +8,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -60,7 +61,7 @@ fun FloatingNavBar(
         label = "navOffset",
     )
     Surface(
-        modifier = modifier.navigationBarsPadding().padding(bottom = 16.dp).offset(y = offsetY),
+        modifier = modifier.widthIn(max = 600.dp).navigationBarsPadding().padding(bottom = 16.dp).offset(y = offsetY),
         shape = CircleShape,
         color = cs.surfaceContainerHigh.copy(alpha = 0.82f),
         shadowElevation = 14.dp,
@@ -91,7 +92,7 @@ private fun NavItem(tab: NavTab, selected: Boolean, liquid: Boolean, onClick: ()
             .background(background)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .animateContentSize(sizeSpec)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = if (selected) 12.dp else 9.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(tab.icon, contentDescription = tab.label, tint = tint)

@@ -1,54 +1,41 @@
 # Flowstate
 
-A native Android focus app: Kotlin, Jetpack Compose, Material 3, Hilt, Room, DataStore.
-This is **phase 1**: the reliable core. It has not been compiled or run on a device yet (see "First run").
+A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt, Room and DataStore. This is the **Flowstate** project (`com.flowstate.focus`), not Stride.
 
-## First run
+## New in 1.1
 
-1. Open the `Flowstate` folder in **Android Studio** (Ladybug or newer, JDK 17). Let Gradle sync.
-2. Run on a device or emulator (Android 8.0+, API 26).
-3. In the app: Settings > Focus mode > App blocking service, and allow it in Accessibility settings.
-4. Test on at least one Xiaomi or Samsung phone. They are the most aggressive about killing background work.
+- A Groups navigation tab, with email/password account creation, sign-in, password reset and sign-out.
+- Private groups: create a room, join using a 12-character code, share an invite, switch groups and leave.
+- A weekly leaderboard with circular initials avatars, rank, focus totals and a highlighted current-user row. Group weeks run Monday–Sunday in UTC so every member uses the same boundary.
+- A Live tab inspired by the supplied references: focusing members in an avatar grid with elapsed timers, an invite tile, a separate “Not focusing” section and a shortcut to the existing focus timer. Stale presence is not presented as an ongoing live session.
+- Editable, name-only group profiles shown with circular initials avatars throughout the app.
+- The supplied owl replaces the launcher and splash artwork. The pale outer border and corner decoration are removed. Adaptive icons use a separate full-bleed gray background and transparent owl artwork; legacy-density icons are also included.
 
-Versions are pinned in `gradle/libs.versions.toml` to a known-compatible set (AGP 8.7.3, Kotlin 2.0.21,
-Compose BOM 2024.12.01). If sync reports a mismatch, adjust that file first.
+## Open and build
 
-## What is in phase 1
+Open this folder in Android Studio with JDK 17 or newer and an Android 35 SDK. Gradle 8.9 wrapper scripts and the wrapper JAR are included.
 
-- Timer modes: Pomodoro, Countdown (custom length), Stopwatch, Flow (earns a break of one fifth of the focus time)
-- Foreground-service timer with a system-chronometer notification, break alerts, screen-on option
-- Strict mode: no pause, no quit, hold-to-quit emergency exit, no notification actions
-- Focus Guard: a nudge when you leave for another app
-- App blocking by package name (AccessibilityService), with Social and Games quick-add
-- Tasks: categories, priority, deadlines, animated completion
-- Statistics: day/week/month/year, bar and line charts (Canvas), calendar heatmap, streak,
-  average session, completion rate, productivity score, focus by subject
-- Settings: theme, Material You dynamic color, accent colors, Liquid UI toggle, timer defaults,
-  daily goal, CSV export
-- Floating pill navigation that hides on scroll-down, with haptics
-- Tablet/foldable-friendly width cap, edge-to-edge, AMOLED dark theme
+```sh
+./gradlew :app:assembleDebug
+./gradlew :app:testDebugUnitTest
+```
 
-## Why it should glitch less
+On Windows, use `gradlew.bat`. Run on Android 8.0 / API 26 or newer. The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk` after a successful local build. Release signing must be configured separately before publishing.
 
-- The timer stores absolute timestamps, never a ticking counter, and persists every change.
-- One coroutine sleeps until the phase ends; the notification countdown is drawn by the system.
-- A process that was dead for longer than a phase closes the session instead of replaying it.
-- Blocking uses package names, which do not break when other apps redesign their screens.
-- Progress ring and chart animations read state in the draw phase, so they do not recompose.
+## Enable real groups
 
-## Not in phase 1
+The source ZIP deliberately contains **no production Firebase account or another app's Firebase configuration**. The personal timer, tasks, statistics and settings remain local and work without cloud setup. The Groups page clearly explains when cloud configuration is missing; it does not show fake accounts or fake members.
 
-Focus music and white noise (needs audio assets), Reels/Shorts blocking, YouTube/Browser study modes,
-website blocking, app time limits, recurring focus schedules, subtasks, recurring tasks, drag and drop,
-widgets, Quick Settings tile, lock-screen timer, notification blocking, Baseline Profile generation
-(needs a macrobenchmark module), multiplayer rooms, cloud sync, Wear OS.
+Follow [Groups setup](firebase/GROUPS_SETUP.md): register `com.flowstate.focus` in your Flowstate Firebase project, enable Email/Password Authentication, create Firestore, fill `app/src/main/res/values/flowstate_firebase.xml`, and deploy the supplied Firestore rules. The app uses Firebase Authentication and Firestore only; no Storage bucket or Google Services Gradle plugin is needed. Cross-device sign-in and invites need internet access and the configured backend. Firebase service availability and quotas are managed in your own Firebase project.
 
-True backdrop blur is intentionally left out: translucent glass surfaces cost almost nothing, while
-real blur is the usual cause of dropped frames on mid-range phones. The `Haze` library is the upgrade path.
+See the setup guide for weekly-total accounting and device limitations. This is a focus-accountability app, not a tamper-proof competition; client-reported focus time is not independently verified by a server.
 
-## Before publishing to Google Play
+## Existing features preserved
 
-- The Accessibility Service needs a prominent in-app disclosure (included) and a Play Console declaration.
-- Foreground service type `specialUse` needs a justification in the Play Console form.
-- Replace the placeholder icon in `res/drawable/ic_launcher_foreground.xml`.
-- Add a release signing config.
+Pomodoro, custom countdown, stopwatch and Flow timers; foreground-service chronometer notification; strict focus mode; Focus Guard; app blocking through the Accessibility Service; tasks with categories, priorities and deadlines; day/week/month/year statistics and charts; calendar heatmap, streaks and daily goals; theme, dynamic color, accent, Liquid UI and CSV export; floating navigation and tablet-friendly content width.
+
+Enable app blocking in **Settings → Focus mode → App blocking service**, then grant the Accessibility permission. Notification permission is required on recent Android versions. Test background timers on real devices, especially manufacturers with aggressive battery restrictions.
+
+## Before publishing
+
+Configure release signing. Review the Accessibility Service disclosure and Play Console declaration, and the foreground-service `specialUse` justification. Test multi-user group operations against your own staging Firebase project before distributing a production build.

@@ -1,5 +1,6 @@
 package com.flowstate.focus.ui.focus
 
+import android.annotation.SuppressLint
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -333,6 +334,8 @@ private fun HoldToQuit(onQuit: () -> Unit) {
 }
 
 /** Ticks only while running, and only this composable recomposes when the visible second changes. */
+// The producer assigns its receiver value below; Compose lint misses this with Kotlin 2.0.
+@SuppressLint("ProduceStateDoesNotAssignValue")
 @Composable
 private fun rememberNow(running: Boolean): State<Long> =
     produceState(System.currentTimeMillis(), running) {

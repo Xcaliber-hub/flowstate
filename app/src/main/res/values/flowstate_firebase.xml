@@ -1,0 +1,5 @@
+<resources>
+    <string name="flowstate_firebase_application_id" translatable="false"></string>
+    <string name="flowstate_firebase_api_key" translatable="false"></string>
+    <string name="flowstate_firebase_project_id" translatable="false"></string>
+</resources>

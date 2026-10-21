@@ -1,5 +1,6 @@
 package com.flowstate.focus.ui.components
 
+import android.annotation.SuppressLint
 import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +17,8 @@ import kotlinx.coroutines.withContext
 import java.util.Locale
 
 /** Loads an app icon off the main thread; draws nothing until it is ready. */
+// The producer assigns its receiver value below; Compose lint misses this with Kotlin 2.0.
+@SuppressLint("ProduceStateDoesNotAssignValue")
 @Composable
 fun AppIcon(packageName: String, modifier: Modifier = Modifier) {
     val context: Context = LocalContext.current

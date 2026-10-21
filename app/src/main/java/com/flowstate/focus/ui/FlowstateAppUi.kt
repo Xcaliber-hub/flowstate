@@ -11,6 +11,8 @@ import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Checklist
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Timer
+import androidx.compose.material.icons.rounded.Groups
+import com.flowstate.focus.ui.groups.GroupsScreen
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +41,7 @@ import com.flowstate.focus.ui.tasks.TasksScreen
 
 object Routes {
     const val FOCUS = "focus"
+    const val GROUPS = "groups"
     const val TASKS = "tasks"
     const val STATS = "stats"
     const val SETTINGS = "settings"
@@ -49,6 +52,7 @@ private val Tabs = listOf(
     NavTab(Routes.FOCUS, "Focus", Icons.Rounded.Timer),
     NavTab(Routes.TASKS, "Tasks", Icons.Rounded.Checklist),
     NavTab(Routes.STATS, "Statistics", Icons.Rounded.BarChart),
+    NavTab(Routes.GROUPS, "Groups", Icons.Rounded.Groups),
     NavTab(Routes.SETTINGS, "Settings", Icons.Rounded.Settings),
 )
 
@@ -82,6 +86,7 @@ fun FlowstateAppUi(settings: AppSettings) {
             popExitTransition = { exit },
         ) {
             composable(Routes.FOCUS) { FocusScreen(settings) }
+            composable(Routes.GROUPS) { GroupsScreen(settings, onOpenFocus = { nav.navigate(Routes.FOCUS) { launchSingleTop = true } }) }
             composable(Routes.TASKS) { TasksScreen(settings) }
             composable(Routes.STATS) { StatsScreen(settings) }
             composable(Routes.SETTINGS) { SettingsScreen(onOpenBlockedApps = { nav.navigate(Routes.BLOCKED) }) }
