@@ -3,7 +3,7 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function validAvatar(data) {
-      return !('avatarId' in data) || (data.avatarId is string && data.avatarId in ['', 'sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit']);
+      return !('avatarId' in data) || (data.avatarId is string && data.avatarId in ['', 'sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit', 'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom']);
     }
     function groupExists(gid) { return exists(/databases/$(database)/documents/groups/$(gid)); }
     function member(gid) { return signedIn() && groupExists(gid) && request.auth.uid in get(/databases/$(database)/documents/groups/$(gid)).data.memberIds; }

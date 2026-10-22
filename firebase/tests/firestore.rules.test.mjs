@@ -79,11 +79,11 @@ describe('Flowstate Firestore authorization', () => {
   it('accepts only approved optional avatar IDs in owner profiles and group members', async () => {
     const db = alice();
     const profile = doc(db, 'users', 'alice');
-    for (const avatarId of ['sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit', '']) {
+    for (const avatarId of ['sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit', 'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom', '']) {
       await assertSucceeds(setDoc(profile, { name: 'Alice', avatarId }));
       await assertSucceeds(setDoc(member(db, 'alice'), payload(avatarId)));
     }
-    for (const avatarId of ['review-only', 'https://example.com/avatar.png', 42, null]) {
+    for (const avatarId of ['review-only', 'https://example.com/avatar.png', 'data:image/png;base64,AAAA', 42, null, true, {}, []]) {
       await assertFails(setDoc(profile, { name: 'Alice', avatarId }));
       await assertFails(setDoc(member(db, 'alice'), payload(avatarId)));
     }
@@ -104,6 +104,22 @@ describe('Flowstate Firestore authorization', () => {
     await assertSucceeds(setDoc(member(db, 'alice'), payload('moon')));
     await assertSucceeds(updateDoc(member(db, 'alice'), { avatarId: 'summit', updatedAt: serverTimestamp() }));
     await assertSucceeds(updateDoc(member(db, 'alice'), { avatarId: '', updatedAt: serverTimestamp() }));
+  });
+  it('migrates an original avatar to every new preset and resets both documents', async () => {
+    const db = alice();
+    const profile = doc(db, 'users', 'alice');
+    await assertSucceeds(setDoc(profile, { name: 'Alice', avatarId: 'sprout' }));
+    await assertSucceeds(setDoc(member(db, 'alice'), payload('sprout')));
+    for (const avatarId of ['cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom']) {
+      await assertSucceeds(updateDoc(profile, { avatarId }));
+      await assertSucceeds(updateDoc(member(db, 'alice'), { avatarId, updatedAt: serverTimestamp() }));
+      assert.equal((await assertSucceeds(getDoc(profile))).data().avatarId, avatarId);
+      assert.equal((await assertSucceeds(getDoc(member(db, 'alice')))).data().avatarId, avatarId);
+    }
+    await assertSucceeds(updateDoc(profile, { avatarId: '' }));
+    await assertSucceeds(updateDoc(member(db, 'alice'), { avatarId: '', updatedAt: serverTimestamp() }));
+    assert.equal((await assertSucceeds(getDoc(profile))).data().avatarId, '');
+    assert.equal((await assertSucceeds(getDoc(member(db, 'alice')))).data().avatarId, '');
   });
   it('does not allow another user to modify a profile avatar', async () => {
     await assertFails(setDoc(doc(bob(), 'users', 'alice'), { name: 'Alice', avatarId: 'fox' }));

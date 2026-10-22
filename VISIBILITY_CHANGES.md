@@ -11,7 +11,7 @@ All colors derive from the active Material scheme; no permanent white-on-light o
 
 ## Approved avatar update
 
-The user approved Sprout, Sunbeam, Moon, Fox, Orbit and Summit. These six designs are now bundled, selectable and persisted by preset ID, with an initials fallback. See `AVATAR_CHANGES.md`. The six additional concepts on the new separate preview remain review-only and are not part of the app. No photo uploads, photo permissions or Firebase Storage were added. The earlier visibility fixes listed above remain in place; broader visibility improvements are documented in `OVERALL_VISIBILITY_CHANGES.md`.
+The user approved Sprout, Sunbeam, Moon, Fox, Orbit and Summit. Those original six designs remain bundled, selectable and persisted by preset ID, with an initials fallback. See `AVATAR_CHANGES.md`. Cloud, Ember, Turtle, Jelly, Comet and Bloom are now also approved and included, bringing the picker to twelve presets. No photo uploads, photo permissions or Firebase Storage were added. The earlier visibility fixes listed above remain in place; broader visibility improvements are documented in `OVERALL_VISIBILITY_CHANGES.md`.
 
 ## Device review
 

@@ -22,11 +22,19 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Decode release keystore
+        run: echo "${{ secrets.FLOWSTATE_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/flowstate-release.p12"
+
+      - name: Build release APK
+        env:
+          FLOWSTATE_KEYSTORE_FILE: ${{ runner.temp }}/flowstate-release.p12
+          FLOWSTATE_KEYSTORE_PASSWORD: ${{ secrets.FLOWSTATE_KEYSTORE_PASSWORD }}
+          FLOWSTATE_KEY_ALIAS: ${{ secrets.FLOWSTATE_KEY_ALIAS }}
+          FLOWSTATE_KEY_PASSWORD: ${{ secrets.FLOWSTATE_KEY_PASSWORD }}
+        run: gradle assembleRelease --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: flowstate-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: flowstate-release-apk
+          path: app/build/outputs/apk/release/app-release.apk

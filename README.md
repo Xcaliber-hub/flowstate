@@ -8,7 +8,7 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
 - Private groups: create a room, join using a 12-character code, share an invite, switch groups and leave.
 - A weekly leaderboard with bundled preset avatars or circular initials, rank, focus totals and a highlighted current-user row. Group weeks run Monday–Sunday in UTC so every member uses the same boundary.
 - A Live tab inspired by the supplied references: focusing members in an avatar grid with elapsed timers, an invite tile, a separate “Not focusing” section and a shortcut to the existing focus timer. Stale presence is not presented as an ongoing live session.
-- Editable profile names and a preset-avatar picker with Sprout, Sunbeam, Moon, Fox, Orbit and Summit. Avatar IDs are persisted in Firestore; artwork is bundled and initials remain available. No photo uploads or Firebase Storage.
+- Editable profile names and a preset-avatar picker with Sprout, Sunbeam, Moon, Fox, Orbit, Summit, Cloud, Ember, Turtle, Jelly, Comet and Bloom. Avatar IDs are persisted in Firestore; artwork is bundled and initials remain available. No photo uploads or Firebase Storage.
 - The supplied owl replaces the launcher and splash artwork. The pale outer border and corner decoration are removed. Adaptive icons use a separate full-bleed gray background and transparent owl artwork; legacy-density icons are also included.
 
 ## Open and build
@@ -20,7 +20,7 @@ Open this folder in Android Studio with JDK 17 or newer and an Android 35 SDK. G
 ./gradlew :app:testDebugUnitTest
 ```
 
-On Windows, use `gradlew.bat`. Run on Android 8.0 / API 26 or newer. The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk` after a successful local build. Release signing must be configured separately before publishing.
+On Windows, use `gradlew.bat`. Run on Android 8.0 / API 26 or newer. The debug APK is generated at `app/build/outputs/apk/debug/app-debug.apk` after a successful local build. For signed releases and in-place updates, follow [Update installation](UPDATE_INSTALLATION.md).
 
 ## Enable real groups
 
@@ -42,4 +42,8 @@ Configure release signing. Review the Accessibility Service disclosure and Play 
 
 ## Avatar and visibility update
 
-See [Avatar changes](AVATAR_CHANGES.md) and [Overall visibility changes](OVERALL_VISIBILITY_CHANGES.md). The separate six-concept preview is review-only and is not bundled in the app. Deploy the updated Firestore rules to your intended project before using avatar saving.
+See [Avatar changes](AVATAR_CHANGES.md) and [Overall visibility changes](OVERALL_VISIBILITY_CHANGES.md). All twelve approved presets are bundled. Publish the updated Firestore rules again before saving Cloud, Ember, Turtle, Jelly, Comet or Bloom; the previously published six-avatar rules reject these new IDs. The original six and initials remain supported. Version 1.1.1 increments Android versionCode to 3 and adds persistent release-signing configuration; see [Update installation](UPDATE_INSTALLATION.md).
+
+## Accent-color picker restored
+
+The six original accent presets remain Purple, Teal, Pink, Green, Blue and Orange. Settings now uses explicit 48dp color swatches in a wrapping layout, restoring the missing controls and keeping them reachable on narrow screens. Turn Dynamic color off to choose a preset on Android 12+; with Dynamic color on, wallpaper colors still take priority. Saved accent selection and light/dark contrast palettes are unchanged.

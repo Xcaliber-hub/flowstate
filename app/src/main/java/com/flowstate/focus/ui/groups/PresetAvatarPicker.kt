@@ -30,7 +30,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.flowstate.focus.R
 
-// Only the six approved designs are bundled. New concepts are review-only.
+// All twelve approved designs are bundled locally; no uploads or remote images.
 private data class AvatarArtwork(val id: String, val label: String, val resource: Int)
 private val approvedArtwork = listOf(
     AvatarArtwork("sprout", "Sprout", R.drawable.avatar_sprout),
@@ -39,6 +39,12 @@ private val approvedArtwork = listOf(
     AvatarArtwork("fox", "Fox", R.drawable.avatar_fox),
     AvatarArtwork("orbit", "Orbit", R.drawable.avatar_orbit),
     AvatarArtwork("summit", "Summit", R.drawable.avatar_summit),
+    AvatarArtwork("cloud", "Cloud", R.drawable.avatar_cloud),
+    AvatarArtwork("ember", "Ember", R.drawable.avatar_ember),
+    AvatarArtwork("turtle", "Turtle", R.drawable.avatar_turtle),
+    AvatarArtwork("jelly", "Jelly", R.drawable.avatar_jelly),
+    AvatarArtwork("comet", "Comet", R.drawable.avatar_comet),
+    AvatarArtwork("bloom", "Bloom", R.drawable.avatar_bloom),
 )
 
 @Composable
