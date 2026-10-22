@@ -89,9 +89,13 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
     var joinCode by rememberSaveable { mutableStateOf("") }
     var profileName by rememberSaveable { mutableStateOf("") }
     var profileAvatar by rememberSaveable { mutableStateOf("") }
+    var profileSaveVersion by rememberSaveable { mutableLongStateOf(0L) }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     val context = LocalContext.current
     LaunchedEffect(state.user?.uid) { if (state.user != null) password = "" }
+    LaunchedEffect(state.profileSaveVersion) {
+        if (dialog == "profile" && state.profileSaveVersion > profileSaveVersion) dialog = ""
+    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val timer by vm.timer.collectAsStateWithLifecycle()
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -113,7 +117,7 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
                     AuthForm.RESET -> vm.resetPassword(email)
                 } }) }
             } else {
-                item { ProfileCard(state, settings.liquidUi, onEdit = { profileName = state.user?.name.orEmpty(); profileAvatar = state.user?.avatarId.orEmpty(); dialog = "profile" }, onSignOut = { dialog = "signout" }) }
+                item { ProfileCard(state, settings.liquidUi, onEdit = { vm.clearError(); profileSaveVersion = state.profileSaveVersion; profileName = state.user?.name.orEmpty(); profileAvatar = state.user?.avatarId.orEmpty(); dialog = "profile" }, onSignOut = { dialog = "signout" }) }
                 item {
                     GlassCard(Modifier.fillMaxWidth(), settings.liquidUi) {
                         Text("Your groups", style = MaterialTheme.typography.titleLarge)
@@ -175,7 +179,7 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
     }
 
     when (dialog) {
-        "profile" -> AlertDialog(onDismissRequest = { dialog = "" }, title = { Text("Edit profile") }, text = {
+        "profile" -> AlertDialog(onDismissRequest = { if (!state.profileSaving) dialog = "" }, title = { Text("Edit profile") }, text = {
             Column(Modifier.fillMaxWidth().heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ProfileAvatar(profileName, profileAvatar, 64) }
                 OutlinedTextField(profileName, { profileName = it }, label = { Text("Name") }, singleLine = true,
@@ -183,8 +187,11 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
                     supportingText = { Text("${profileName.trim().length}/40 characters") })
                 PresetAvatarPicker(profileName, profileAvatar, !state.busy) { profileAvatar = it }
                 Text("Your avatar is shared across your group profiles.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.profileSaving) Text("Saving profile and syncing groups…", style = MaterialTheme.typography.bodySmall)
+                state.notice?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
-        }, confirmButton = { TextButton(enabled = !state.busy && profileName.trim().isNotEmpty() && profileName.trim().length <= 40, onClick = { vm.updateProfile(profileName, profileAvatar); dialog = "" }) { Text("Save") } }, dismissButton = { TextButton(onClick = { dialog = "" }) { Text("Cancel") } })
+        }, confirmButton = { TextButton(enabled = !state.busy && profileName.trim().isNotEmpty() && profileName.trim().length <= 40, onClick = { vm.updateProfile(profileName, profileAvatar) }) { Text(if (state.profileSaving) "Saving…" else "Save") } }, dismissButton = { TextButton(enabled = !state.profileSaving, onClick = { dialog = "" }) { Text("Cancel") } })
         "create" -> TextEntryDialog("Create a group", "Group name", groupName, { groupName = it }, { vm.createGroup(groupName); dialog = "" }, state.busy) { dialog = "" }
         "join" -> TextEntryDialog("Join a group", "Invite code", joinCode, { joinCode = it }, { vm.joinGroup(joinCode); dialog = "" }, state.busy) { dialog = "" }
         "leave" -> ConfirmDialog("Leave ${state.selectedGroup?.name.orEmpty()}?", "You can rejoin later with an invite code.", { vm.leaveGroup(); dialog = "" }, busy = state.busy) { dialog = "" }

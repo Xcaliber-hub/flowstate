@@ -124,4 +124,55 @@ describe('Flowstate Firestore authorization', () => {
   it('does not allow another user to modify a profile avatar', async () => {
     await assertFails(setDoc(doc(bob(), 'users', 'alice'), { name: 'Alice', avatarId: 'fox' }));
   });
+  it('reproduces stale-field merge denial and repairs it with a canonical member snapshot', async () => {
+    await env.withSecurityRulesDisabled(async c => {
+      await setDoc(member(c.firestore(), 'alice'), {
+        ...payload('summit'), obsoleteClientField: true, photoUrl: 'https://old.example/photo.png'
+      });
+    });
+    const db = alice();
+    await assertFails(setDoc(member(db, 'alice'), payload('cloud'), { merge: true }));
+    await assertSucceeds(setDoc(member(db, 'alice'), payload('cloud')));
+    const saved = (await getDoc(member(db, 'alice'))).data();
+    assert.equal(saved.avatarId, 'cloud');
+    assert.equal(saved.photoUrl, '');
+    assert.equal('obsoleteClientField' in saved, false);
+    await assertFails(setDoc(member(bob(), 'alice'), payload('ember')));
+  });
+  it('propagates all new presets across multiple groups and restores them in a fresh session', async () => {
+    const db = alice();
+    const profile = doc(db, 'users', 'alice');
+    const otherMember = doc(db, 'groups', 'CD34EF56GH78', 'members', 'alice');
+    for (const avatarId of ['cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom', 'fox', '']) {
+      await assertSucceeds(setDoc(profile, { name: 'Alice', avatarId }, { merge: true }));
+      await assertSucceeds(setDoc(member(db, 'alice'), payload(avatarId)));
+      await assertSucceeds(setDoc(otherMember, payload(avatarId)));
+      const fresh = env.authenticatedContext('alice').firestore();
+      assert.equal((await getDoc(doc(fresh, 'users', 'alice'))).data().avatarId, avatarId);
+      assert.equal((await getDoc(doc(fresh, 'groups', gid, 'members', 'alice'))).data().avatarId, avatarId);
+      assert.equal((await getDoc(doc(fresh, 'groups', 'CD34EF56GH78', 'members', 'alice'))).data().avatarId, avatarId);
+    }
+  });
+  it('rejects malformed names, negative totals, stale timestamps and arbitrary member fields', async () => {
+    const db = alice();
+    for (const changes of [{ name: '' }, { name: 'x'.repeat(41) }, { weeklyFocusMs: -1 },
+      { updatedAt: new Date(0) }, { unexpected: true }]) {
+      await assertFails(setDoc(member(db, 'alice'), { ...payload('bloom'), ...changes }));
+    }
+    await assertFails(setDoc(doc(db, 'users', 'alice'), { name: '', avatarId: 'bloom' }));
+  });
+  it('reproduces the six-work-six-fail symptom when the deployed rules are still old', async () => {
+    const oldRules = rules.replace("'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom'", '');
+    const oldEnv = await initializeTestEnvironment({ projectId: 'demo-flowstate-six-avatar', firestore: { rules: oldRules } });
+    try {
+      const profile = doc(oldEnv.authenticatedContext('alice').firestore(), 'users', 'alice');
+      for (const avatarId of ['sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit']) {
+        await assertSucceeds(setDoc(profile, { name: 'Alice', avatarId }));
+      }
+      for (const avatarId of ['cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom']) {
+        await assertFails(setDoc(profile, { name: 'Alice', avatarId }));
+        assert.equal((await getDoc(profile)).data().avatarId, 'summit');
+      }
+    } finally { await oldEnv.cleanup(); }
+  });
 });

@@ -42,7 +42,9 @@ Configure release signing. Review the Accessibility Service disclosure and Play 
 
 ## Avatar and visibility update
 
-See [Avatar changes](AVATAR_CHANGES.md) and [Overall visibility changes](OVERALL_VISIBILITY_CHANGES.md). All twelve approved presets are bundled. Publish the updated Firestore rules again before saving Cloud, Ember, Turtle, Jelly, Comet or Bloom; the previously published six-avatar rules reject these new IDs. The original six and initials remain supported. Version 1.1.1 increments Android versionCode to 3 and adds persistent release-signing configuration; see [Update installation](UPDATE_INSTALLATION.md).
+Version **1.1.2** (Android version code **4**) fixes avatar-save feedback, serializes avatar changes with background group publishing, and replaces old member snapshots to remove rule-incompatible legacy fields. The source already contained all twelve artwork mappings; this was not a missing-image issue. See [Avatar and permission fix](AVATAR_PERMISSION_FIX.md) for the exact deployment steps and limitations, and [Update installation](UPDATE_INSTALLATION.md) to keep the existing signing key and local app data.
+
+The included rules and Firebase CLI target are for project **`flowstate-241f0`**, database **`(default)`**. No live deployment was made. A new source build cannot make a six-avatar ruleset accept the new IDs; publish the twelve-avatar rules to the project actually used by the installed app. The fix reports that project's name and the denied write path.
 
 ## Accent-color picker restored
 

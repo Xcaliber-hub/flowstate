@@ -2,7 +2,7 @@
 
 ## What changed
 
-This source is version **1.1.1**, with Android `versionCode = 3` (previously 2). The package remains `com.flowstate.focus`. Release builds can now use a persistent signing key supplied through environment variables or private Gradle properties, rather than changing source files or embedding credentials in the ZIP.
+This source is version **1.1.2**, with Android `versionCode = 4` (previously 3). The package remains `com.flowstate.focus`. Release builds can now use a persistent signing key supplied through environment variables or private Gradle properties, rather than changing source files or embedding credentials in the ZIP.
 
 **A version bump alone cannot fix a signing-key mismatch.** Android must recognize the new APK as an update to the installed app. Ordinary sideload updates need the same application ID and signing certificate, and each distributed release should increase `versionCode` beyond the installed version. Changing `versionName` alone is not sufficient.
 
@@ -33,7 +33,7 @@ Then build:
 
 Use `app/build/outputs/apk/release/app-release.apk`. Partial signing settings fail configuration instead of silently selecting another key. With no signing settings, debug builds use the normal local Android debug key, and release builds remain unsigned; an unsigned release cannot be installed. This source does not generate a new release key, include a keystore, or automatically recover an old key.
 
-For the next release after this one, increase the version code above 3 while keeping the same key. If the installed app already has a version code greater than or equal to 3, use a higher code before distributing the next APK.
+For the next release after this one, increase the version code above 4 while keeping the same key. If the installed app already has a version code greater than or equal to 4, use a higher code before distributing the next APK.
 
 ## Verify before installing
 

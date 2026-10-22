@@ -1,28 +1,69 @@
 rules_version = '2';
+// Flowstate 1.1.2 — all 12 avatars. Publish to flowstate-241f0 / (default).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function validAvatar(data) {
-      return !('avatarId' in data) || (data.avatarId is string && data.avatarId in ['', 'sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit', 'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom']);
+      return !('avatarId' in data) || (data.avatarId is string && data.avatarId in [
+        '', 'sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit',
+        'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom'
+      ]);
     }
-    function groupExists(gid) { return exists(/databases/$(database)/documents/groups/$(gid)); }
-    function member(gid) { return signedIn() && groupExists(gid) && request.auth.uid in get(/databases/$(database)/documents/groups/$(gid)).data.memberIds; }
+    function validName(data) {
+      return data.name is string && data.name.size() >= 1 && data.name.size() <= 40;
+    }
+    function groupExists(gid) {
+      return exists(/databases/$(database)/documents/groups/$(gid));
+    }
+    function member(gid) {
+      return signedIn() && groupExists(gid)
+        && request.auth.uid in get(/databases/$(database)/documents/groups/$(gid)).data.memberIds;
+    }
+    function validMember(data) {
+      return data.keys().hasOnly(['name', 'avatarId', 'photoUrl', 'weeklyFocusMs', 'weekKey', 'live', 'updatedAt'])
+        && validName(data) && validAvatar(data)
+        && data.photoUrl is string && data.photoUrl == ''
+        && data.weeklyFocusMs is int && data.weeklyFocusMs >= 0
+        && data.weekKey is string && data.live is map
+        && data.updatedAt == request.time;
+    }
     match /groups/{gid} {
-      // Invite codes are high entropy; a direct get is intentionally allowed, listing is not.
+      // Authenticated invite-code holders can fetch a group directly, not list all groups.
       allow get: if signedIn();
       allow list: if signedIn() && request.auth.uid in resource.data.memberIds;
-      allow create: if signedIn() && gid.matches('^[A-Z0-9]{12}$') && request.resource.data.keys().hasOnly(['name','memberIds','createdAt']) && request.resource.data.name is string && request.resource.data.name.size() >= 1 && request.resource.data.name.size() <= 40 && request.resource.data.memberIds == [request.auth.uid] && request.resource.data.memberIds.size() == request.resource.data.memberIds.toSet().size() && request.resource.data.createdAt == request.time;
-      allow update: if signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds']) && resource.data.name == request.resource.data.name && resource.data.createdAt == request.resource.data.createdAt && resource.data.memberIds is list && request.resource.data.memberIds is list && request.resource.data.memberIds.size() == request.resource.data.memberIds.toSet().size() && resource.data.memberIds.size() == resource.data.memberIds.toSet().size() && request.resource.data.memberIds.size() <= 20 && request.resource.data.memberIds.toSet().hasOnly(resource.data.memberIds.toSet().union([request.auth.uid].toSet())) && resource.data.memberIds.toSet().difference(request.resource.data.memberIds.toSet()).hasOnly([request.auth.uid]) && (request.auth.uid in resource.data.memberIds || (request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1 && request.auth.uid in request.resource.data.memberIds));
+      allow create: if signedIn() && gid.matches('^[A-Z0-9]{12}$')
+        && request.resource.data.keys().hasOnly(['name', 'memberIds', 'createdAt'])
+        && validName(request.resource.data)
+        && request.resource.data.memberIds == [request.auth.uid]
+        && request.resource.data.createdAt == request.time;
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
+        && resource.data.name == request.resource.data.name
+        && resource.data.createdAt == request.resource.data.createdAt
+        && resource.data.memberIds is list && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.size() == request.resource.data.memberIds.toSet().size()
+        && resource.data.memberIds.size() == resource.data.memberIds.toSet().size()
+        && request.resource.data.memberIds.size() <= 20
+        && request.resource.data.memberIds.toSet().hasOnly(resource.data.memberIds.toSet().union([request.auth.uid].toSet()))
+        && resource.data.memberIds.toSet().difference(request.resource.data.memberIds.toSet()).hasOnly([request.auth.uid])
+        && (request.auth.uid in resource.data.memberIds ||
+          (request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
+            && request.auth.uid in request.resource.data.memberIds));
       allow delete: if false;
       match /members/{uid} {
         allow read: if member(gid);
-        allow create, update: if member(gid) && signedIn() && uid == request.auth.uid && request.resource.data.keys().hasOnly(['name','avatarId','photoUrl','weeklyFocusMs','weekKey','live','updatedAt']) && validAvatar(request.resource.data) && request.resource.data.name is string && request.resource.data.name.size() <= 40 && request.resource.data.photoUrl is string && request.resource.data.photoUrl == '' && request.resource.data.weeklyFocusMs is int && request.resource.data.weeklyFocusMs >= 0 && request.resource.data.weekKey is string && request.resource.data.live is map && request.resource.data.updatedAt == request.time;
+        // Replacing one's own snapshot also removes obsolete legacy fields.
+        allow create, update: if signedIn() && uid == request.auth.uid
+          && member(gid) && validMember(request.resource.data);
         allow delete: if signedIn() && uid == request.auth.uid && groupExists(gid);
       }
     }
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
-      allow create, update: if signedIn() && request.auth.uid == uid && validAvatar(request.resource.data);
+      // Preserve optional legacy profile fields; validate the name when present.
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && validAvatar(request.resource.data)
+        && (!('name' in request.resource.data) || validName(request.resource.data));
       allow delete: if signedIn() && request.auth.uid == uid;
     }
   }

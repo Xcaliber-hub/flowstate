@@ -14,6 +14,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.FieldValue
@@ -32,6 +33,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicLong
 import java.util.Calendar
@@ -43,7 +47,7 @@ import javax.inject.Singleton
  data class GroupUser(val uid: String, val name: String, val avatarId: String = "")
  data class FocusGroup(val id: String, val name: String, val memberIds: List<String>)
  data class GroupMember(val uid: String, val name: String, val weeklyFocusMs: Long, val live: TimerState?, val updatedAt: Long, val avatarId: String = "")
- data class GroupsState(val configured: Boolean = false, val user: GroupUser? = null, val groups: List<FocusGroup> = emptyList(), val selectedGroup: FocusGroup? = null, val members: List<GroupMember> = emptyList(), val loading: Boolean = false, val busy: Boolean = false, val error: String? = null, val notice: String? = null)
+ data class GroupsState(val configured: Boolean = false, val user: GroupUser? = null, val groups: List<FocusGroup> = emptyList(), val selectedGroup: FocusGroup? = null, val members: List<GroupMember> = emptyList(), val loading: Boolean = false, val busy: Boolean = false, val error: String? = null, val notice: String? = null, val profileSaving: Boolean = false, val profileSaveVersion: Long = 0L)
 
 @Singleton
 class GroupsRepository @Inject constructor(
@@ -63,6 +67,8 @@ class GroupsRepository @Inject constructor(
     private var activeUser: GroupUser? = null
     private var groupList = emptyList<FocusGroup>()
     private val authGeneration = AtomicLong(0L)
+    // A heartbeat must never overwrite a just-saved avatar with its old snapshot.
+    private val publishMutex = Mutex()
     private val random = SecureRandom()
     private val ownership = context.getSharedPreferences("group_session_owners", Context.MODE_PRIVATE)
 
@@ -90,17 +96,37 @@ class GroupsRepository @Inject constructor(
     fun resetPassword(email: String) = launchBusy { require(emailOk(email)) { "Enter a valid email address." }; authRequired().sendPasswordResetEmail(email.trim()).await(); _state.update { it.copy(notice = "If an account matches this email, password reset instructions have been requested. Check your inbox and spam folder.") } }
     fun signOut() { scope.launch { authGeneration.incrementAndGet(); cleanupListeners(); activeUser = null; groupList = emptyList(); auth?.signOut(); _state.value = GroupsState(configured = _state.value.configured) } }
     fun updateProfile(name: String, avatarId: String) = launchBusy {
-        val u = authRequired().currentUser ?: error("Sign in first."); val clean = validName(name)
-        require(PresetAvatars.isValid(avatarId)) { "Choose an approved avatar." }
-        val generation = authGeneration.get()
-        u.updateProfile(com.google.firebase.auth.userProfileChangeRequest { displayName = clean }).await()
-        if (authRequired().currentUser?.uid != u.uid || generation != authGeneration.get()) return@launchBusy
-        val profile = GroupUser(u.uid, clean, avatarId)
-        dbRequired().collection("users").document(u.uid).set(mapOf("name" to clean, "avatarId" to avatarId), SetOptions.merge()).await()
-        if (authRequired().currentUser?.uid != u.uid || generation != authGeneration.get()) return@launchBusy
-        activeUser = profile
-        publishOwnMemberDocs(profile)
-        if (authRequired().currentUser?.uid == u.uid && generation == authGeneration.get()) _state.update { it.copy(user = profile) }
+        _state.update { it.copy(profileSaving = true) }
+        try {
+            publishMutex.withLock {
+                val u = authRequired().currentUser ?: error("Sign in first.")
+                val clean = validName(name)
+                require(PresetAvatars.isValid(avatarId)) { "Choose an approved avatar." }
+                val generation = authGeneration.get()
+                val profile = GroupUser(u.uid, clean, avatarId)
+                // Firestore is authoritative: never report a rejected choice as saved.
+                cloudOperation("Save profile users/${u.uid}") {
+                    dbRequired().collection("users").document(u.uid)
+                        .set(mapOf("name" to clean, "avatarId" to avatarId), SetOptions.merge()).await()
+                }
+                if (authRequired().currentUser?.uid != u.uid || generation != authGeneration.get()) return@withLock
+                activeUser = profile
+                _state.update { it.copy(user = profile) }
+                // Auth display name is only a fallback; its failure must not undo the saved avatar.
+                try { u.updateProfile(com.google.firebase.auth.userProfileChangeRequest { displayName = clean }).await() }
+                catch (e: CancellationException) { throw e }
+                catch (_: Exception) { /* Canonical profile above is already persisted. */ }
+                try { publishCurrentLocked() }
+                catch (e: CancellationException) { throw e }
+                catch (e: Exception) {
+                    _state.update { it.copy(notice = "Your profile was saved, but group sync failed. Retry Save to sync your groups.") }
+                    throw e
+                }
+                if (authRequired().currentUser?.uid == u.uid && generation == authGeneration.get()) {
+                    _state.update { it.copy(profileSaveVersion = it.profileSaveVersion + 1L, notice = "Profile saved.", error = null) }
+                }
+            }
+        } finally { _state.update { it.copy(profileSaving = false) } }
     }
     fun createGroup(name: String) = launchBusy {
         val u = requireUser(); val clean = validName(name); val code = (1..12).map { ALPHABET[random.nextInt(ALPHABET.length)] }.joinToString("")
@@ -194,14 +220,20 @@ class GroupsRepository @Inject constructor(
     }
     private suspend fun writeMember(groupId: String, user: GroupUser, total: Long, week: Long = weekStartUtc(System.currentTimeMillis()), live: TimerState = timer.state.value) {
         if (authRequired().currentUser?.uid != user.uid || activeUser != user) return
-        // Keep the legacy photoUrl empty; profile avatars are stable preset IDs, never URLs.
-        runCatching {
-            if (authRequired().currentUser?.uid != user.uid || activeUser != user) return
-            dbRequired().collection("groups").document(groupId).collection("members").document(user.uid).set(mapOf("name" to user.name, "avatarId" to user.avatarId, "photoUrl" to "", "weeklyFocusMs" to total, "weekKey" to weekKey(week), "live" to encodeTimer(live), "updatedAt" to FieldValue.serverTimestamp()), SetOptions.merge()).await()
-        }.onFailure { setError(it) }
+        cloudOperation("Sync group groups/$groupId/members/${user.uid}") {
+            // This is an app-owned snapshot, not a partial update. Replace it so obsolete
+            // legacy keys cannot survive merge and violate the rules' allowed-key list.
+            dbRequired().collection("groups").document(groupId).collection("members").document(user.uid)
+                .set(mapOf("name" to user.name, "avatarId" to user.avatarId, "photoUrl" to "", "weeklyFocusMs" to total, "weekKey" to weekKey(week), "live" to encodeTimer(live), "updatedAt" to FieldValue.serverTimestamp())).await()
+        }
     }
-    private suspend fun publishOwnMemberDocs(profile: GroupUser) { if (authRequired().currentUser?.uid == profile.uid) publishCurrent() }
     private suspend fun publishCurrent(ts: TimerState = timer.state.value, rows: List<com.flowstate.focus.data.db.SessionEntity>? = null) {
+        try { publishMutex.withLock { publishCurrentLocked(ts, rows) } }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { setError(e) }
+    }
+    // All callers hold publishMutex; resolve activeUser only after acquiring it.
+    private suspend fun publishCurrentLocked(ts: TimerState = timer.state.value, rows: List<com.flowstate.focus.data.db.SessionEntity>? = null) {
         val uid = authRequired().currentUser?.uid ?: return
         val user = activeUser?.takeIf { it.uid == uid } ?: return
         val allRows = rows ?: runCatching { sessions.all() }.getOrDefault(emptyList())
@@ -217,9 +249,24 @@ class GroupsRepository @Inject constructor(
     private fun requireUser() = authRequired().currentUser ?: error("Sign in first.")
     private fun authRequired() = auth ?: error("Firebase is not configured.")
     private fun dbRequired() = db ?: error("Firebase is not configured.")
-    private fun launchBusy(block: suspend () -> Unit) { scope.launch { _state.update { it.copy(busy = true, error = null, notice = null) }; try { block() } catch (e: Exception) { setError(e) } finally { _state.update { it.copy(busy = false, loading = false) } } } }
+    private fun launchBusy(block: suspend () -> Unit) { scope.launch { _state.update { it.copy(busy = true, error = null, notice = null) }; try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) { setError(e) } finally { _state.update { it.copy(busy = false, loading = false) } } } }
     private fun setError(t: Throwable) { _state.value = _state.value.copy(error = safeMessage(t)) }
-    private fun safeMessage(t: Throwable) = when (t) { is java.net.UnknownHostException, is java.io.IOException -> "Network unavailable. Check your connection and try again."; else -> t.localizedMessage?.takeIf { it.length <= 180 } ?: "Something went wrong. Please try again." }
+    private suspend fun <T> cloudOperation(operation: String, block: suspend () -> T): T {
+        try { return block() }
+        catch (e: CancellationException) { throw e }
+        catch (e: FirebaseFirestoreException) {
+            if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                throw IllegalStateException("$operation was denied. Check the published 12-avatar rules in Firebase project ${readResource(R.string.flowstate_firebase_project_id)}, Cloud Firestore database (default). Your previous saved data has not been cleared.", e)
+            }
+            throw e
+        }
+    }
+    private fun safeMessage(t: Throwable): String = when {
+        t is FirebaseFirestoreException && t.code == FirebaseFirestoreException.Code.PERMISSION_DENIED ->
+            "Cloud Firestore denied access in project ${readResource(R.string.flowstate_firebase_project_id)}, database (default). Check this account's membership and the published 12-avatar rules in that exact project."
+        t is java.net.UnknownHostException || t is java.io.IOException -> "Network unavailable. Check your connection and try again."
+        else -> t.localizedMessage?.takeIf { it.length <= 600 } ?: "Something went wrong. Please try again."
+    }
     private fun readResource(id: Int): String = runCatching { context.getString(id).takeIf { it.isNotBlank() } ?: "" }.getOrDefault("")
     private fun validName(s: String): String = s.trim().also { require(it.length in 1..40 && it.none(Char::isISOControl)) { "Name must be 1–40 characters." } }
     private fun emailOk(s: String) = s.trim().length <= 254 && android.util.Patterns.EMAIL_ADDRESS.matcher(s.trim()).matches()

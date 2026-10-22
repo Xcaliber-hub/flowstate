@@ -1,3 +1,5 @@
+> Historical notes for the prior update. For the current 1.1.2 fix, see [Avatar and permission fix](AVATAR_PERMISSION_FIX.md).
+
 # Twelve preset group avatars
 
 ## Included in the app
