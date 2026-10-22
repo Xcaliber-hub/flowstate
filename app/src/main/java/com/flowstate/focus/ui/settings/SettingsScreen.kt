@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -42,6 +45,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -107,13 +112,14 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                                     val selected = s.accentIndex == index
                                     Spacer(
                                         Modifier
-                                            .size(40.dp)
+                                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                                             .clip(CircleShape)
                                             .background(color)
                                             .border(if (selected) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
-                                            .clickable(role = Role.RadioButton, onClickLabel = "Accent ${index + 1}") {
+                                            .semantics { contentDescription = "Accent color ${index + 1}" }
+                                            .selectable(selected = selected, role = Role.RadioButton, onClick = {
                                                 vm.update { it.copy(accentIndex = index) }
-                                            }
+                                            })
                                     )
                                 }
                             }
@@ -214,7 +220,7 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
 
 @Composable
 private fun LinkRow(title: String, subtitle: String, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 4.dp)) {
+    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 4.dp)) {
         Text(title, style = MaterialTheme.typography.titleSmall)
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

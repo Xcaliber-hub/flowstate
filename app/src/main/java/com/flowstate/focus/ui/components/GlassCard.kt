@@ -50,8 +50,14 @@ fun GlassCard(
             .breathing(liquid)
             .shadow(6.dp, shape, ambientColor = cs.primary.copy(alpha = 0.18f), spotColor = cs.primary.copy(alpha = 0.18f)),
         shape = shape,
-        color = cs.surfaceContainer.copy(alpha = 0.78f),
-        border = BorderStroke(1.dp, cs.outlineVariant.copy(alpha = 0.35f)),
+        color = cs.surfaceContainer.copy(alpha = if (cs.background == androidx.compose.ui.graphics.Color.Black) 0.96f else 0.78f),
+        // Alpha-adjusted colors cannot be matched by Surface's automatic contentColorFor lookup.
+        contentColor = cs.onSurface,
+        border = BorderStroke(
+            1.dp,
+            if (cs.background == androidx.compose.ui.graphics.Color.Black) cs.outlineVariant
+            else cs.outlineVariant.copy(alpha = 0.35f),
+        ),
     ) {
         Column(Modifier.padding(20.dp), content = content)
     }

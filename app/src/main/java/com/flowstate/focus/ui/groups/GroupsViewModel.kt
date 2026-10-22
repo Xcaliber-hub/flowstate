@@ -23,11 +23,10 @@ class GroupsViewModel @Inject constructor(
     fun signUp(name: String, email: String, password: String) = repository.signUp(name.trim(), email.trim(), password)
     fun resetPassword(email: String) = repository.resetPassword(email.trim())
     fun signOut() = repository.signOut()
-    fun updateProfile(name: String) = repository.updateProfile(name.trim())
+    fun updateProfile(name: String, avatarId: String) = repository.updateProfile(name.trim(), avatarId)
     fun createGroup(name: String) = repository.createGroup(name.trim())
     fun joinGroup(code: String) = repository.joinGroup(code.trim())
     fun selectGroup(id: String) = repository.selectGroup(id)
     fun leaveGroup() = repository.leaveGroup()
     fun clearError() = repository.clearError()
 }
-

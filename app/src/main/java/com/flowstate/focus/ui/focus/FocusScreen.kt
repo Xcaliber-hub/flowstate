@@ -414,7 +414,8 @@ private fun rememberWobble(enabled: Boolean): State<Float> {
 @Composable
 private fun ProgressRing(progress: () -> Float, liquid: Boolean, active: Boolean, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
-    val track = cs.surfaceVariant.copy(alpha = 0.5f)
+    val track = if (cs.background == androidx.compose.ui.graphics.Color.Black) cs.surfaceVariant
+    else cs.surfaceVariant.copy(alpha = 0.5f)
     val primary = cs.primary
     val tertiary = cs.tertiary
     val wobble = rememberWobble(liquid && active)

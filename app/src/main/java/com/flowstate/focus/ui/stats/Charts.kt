@@ -60,7 +60,8 @@ private fun BucketLabels(buckets: List<Bucket>) {
 @Composable
 fun BarChart(buckets: List<Bucket>, modifier: Modifier = Modifier) {
     val primary = MaterialTheme.colorScheme.primary
-    val track = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+    val colors = MaterialTheme.colorScheme
+    val track = if (colors.background == Color.Black) colors.surfaceVariant else colors.surfaceVariant.copy(alpha = 0.6f)
     val reveal = rememberReveal(buckets)
     val max = (buckets.maxOfOrNull { it.valueMs } ?: 0L).coerceAtLeast(1L)
     Column(modifier) {
@@ -119,7 +120,8 @@ fun LineChart(buckets: List<Bucket>, modifier: Modifier = Modifier) {
 @Composable
 fun Heatmap(perDay: Map<LocalDate, Long>, goalMs: Long, weeks: Int = 15, modifier: Modifier = Modifier) {
     val primary = MaterialTheme.colorScheme.primary
-    val empty = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    val colors = MaterialTheme.colorScheme
+    val empty = if (colors.background == Color.Black) colors.surfaceVariant else colors.surfaceVariant.copy(alpha = 0.5f)
     val reveal = rememberReveal(perDay to goalMs)
     val today = LocalDate.now()
     val firstMonday = today.with(DayOfWeek.MONDAY).minusWeeks((weeks - 1).toLong())

@@ -6,9 +6,9 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
 
 - A Groups navigation tab, with email/password account creation, sign-in, password reset and sign-out.
 - Private groups: create a room, join using a 12-character code, share an invite, switch groups and leave.
-- A weekly leaderboard with circular initials avatars, rank, focus totals and a highlighted current-user row. Group weeks run Monday–Sunday in UTC so every member uses the same boundary.
+- A weekly leaderboard with bundled preset avatars or circular initials, rank, focus totals and a highlighted current-user row. Group weeks run Monday–Sunday in UTC so every member uses the same boundary.
 - A Live tab inspired by the supplied references: focusing members in an avatar grid with elapsed timers, an invite tile, a separate “Not focusing” section and a shortcut to the existing focus timer. Stale presence is not presented as an ongoing live session.
-- Editable, name-only group profiles shown with circular initials avatars throughout the app.
+- Editable profile names and a preset-avatar picker with Sprout, Sunbeam, Moon, Fox, Orbit and Summit. Avatar IDs are persisted in Firestore; artwork is bundled and initials remain available. No photo uploads or Firebase Storage.
 - The supplied owl replaces the launcher and splash artwork. The pale outer border and corner decoration are removed. Adaptive icons use a separate full-bleed gray background and transparent owl artwork; legacy-density icons are also included.
 
 ## Open and build
@@ -24,7 +24,7 @@ On Windows, use `gradlew.bat`. Run on Android 8.0 / API 26 or newer. The debug A
 
 ## Enable real groups
 
-The source ZIP deliberately contains **no production Firebase account or another app's Firebase configuration**. The personal timer, tasks, statistics and settings remain local and work without cloud setup. The Groups page clearly explains when cloud configuration is missing; it does not show fake accounts or fake members.
+The supplied Flowstate Firebase client values are preserved unchanged. No Firebase project, account or backend deployment is created by this source update. The personal timer, tasks, statistics and settings remain local and work without cloud setup. The Groups page clearly explains when cloud configuration is missing; it does not show fake accounts or fake members.
 
 Follow [Groups setup](firebase/GROUPS_SETUP.md): register `com.flowstate.focus` in your Flowstate Firebase project, enable Email/Password Authentication, create Firestore, fill `app/src/main/res/values/flowstate_firebase.xml`, and deploy the supplied Firestore rules. The app uses Firebase Authentication and Firestore only; no Storage bucket or Google Services Gradle plugin is needed. Cross-device sign-in and invites need internet access and the configured backend. Firebase service availability and quotas are managed in your own Firebase project.
 
@@ -39,3 +39,7 @@ Enable app blocking in **Settings → Focus mode → App blocking service**, the
 ## Before publishing
 
 Configure release signing. Review the Accessibility Service disclosure and Play Console declaration, and the foreground-service `specialUse` justification. Test multi-user group operations against your own staging Firebase project before distributing a production build.
+
+## Avatar and visibility update
+
+See [Avatar changes](AVATAR_CHANGES.md) and [Overall visibility changes](OVERALL_VISIBILITY_CHANGES.md). The separate six-concept preview is review-only and is not bundled in the app. Deploy the updated Firestore rules to your intended project before using avatar saving.

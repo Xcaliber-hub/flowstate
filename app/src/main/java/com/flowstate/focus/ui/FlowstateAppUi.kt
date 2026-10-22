@@ -14,6 +14,7 @@ import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Groups
 import com.flowstate.focus.ui.groups.GroupsScreen
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -75,39 +76,47 @@ fun FlowstateAppUi(settings: AppSettings) {
     val enter = fadeIn(tween(240, delayMillis = 80)) + scaleIn(initialScale = 0.96f, animationSpec = tween(240, delayMillis = 80))
     val exit = fadeOut(tween(90))
 
-    Box(Modifier.fillMaxSize().nestedScroll(scrollConnection)) {
-        NavHost(
-            navController = nav,
-            startDestination = Routes.FOCUS,
-            modifier = Modifier.fillMaxSize(),
-            enterTransition = { enter },
-            exitTransition = { exit },
-            popEnterTransition = { enter },
-            popExitTransition = { exit },
-        ) {
-            composable(Routes.FOCUS) { FocusScreen(settings) }
-            composable(Routes.GROUPS) { GroupsScreen(settings, onOpenFocus = { nav.navigate(Routes.FOCUS) { launchSingleTop = true } }) }
-            composable(Routes.TASKS) { TasksScreen(settings) }
-            composable(Routes.STATS) { StatsScreen(settings) }
-            composable(Routes.SETTINGS) { SettingsScreen(onOpenBlockedApps = { nav.navigate(Routes.BLOCKED) }) }
-            composable(Routes.BLOCKED) { BlockedAppsScreen(onBack = { nav.popBackStack() }) }
-        }
-        if (Tabs.any { it.route == route }) {
-            FloatingNavBar(
-                tabs = Tabs,
-                selectedRoute = route,
-                visible = navVisible,
-                liquid = settings.liquidUi,
-                onSelect = { tab ->
-                    navVisible = true
-                    nav.navigate(tab.route) {
-                        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
-                modifier = Modifier.align(Alignment.BottomCenter),
-            )
+    // MaterialTheme supplies color roles, but does not paint a background or set LocalContentColor.
+    // A root Surface keeps plain text and controls readable in light, dark and dynamic themes.
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+    ) {
+        Box(Modifier.fillMaxSize().nestedScroll(scrollConnection)) {
+            NavHost(
+                navController = nav,
+                startDestination = Routes.FOCUS,
+                modifier = Modifier.fillMaxSize(),
+                enterTransition = { enter },
+                exitTransition = { exit },
+                popEnterTransition = { enter },
+                popExitTransition = { exit },
+            ) {
+                composable(Routes.FOCUS) { FocusScreen(settings) }
+                composable(Routes.GROUPS) { GroupsScreen(settings, onOpenFocus = { nav.navigate(Routes.FOCUS) { launchSingleTop = true } }) }
+                composable(Routes.TASKS) { TasksScreen(settings) }
+                composable(Routes.STATS) { StatsScreen(settings) }
+                composable(Routes.SETTINGS) { SettingsScreen(onOpenBlockedApps = { nav.navigate(Routes.BLOCKED) }) }
+                composable(Routes.BLOCKED) { BlockedAppsScreen(onBack = { nav.popBackStack() }) }
+            }
+            if (Tabs.any { it.route == route }) {
+                FloatingNavBar(
+                    tabs = Tabs,
+                    selectedRoute = route,
+                    visible = navVisible,
+                    liquid = settings.liquidUi,
+                    onSelect = { tab ->
+                        navVisible = true
+                        nav.navigate(tab.route) {
+                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
         }
     }
 }

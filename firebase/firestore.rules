@@ -2,6 +2,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function validAvatar(data) {
+      return !('avatarId' in data) || (data.avatarId is string && data.avatarId in ['', 'sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit']);
+    }
     function groupExists(gid) { return exists(/databases/$(database)/documents/groups/$(gid)); }
     function member(gid) { return signedIn() && groupExists(gid) && request.auth.uid in get(/databases/$(database)/documents/groups/$(gid)).data.memberIds; }
     match /groups/{gid} {
@@ -13,10 +16,14 @@ service cloud.firestore {
       allow delete: if false;
       match /members/{uid} {
         allow read: if member(gid);
-        allow create, update: if member(gid) && signedIn() && uid == request.auth.uid && request.resource.data.keys().hasOnly(['name','photoUrl','weeklyFocusMs','weekKey','live','updatedAt']) && request.resource.data.name is string && request.resource.data.name.size() <= 40 && request.resource.data.photoUrl is string && request.resource.data.weeklyFocusMs is int && request.resource.data.weeklyFocusMs >= 0 && request.resource.data.weekKey is string && request.resource.data.live is map && request.resource.data.updatedAt == request.time;
+        allow create, update: if member(gid) && signedIn() && uid == request.auth.uid && request.resource.data.keys().hasOnly(['name','avatarId','photoUrl','weeklyFocusMs','weekKey','live','updatedAt']) && validAvatar(request.resource.data) && request.resource.data.name is string && request.resource.data.name.size() <= 40 && request.resource.data.photoUrl is string && request.resource.data.photoUrl == '' && request.resource.data.weeklyFocusMs is int && request.resource.data.weeklyFocusMs >= 0 && request.resource.data.weekKey is string && request.resource.data.live is map && request.resource.data.updatedAt == request.time;
         allow delete: if signedIn() && uid == request.auth.uid && groupExists(gid);
       }
     }
-    match /users/{uid} { allow read, write: if signedIn() && request.auth.uid == uid; }
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid && validAvatar(request.resource.data);
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
   }
 }

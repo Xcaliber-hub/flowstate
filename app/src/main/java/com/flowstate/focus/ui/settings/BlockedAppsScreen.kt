@@ -3,6 +3,7 @@ package com.flowstate.focus.ui.settings
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -24,11 +25,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -105,6 +109,11 @@ fun BlockedAppsScreen(onBack: () -> Unit, vm: BlockedAppsViewModel = hiltViewMod
     val blocked by vm.blocked.collectAsStateWithLifecycle()
     var query by rememberSaveable { mutableStateOf("") }
     val shown = remember(apps, query) { apps.filter { it.label.contains(query.trim(), ignoreCase = true) } }
+    val cs = MaterialTheme.colorScheme
+    val chipColors = AssistChipDefaults.assistChipColors(
+        containerColor = cs.surfaceContainerHigh,
+        labelColor = cs.onSurface,
+    )
 
     ScreenContainer {
         LazyColumn(
@@ -135,9 +144,9 @@ fun BlockedAppsScreen(onBack: () -> Unit, vm: BlockedAppsViewModel = hiltViewMod
                     Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    AssistChip(onClick = { vm.addCategory(ApplicationInfo.CATEGORY_SOCIAL) }, label = { Text("Add social apps") })
-                    AssistChip(onClick = { vm.addCategory(ApplicationInfo.CATEGORY_GAME) }, label = { Text("Add games") })
-                    AssistChip(onClick = vm::clear, label = { Text("Clear all") })
+                    AssistChip(onClick = { vm.addCategory(ApplicationInfo.CATEGORY_SOCIAL) }, label = { Text("Add social apps") }, colors = chipColors, border = BorderStroke(1.dp, cs.outline))
+                    AssistChip(onClick = { vm.addCategory(ApplicationInfo.CATEGORY_GAME) }, label = { Text("Add games") }, colors = chipColors, border = BorderStroke(1.dp, cs.outline))
+                    AssistChip(onClick = vm::clear, label = { Text("Clear all") }, colors = chipColors, border = BorderStroke(1.dp, cs.outline))
                 }
             }
             item {
@@ -149,6 +158,17 @@ fun BlockedAppsScreen(onBack: () -> Unit, vm: BlockedAppsViewModel = hiltViewMod
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                     shape = MaterialTheme.shapes.extraLarge,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = cs.surfaceContainerHigh,
+                        unfocusedContainerColor = cs.surfaceContainerHigh,
+                        focusedTextColor = cs.onSurface,
+                        unfocusedTextColor = cs.onSurface,
+                        focusedPlaceholderColor = cs.onSurfaceVariant,
+                        unfocusedPlaceholderColor = cs.onSurfaceVariant,
+                        focusedLeadingIconColor = cs.onSurfaceVariant,
+                        unfocusedLeadingIconColor = cs.onSurfaceVariant,
+                        unfocusedBorderColor = cs.outline,
+                    ),
                 )
             }
             items(shown, key = { it.packageName }) { app ->
@@ -162,7 +182,15 @@ fun BlockedAppsScreen(onBack: () -> Unit, vm: BlockedAppsViewModel = hiltViewMod
                     AppIcon(app.packageName, Modifier.size(40.dp))
                     Spacer(Modifier.width(16.dp))
                     Text(app.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1)
-                    Checkbox(checked = app.packageName in blocked, onCheckedChange = { vm.toggle(app.packageName) })
+                    Checkbox(
+                        checked = app.packageName in blocked,
+                        onCheckedChange = { vm.toggle(app.packageName) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = cs.primary,
+                            uncheckedColor = cs.onSurfaceVariant,
+                            checkmarkColor = cs.onPrimary,
+                        ),
+                    )
                 }
             }
         }

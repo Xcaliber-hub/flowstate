@@ -6,6 +6,7 @@ import com.flowstate.focus.data.repo.SessionRepository
 import com.flowstate.focus.domain.groups.weeklyTotal
 import com.flowstate.focus.domain.groups.weeklyWeekKey
 import com.flowstate.focus.domain.groups.weeklyWeekStartUtc
+import com.flowstate.focus.domain.groups.PresetAvatars
 import com.flowstate.focus.domain.Phase
 import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.service.TimerEngine
@@ -39,9 +40,9 @@ import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
- data class GroupUser(val uid: String, val name: String)
+ data class GroupUser(val uid: String, val name: String, val avatarId: String = "")
  data class FocusGroup(val id: String, val name: String, val memberIds: List<String>)
- data class GroupMember(val uid: String, val name: String, val weeklyFocusMs: Long, val live: TimerState?, val updatedAt: Long)
+ data class GroupMember(val uid: String, val name: String, val weeklyFocusMs: Long, val live: TimerState?, val updatedAt: Long, val avatarId: String = "")
  data class GroupsState(val configured: Boolean = false, val user: GroupUser? = null, val groups: List<FocusGroup> = emptyList(), val selectedGroup: FocusGroup? = null, val members: List<GroupMember> = emptyList(), val loading: Boolean = false, val busy: Boolean = false, val error: String? = null, val notice: String? = null)
 
 @Singleton
@@ -88,13 +89,18 @@ class GroupsRepository @Inject constructor(
     }
     fun resetPassword(email: String) = launchBusy { require(emailOk(email)) { "Enter a valid email address." }; authRequired().sendPasswordResetEmail(email.trim()).await(); _state.update { it.copy(notice = "If an account matches this email, password reset instructions have been requested. Check your inbox and spam folder.") } }
     fun signOut() { scope.launch { authGeneration.incrementAndGet(); cleanupListeners(); activeUser = null; groupList = emptyList(); auth?.signOut(); _state.value = GroupsState(configured = _state.value.configured) } }
-    fun updateProfile(name: String) = launchBusy {
+    fun updateProfile(name: String, avatarId: String) = launchBusy {
         val u = authRequired().currentUser ?: error("Sign in first."); val clean = validName(name)
+        require(PresetAvatars.isValid(avatarId)) { "Choose an approved avatar." }
+        val generation = authGeneration.get()
         u.updateProfile(com.google.firebase.auth.userProfileChangeRequest { displayName = clean }).await()
-        val profile = GroupUser(u.uid, clean); activeUser = profile
-        dbRequired().collection("users").document(u.uid).set(mapOf("name" to clean), SetOptions.merge()).await()
+        if (authRequired().currentUser?.uid != u.uid || generation != authGeneration.get()) return@launchBusy
+        val profile = GroupUser(u.uid, clean, avatarId)
+        dbRequired().collection("users").document(u.uid).set(mapOf("name" to clean, "avatarId" to avatarId), SetOptions.merge()).await()
+        if (authRequired().currentUser?.uid != u.uid || generation != authGeneration.get()) return@launchBusy
+        activeUser = profile
         publishOwnMemberDocs(profile)
-        _state.value = _state.value.copy(user = profile)
+        if (authRequired().currentUser?.uid == u.uid && generation == authGeneration.get()) _state.update { it.copy(user = profile) }
     }
     fun createGroup(name: String) = launchBusy {
         val u = requireUser(); val clean = validName(name); val code = (1..12).map { ALPHABET[random.nextInt(ALPHABET.length)] }.joinToString("")
@@ -133,7 +139,7 @@ class GroupsRepository @Inject constructor(
         cleanupListeners()
         if (uid == null || authRequired().currentUser?.uid != uid) { activeUser = null; groupList = emptyList(); _state.value = GroupsState(configured = _state.value.configured); return }
         val profileDoc = runCatching { dbRequired().collection("users").document(uid).get().await() }.getOrNull()
-        val user = GroupUser(uid, (profileDoc?.getString("name") ?: name).orEmpty().ifBlank { "Focus member" })
+        val user = GroupUser(uid, (profileDoc?.getString("name") ?: name).orEmpty().ifBlank { "Focus member" }, PresetAvatars.fallback(profileDoc?.get("avatarId") as? String))
         if (generation != authGeneration.get() || authRequired().currentUser?.uid != uid) return
         activeUser = user; _state.update { it.copy(user = user, loading = true) }
         refreshGroups()
@@ -181,16 +187,17 @@ class GroupsRepository @Inject constructor(
             if (err != null) { setError(err); _state.update { it.copy(loading = false) }; return@addSnapshotListener }
             selectedMembers = snap?.documents.orEmpty().mapNotNull { d ->
                 val uid = d.id; if (uid !in group.memberIds) return@mapNotNull null; val week = d.getString("weekKey").orEmpty(); val liveMap = d.get("live") as? Map<*, *>
-                GroupMember(uid, d.getString("name").orEmpty(), if (week == weekKey(System.currentTimeMillis())) d.getLong("weeklyFocusMs") ?: 0L else 0L, liveMap?.let(::decodeTimer), d.getTimestamp("updatedAt")?.toDate()?.time ?: 0L)
+                GroupMember(uid, d.getString("name").orEmpty(), if (week == weekKey(System.currentTimeMillis())) d.getLong("weeklyFocusMs") ?: 0L else 0L, liveMap?.let(::decodeTimer), d.getTimestamp("updatedAt")?.toDate()?.time ?: 0L, PresetAvatars.fallback(d.get("avatarId") as? String))
             }.sortedWith(compareByDescending<GroupMember> { it.weeklyFocusMs }.thenBy { it.name.lowercase() })
             if (_state.value.selectedGroup?.id == group.id) _state.update { it.copy(members = selectedMembers, loading = false) }
         }
     }
     private suspend fun writeMember(groupId: String, user: GroupUser, total: Long, week: Long = weekStartUtc(System.currentTimeMillis()), live: TimerState = timer.state.value) {
-        if (authRequired().currentUser?.uid != user.uid || activeUser?.uid != user.uid) return
-        // Retain an empty legacy field so existing Firestore rules accept member updates.
+        if (authRequired().currentUser?.uid != user.uid || activeUser != user) return
+        // Keep the legacy photoUrl empty; profile avatars are stable preset IDs, never URLs.
         runCatching {
-            dbRequired().collection("groups").document(groupId).collection("members").document(authRequired().currentUser?.uid ?: return).set(mapOf("name" to user.name, "photoUrl" to "", "weeklyFocusMs" to total, "weekKey" to weekKey(week), "live" to encodeTimer(live), "updatedAt" to FieldValue.serverTimestamp()), SetOptions.merge()).await()
+            if (authRequired().currentUser?.uid != user.uid || activeUser != user) return
+            dbRequired().collection("groups").document(groupId).collection("members").document(user.uid).set(mapOf("name" to user.name, "avatarId" to user.avatarId, "photoUrl" to "", "weeklyFocusMs" to total, "weekKey" to weekKey(week), "live" to encodeTimer(live), "updatedAt" to FieldValue.serverTimestamp()), SetOptions.merge()).await()
         }.onFailure { setError(it) }
     }
     private suspend fun publishOwnMemberDocs(profile: GroupUser) { if (authRequired().currentUser?.uid == profile.uid) publishCurrent() }

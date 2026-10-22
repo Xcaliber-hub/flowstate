@@ -45,7 +45,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -152,7 +151,6 @@ fun TasksScreen(settings: AppSettings, vm: TasksViewModel = hiltViewModel()) {
 @Composable
 private fun TaskRow(task: TaskEntity, onToggle: () -> Unit, onDelete: () -> Unit, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
-    val alpha by animateFloatAsState(if (task.done) 0.5f else 1f, label = "taskAlpha")
     val priorityColor = when (task.priority) {
         2 -> cs.error
         1 -> cs.tertiary
@@ -162,10 +160,11 @@ private fun TaskRow(task: TaskEntity, onToggle: () -> Unit, onDelete: () -> Unit
     GlassCard(modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(checked = task.done, onCheckedChange = { onToggle() })
-            Column(Modifier.weight(1f).alpha(alpha)) {
+            Column(Modifier.weight(1f)) {
                 Text(
                     task.title,
                     style = MaterialTheme.typography.bodyLarge,
+                    color = if (task.done) cs.onSurfaceVariant else cs.onSurface,
                     textDecoration = if (task.done) TextDecoration.LineThrough else null,
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {

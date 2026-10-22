@@ -35,8 +35,18 @@ fun FlowstateTheme(settings: AppSettings, darkTheme: Boolean, content: @Composab
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         else -> accentScheme(AccentColors[settings.accentIndex.coerceIn(AccentColors.indices)], darkTheme)
     }
-    // True black background in dark mode: saves power on AMOLED panels.
-    val scheme = if (darkTheme) base.copy(background = Color.Black, surface = Color(0xFF050505)) else base
+    // Keep a true-black canvas, but lift content surfaces and secondary text enough to
+    // preserve clear hierarchy against it. Do not alter the light palette.
+    val scheme = if (darkTheme) base.copy(
+        background = Color.Black,
+        surface = Color(0xFF101010),
+        surfaceVariant = Color(0xFF2A2A2A),
+        surfaceContainer = Color(0xFF202020),
+        surfaceContainerHigh = Color(0xFF2A2A2A),
+        onSurfaceVariant = Color(0xFFD0D0D0),
+        outline = Color(0xFF909090),
+        outlineVariant = Color(0xFF707070),
+    ) else base
     MaterialTheme(colorScheme = scheme, typography = FlowstateTypography, shapes = FlowstateShapes, content = content)
 }
 

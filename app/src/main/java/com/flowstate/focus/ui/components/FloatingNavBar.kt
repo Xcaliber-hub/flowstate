@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
@@ -63,9 +64,13 @@ fun FloatingNavBar(
     Surface(
         modifier = modifier.widthIn(max = 600.dp).navigationBarsPadding().padding(bottom = 16.dp).offset(y = offsetY),
         shape = CircleShape,
-        color = cs.surfaceContainerHigh.copy(alpha = 0.82f),
+        // Keep the floating bar visually distinct over content in both themes.
+        color = cs.surfaceContainerHigh.copy(alpha = if (cs.background == Color.Black) 0.98f else 0.82f),
         shadowElevation = 14.dp,
-        border = BorderStroke(1.dp, cs.outlineVariant.copy(alpha = 0.4f)),
+        border = BorderStroke(
+            1.dp,
+            if (cs.background == Color.Black) cs.outlineVariant else cs.outlineVariant.copy(alpha = 0.4f),
+        ),
     ) {
         Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             tabs.forEach { tab ->
@@ -92,6 +97,7 @@ private fun NavItem(tab: NavTab, selected: Boolean, liquid: Boolean, onClick: ()
             .background(background)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .animateContentSize(sizeSpec)
+            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .padding(horizontal = if (selected) 12.dp else 9.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

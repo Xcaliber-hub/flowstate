@@ -13,7 +13,7 @@ const group = (db, id = gid) => doc(db, 'groups', id);
 const member = (db, uid) => doc(db, 'groups', gid, 'members', uid);
 const alice = () => env.authenticatedContext('alice').firestore();
 const bob = () => env.authenticatedContext('bob').firestore();
-const payload = () => ({ name: 'Alice', photoUrl: '', weeklyFocusMs: 0, weekKey: '2026-W43', live: {}, updatedAt: serverTimestamp() });
+const payload = (avatarId) => ({ name: 'Alice', ...(avatarId === undefined ? {} : { avatarId }), photoUrl: '', weeklyFocusMs: 0, weekKey: '2026-W43', live: {}, updatedAt: serverTimestamp() });
 after(() => env.cleanup());
 beforeEach(async () => {
   await env.clearFirestore();
@@ -75,5 +75,37 @@ describe('Flowstate Firestore authorization', () => {
     await assertSucceeds(setDoc(doc(alice(), 'users', 'alice'), { name: 'Alice' }));
     await assertFails(getDoc(doc(bob(), 'users', 'alice')));
     await assertFails(setDoc(doc(bob(), 'users', 'alice'), { name: 'Bob' }));
+  });
+  it('accepts only approved optional avatar IDs in owner profiles and group members', async () => {
+    const db = alice();
+    const profile = doc(db, 'users', 'alice');
+    for (const avatarId of ['sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit', '']) {
+      await assertSucceeds(setDoc(profile, { name: 'Alice', avatarId }));
+      await assertSucceeds(setDoc(member(db, 'alice'), payload(avatarId)));
+    }
+    for (const avatarId of ['review-only', 'https://example.com/avatar.png', 42, null]) {
+      await assertFails(setDoc(profile, { name: 'Alice', avatarId }));
+      await assertFails(setDoc(member(db, 'alice'), payload(avatarId)));
+    }
+    await assertFails(setDoc(member(db, 'alice'), { ...payload('fox'), photoUrl: 'https://example.com/avatar.png' }));
+  });
+  it('accepts legacy profiles and member docs without avatarId, and supports changing or resetting it', async () => {
+    const db = alice();
+    await assertSucceeds(setDoc(doc(db, 'users', 'alice'), { name: 'Alice' }));
+    await assertSucceeds(setDoc(member(db, 'alice'), payload()));
+    await assertSucceeds(setDoc(doc(db, 'users', 'alice'), { avatarId: 'orbit' }, { merge: true }));
+    await assertSucceeds(setDoc(member(db, 'alice'), payload('orbit')));
+    await assertSucceeds(setDoc(doc(db, 'users', 'alice'), { avatarId: '' }, { merge: true }));
+    await assertSucceeds(setDoc(member(db, 'alice'), payload('')));
+    await assertSucceeds(setDoc(doc(db, 'users', 'alice'), { name: 'Alice', avatarId: 'moon' }));
+    await assertSucceeds(updateDoc(doc(db, 'users', 'alice'), { name: 'Alice Updated', avatarId: 'fox' }));
+    const restoredProfile = await assertSucceeds(getDoc(doc(env.authenticatedContext('alice').firestore(), 'users', 'alice')));
+    assert.equal(restoredProfile.data().avatarId, 'fox');
+    await assertSucceeds(setDoc(member(db, 'alice'), payload('moon')));
+    await assertSucceeds(updateDoc(member(db, 'alice'), { avatarId: 'summit', updatedAt: serverTimestamp() }));
+    await assertSucceeds(updateDoc(member(db, 'alice'), { avatarId: '', updatedAt: serverTimestamp() }));
+  });
+  it('does not allow another user to modify a profile avatar', async () => {
+    await assertFails(setDoc(doc(bob(), 'users', 'alice'), { name: 'Alice', avatarId: 'fox' }));
   });
 });

@@ -2,7 +2,11 @@ package com.flowstate.focus.ui.groups
 
 import android.content.Intent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle.State.STARTED
@@ -22,6 +26,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -83,6 +88,7 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
     var groupName by rememberSaveable { mutableStateOf("") }
     var joinCode by rememberSaveable { mutableStateOf("") }
     var profileName by rememberSaveable { mutableStateOf("") }
+    var profileAvatar by rememberSaveable { mutableStateOf("") }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
     val context = LocalContext.current
     LaunchedEffect(state.user?.uid) { if (state.user != null) password = "" }
@@ -107,7 +113,7 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
                     AuthForm.RESET -> vm.resetPassword(email)
                 } }) }
             } else {
-                item { ProfileCard(state, settings.liquidUi, onEdit = { profileName = state.user?.name.orEmpty(); dialog = "profile" }, onSignOut = { dialog = "signout" }) }
+                item { ProfileCard(state, settings.liquidUi, onEdit = { profileName = state.user?.name.orEmpty(); profileAvatar = state.user?.avatarId.orEmpty(); dialog = "profile" }, onSignOut = { dialog = "signout" }) }
                 item {
                     GlassCard(Modifier.fillMaxWidth(), settings.liquidUi) {
                         Text("Your groups", style = MaterialTheme.typography.titleLarge)
@@ -135,12 +141,22 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
                     if (selectedTab == 0) item { WeeklyBoard(state, settings.liquidUi, now) }
                     else item { LiveRoom(state, settings.liquidUi, now, vm, onOpenFocus, timer) }
                     item {
+                        val cs = MaterialTheme.colorScheme
+                        val actionColors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = cs.surfaceContainerHigh,
+                            contentColor = cs.onSurface,
+                            disabledContainerColor = cs.surfaceContainerHigh,
+                            disabledContentColor = cs.onSurface.copy(alpha = 0.38f),
+                        )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(onClick = {
                                 val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "Join ${group.name} on Flowstate with code: ${group.id}")
                                 context.startActivity(Intent.createChooser(send, "Share group invite"))
-                            }, modifier = Modifier.weight(1f)) { Text("Share invite") }
-                            OutlinedButton(enabled = !state.busy, onClick = { dialog = "leave" }, modifier = Modifier.weight(1f)) { Text("Leave group") }
+                            }, modifier = Modifier.weight(1f), colors = actionColors,
+                                border = BorderStroke(1.dp, cs.outline)) { Text("Share invite") }
+                            OutlinedButton(enabled = !state.busy, onClick = { dialog = "leave" },
+                                modifier = Modifier.weight(1f), colors = actionColors,
+                                border = BorderStroke(1.dp, cs.outline.copy(alpha = if (state.busy) 0.38f else 1f))) { Text("Leave group") }
                         }
                     }
                 }
@@ -160,10 +176,15 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
 
     when (dialog) {
         "profile" -> AlertDialog(onDismissRequest = { dialog = "" }, title = { Text("Edit profile") }, text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedTextField(profileName, { profileName = it }, label = { Text("Name") }, singleLine = true)
+            Column(Modifier.fillMaxWidth().heightIn(max = 440.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ProfileAvatar(profileName, profileAvatar, 64) }
+                OutlinedTextField(profileName, { profileName = it }, label = { Text("Name") }, singleLine = true,
+                    enabled = !state.busy, isError = profileName.trim().length > 40,
+                    supportingText = { Text("${profileName.trim().length}/40 characters") })
+                PresetAvatarPicker(profileName, profileAvatar, !state.busy) { profileAvatar = it }
+                Text("Your avatar is shared across your group profiles.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-        }, confirmButton = { TextButton(enabled = !state.busy, onClick = { vm.updateProfile(profileName); dialog = "" }) { Text("Save") } }, dismissButton = { TextButton(onClick = { dialog = "" }) { Text("Cancel") } })
+        }, confirmButton = { TextButton(enabled = !state.busy && profileName.trim().isNotEmpty() && profileName.trim().length <= 40, onClick = { vm.updateProfile(profileName, profileAvatar); dialog = "" }) { Text("Save") } }, dismissButton = { TextButton(onClick = { dialog = "" }) { Text("Cancel") } })
         "create" -> TextEntryDialog("Create a group", "Group name", groupName, { groupName = it }, { vm.createGroup(groupName); dialog = "" }, state.busy) { dialog = "" }
         "join" -> TextEntryDialog("Join a group", "Invite code", joinCode, { joinCode = it }, { vm.joinGroup(joinCode); dialog = "" }, state.busy) { dialog = "" }
         "leave" -> ConfirmDialog("Leave ${state.selectedGroup?.name.orEmpty()}?", "You can rejoin later with an invite code.", { vm.leaveGroup(); dialog = "" }, busy = state.busy) { dialog = "" }
@@ -208,12 +229,12 @@ private fun ProfileCard(state: GroupsState, liquid: Boolean, onEdit: () -> Unit,
     val user = state.user ?: return
     GlassCard(Modifier.fillMaxWidth(), liquid) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            InitialAvatar(user.name, 56)
+            ProfileAvatar(user.name, user.avatarId, 56)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
                 Text(user.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 Text("Group profile", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            TextButton(onClick = onEdit) { Text("Edit") }
+            TextButton(onClick = onEdit, enabled = !state.busy) { Text("Edit") }
         }
         TextButton(enabled = !state.busy, onClick = onSignOut) { Text("Sign out") }
     }
@@ -225,29 +246,30 @@ private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsV
     val context = LocalContext.current
     val uid = state.user?.uid
     val locallyActive = uid != null && timer.isFocusRunning
-    val own = if (locallyActive) state.members.firstOrNull { it.uid == uid }?.copy(live = timer, updatedAt = now)
-        ?: state.user?.let { user -> GroupMember(user.uid, user.name, 0L, timer, now) } else null
+    val own = if (locallyActive) state.members.firstOrNull { it.uid == uid }?.copy(live = timer, updatedAt = now, name = state.user?.name.orEmpty(), avatarId = state.user?.avatarId.orEmpty())
+        ?: state.user?.let { user -> GroupMember(user.uid, user.name, 0L, timer, now, avatarId = user.avatarId) } else null
     val members = state.members.filterNot { locallyActive && it.uid == uid }.let { if (own != null) it + own else it }
     val active = members.filter { now - it.updatedAt <= 90_000L && it.live?.isFocusRunning == true }
     val inactive = members.filterNot { now - it.updatedAt <= 90_000L && it.live?.isFocusRunning == true }
     GlassCard(Modifier.fillMaxWidth(), liquid) {
         Text("Focusing now", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(12.dp))
-        val rows = active.chunked(3)
+        // The first row reserves one of three slots for the invite action.
+        val rows = listOf(active.take(2)) + active.drop(2).chunked(3)
         val slots = maxOf(1, rows.size)
         repeat(slots) { rowIndex ->
             val rowUsers = rows.getOrNull(rowIndex).orEmpty()
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (rowIndex == 0) Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                     OutlinedButton(onClick = { val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "Join ${group.name} on Flowstate with code: ${group.id}"); context.startActivity(Intent.createChooser(send, "Invite friends")) }, modifier = Modifier.size(58.dp)) { Text("+") }
-                    Text("Invite a friend", maxLines = 1, style = MaterialTheme.typography.bodySmall)
-                } else Spacer(Modifier.weight(1f))
+                    Text("Invite a friend", maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                }
                 rowUsers.forEach { member -> Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                    InitialAvatar(member.name, 58)
+                    ProfileAvatar(member.name, member.avatarId, 58)
                     Text(member.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
                     Text(clock(member.live!!.elapsedAt(now)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } }
-                repeat(3 - rowUsers.size - if (rowIndex == 0) 1 else 0) { Spacer(Modifier.weight(1f)) }
+                repeat(((if (rowIndex == 0) 2 else 3) - rowUsers.size).coerceAtLeast(0)) { Spacer(Modifier.weight(1f)) }
             }
         }
         if (inactive.isNotEmpty()) {
@@ -256,7 +278,7 @@ private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsV
             inactive.chunked(3).forEach { row ->
                 Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     row.forEach { member -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                        InitialAvatar(member.name, 44)
+                        ProfileAvatar(member.name, member.avatarId, 44)
                         Text(member.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                         Text(when { now - member.updatedAt > 90_000L -> "Offline"; member.live?.status == Status.PAUSED -> "Paused"; member.live?.phase != com.flowstate.focus.domain.Phase.IDLE && member.live != null -> "Break"; else -> "Idle" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } }
@@ -285,18 +307,11 @@ private fun WeeklyBoard(state: GroupsState, liquid: Boolean, now: Long) {
             val self = member.uid == state.user?.uid
             Row(Modifier.fillMaxWidth().padding(top = 14.dp).then(if (self) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f), MaterialTheme.shapes.small).padding(6.dp) else Modifier), verticalAlignment = Alignment.CenterVertically) {
                 Text("${index + 1}", modifier = Modifier.size(30.dp).semantics { contentDescription = "Rank ${index + 1}" }, style = MaterialTheme.typography.titleMedium)
-                InitialAvatar(member.name, 38, ring = when (index) { 0 -> 0xFFFFC107; 1 -> 0xFFB0BEC5; 2 -> 0xFFB87333; else -> null })
+                ProfileAvatar(member.name, member.avatarId, 38, ring = when (index) { 0 -> 0xFFFFC107; 1 -> 0xFFB0BEC5; 2 -> 0xFFB87333; else -> null })
                 Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(member.name + if (self) " · You" else "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall); Text("Weekly focus", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 Text(duration(member.weeklyFocusMs), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             }
         }
-    }
-}
-
-@Composable
-private fun InitialAvatar(name: String, size: Int, ring: Long? = null) {
-    Box(Modifier.size(size.dp).then(if (ring != null) Modifier.background(androidx.compose.ui.graphics.Color(ring), CircleShape).padding(3.dp) else Modifier).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer).semantics { contentDescription = "$name initial" }, contentAlignment = Alignment.Center) {
-        Text(name.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
     }
 }
 
