@@ -4,8 +4,8 @@ import android.content.Context
 import com.flowstate.focus.R
 import com.flowstate.focus.data.repo.SessionRepository
 import com.flowstate.focus.domain.groups.weeklyTotal
-import com.flowstate.focus.domain.groups.weeklyWeekKey
-import com.flowstate.focus.domain.groups.weeklyWeekStartUtc
+import com.flowstate.focus.domain.groups.weeklyWeekKeyIst
+import com.flowstate.focus.domain.groups.weeklyWeekStartIst
 import com.flowstate.focus.domain.groups.PresetAvatars
 import com.flowstate.focus.domain.Phase
 import com.flowstate.focus.domain.TimerState
@@ -218,7 +218,7 @@ class GroupsRepository @Inject constructor(
             if (_state.value.selectedGroup?.id == group.id) _state.update { it.copy(members = selectedMembers, loading = false) }
         }
     }
-    private suspend fun writeMember(groupId: String, user: GroupUser, total: Long, week: Long = weekStartUtc(System.currentTimeMillis()), live: TimerState = timer.state.value) {
+    private suspend fun writeMember(groupId: String, user: GroupUser, total: Long, week: Long = weekStartIst(System.currentTimeMillis()), live: TimerState = timer.state.value) {
         if (authRequired().currentUser?.uid != user.uid || activeUser != user) return
         cloudOperation("Sync group groups/$groupId/members/${user.uid}") {
             // This is an app-owned snapshot, not a partial update. Replace it so obsolete
@@ -238,7 +238,7 @@ class GroupsRepository @Inject constructor(
         val user = activeUser?.takeIf { it.uid == uid } ?: return
         val allRows = rows ?: runCatching { sessions.all() }.getOrDefault(emptyList())
         val owned = allRows.filter { ownership.getString("owner_${it.id}", null) == uid }
-        val week = weeklyWeekStartUtc(System.currentTimeMillis())
+        val week = weeklyWeekStartIst(System.currentTimeMillis())
         val total = weeklyTotal(owned.map { it.startedAt to it.durationMs }, System.currentTimeMillis())
         groupList.forEach { g -> if (uid == authRequired().currentUser?.uid) writeMember(g.id, user, total, week, ts) }
     }
@@ -270,7 +270,7 @@ class GroupsRepository @Inject constructor(
     private fun readResource(id: Int): String = runCatching { context.getString(id).takeIf { it.isNotBlank() } ?: "" }.getOrDefault("")
     private fun validName(s: String): String = s.trim().also { require(it.length in 1..40 && it.none(Char::isISOControl)) { "Name must be 1–40 characters." } }
     private fun emailOk(s: String) = s.trim().length <= 254 && android.util.Patterns.EMAIL_ADDRESS.matcher(s.trim()).matches()
-    private fun weekStartUtc(now: Long): Long = weeklyWeekStartUtc(now)
-    private fun weekKey(ms: Long): String = weeklyWeekKey(ms)
+    private fun weekStartIst(now: Long): Long = weeklyWeekStartIst(now)
+    private fun weekKey(ms: Long): String = weeklyWeekKeyIst(ms)
     private companion object { const val APP_NAME="flowstate-groups"; const val MAX_GROUP_SIZE=20; const val WEEK_MS=7*24*60*60*1000L; const val ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789" }
 }

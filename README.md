@@ -6,7 +6,7 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
 
 - A Groups navigation tab, with email/password account creation, sign-in, password reset and sign-out.
 - Private groups: create a room, join using a 12-character code, share an invite, switch groups and leave.
-- A weekly leaderboard with bundled preset avatars or circular initials, rank, focus totals and a highlighted current-user row. Group weeks run Monday–Sunday in UTC so every member uses the same boundary.
+- A weekly leaderboard with bundled preset avatars or circular initials, rank, focus totals and a highlighted current-user row. Group weeks run Monday–Sunday in India Standard Time (IST, Asia/Kolkata), resetting at Monday 00:00 IST for every member.
 - A Live tab inspired by the supplied references: focusing members in an avatar grid with elapsed timers, an invite tile, a separate “Not focusing” section and a shortcut to the existing focus timer. Stale presence is not presented as an ongoing live session.
 - Editable profile names and a preset-avatar picker with Sprout, Sunbeam, Moon, Fox, Orbit, Summit, Cloud, Ember, Turtle, Jelly, Comet and Bloom. Avatar IDs are persisted in Firestore; artwork is bundled and initials remain available. No photo uploads or Firebase Storage.
 - The supplied owl replaces the launcher and splash artwork. The pale outer border and corner decoration are removed. Adaptive icons use a separate full-bleed gray background and transparent owl artwork; legacy-density icons are also included.
@@ -40,7 +40,11 @@ Enable app blocking in **Settings → Focus mode → App blocking service**, the
 
 Configure release signing. Review the Accessibility Service disclosure and Play Console declaration, and the foreground-service `specialUse` justification. Test multi-user group operations against your own staging Firebase project before distributing a production build.
 
-## Avatar and visibility update
+## Weekly leaderboard reset
+
+Version **1.1.3** (Android version code **5**) moves the shared group leaderboard week to Monday–Sunday in India Standard Time (IST, Asia/Kolkata). The week and its countdown reset together at Monday 00:00 IST.
+
+## Earlier avatar and visibility update
 
 Version **1.1.2** (Android version code **4**) fixes avatar-save feedback, serializes avatar changes with background group publishing, and replaces old member snapshots to remove rule-incompatible legacy fields. The source already contained all twelve artwork mappings; this was not a missing-image issue. See [Avatar and permission fix](AVATAR_PERMISSION_FIX.md) for the exact deployment steps and limitations, and [Update installation](UPDATE_INSTALLATION.md) to keep the existing signing key and local app data.
 

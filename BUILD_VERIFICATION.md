@@ -1,4 +1,4 @@
-# Flowstate 1.1.2 verification
+# Flowstate 1.1.3 verification
 
 ## Checks passed
 
@@ -8,9 +8,9 @@ The final source was checked using Gradle 8.9, Android SDK 35 and JDK 21:
 ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
 ```
 
-Debug compilation and APK packaging passed. The generated package metadata confirms version **1.1.2**, code **4**, package `com.flowstate.focus`.
+Debug compilation and APK packaging passed. The generated package metadata confirms version **1.1.3**, code **5**, package `com.flowstate.focus`.
 
-All **10 JVM unit tests** passed, covering avatar catalog/validation/fallback, timer state and UTC weekly calculations. Android lint reported **zero errors**, 61 warnings and 1 informational findings; this is not a zero-warning claim.
+All **10 JVM unit tests** passed, covering avatar catalog/validation/fallback, timer state and IST weekly calculations. Android lint reported **zero errors**, 61 warnings and 1 informational findings; this is not a zero-warning claim.
 
 All **16 Firestore emulator tests** passed. They cover all twelve avatar IDs and initials reset in private profiles and member documents; original-to-new migration; legacy documents; multi-group publishing/readback and fresh-session restoration; stale-field merge denial followed by canonical replacement; old-six-rules rejection of all six new IDs; malformed payload rejection; and owner/membership access restrictions. Expected PERMISSION_DENIED messages appear during negative tests.
 

@@ -5,10 +5,11 @@ import java.util.Locale
 import java.util.TimeZone
 
 private const val WEEK_MS = 7L * 24 * 60 * 60 * 1000
+private const val IST_TIME_ZONE = "Asia/Kolkata"
 
-/** UTC Monday 00:00, independent of device locale and time zone. */
-fun weeklyWeekStartUtc(now: Long): Long {
-    val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"), Locale.ROOT)
+/** Monday 00:00 in India Standard Time, independent of device locale and time zone. */
+fun weeklyWeekStartIst(now: Long): Long {
+    val calendar = Calendar.getInstance(TimeZone.getTimeZone(IST_TIME_ZONE), Locale.ROOT)
     calendar.timeInMillis = now
     calendar.set(Calendar.HOUR_OF_DAY, 0)
     calendar.set(Calendar.MINUTE, 0)
@@ -19,8 +20,9 @@ fun weeklyWeekStartUtc(now: Long): Long {
     return calendar.timeInMillis
 }
 
-fun weeklyWeekKey(ms: Long): String {
-    val calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"), Locale.ROOT).apply {
+/** ISO week key for the date in India Standard Time. */
+fun weeklyWeekKeyIst(ms: Long): String {
+    val calendar = Calendar.getInstance(TimeZone.getTimeZone(IST_TIME_ZONE), Locale.ROOT).apply {
         firstDayOfWeek = Calendar.MONDAY
         minimalDaysInFirstWeek = 4
         timeInMillis = ms
@@ -28,9 +30,9 @@ fun weeklyWeekKey(ms: Long): String {
     return "%04d-W%02d".format(Locale.ROOT, calendar.getWeekYear(), calendar.get(Calendar.WEEK_OF_YEAR))
 }
 
-/** Sum session intervals clipped to the current UTC Monday-to-Monday window. */
+/** Sum session intervals clipped to the Monday 00:00 IST-to-Monday 00:00 IST window. */
 fun weeklyTotal(sessions: Iterable<Pair<Long, Long>>, now: Long): Long {
-    val start = weeklyWeekStartUtc(now)
+    val start = weeklyWeekStartIst(now)
     val end = start + WEEK_MS
     return sessions.sumOf { (startedAt, durationMs) ->
         val finish = startedAt + durationMs.coerceAtLeast(0L)

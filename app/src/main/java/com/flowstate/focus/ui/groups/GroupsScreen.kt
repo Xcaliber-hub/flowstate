@@ -68,7 +68,7 @@ import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.screenContentPadding
 import kotlinx.coroutines.delay
 import java.time.Instant
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.time.temporal.TemporalAdjusters
 import java.time.DayOfWeek
 import java.time.format.DateTimeFormatter
@@ -300,15 +300,16 @@ private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsV
 
 @Composable
 private fun WeeklyBoard(state: GroupsState, liquid: Boolean, now: Long) {
-    val todayUtc = Instant.ofEpochMilli(now).atZone(ZoneOffset.UTC).toLocalDate()
-    val monday = todayUtc.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val istZone = ZoneId.of("Asia/Kolkata")
+    val todayIst = Instant.ofEpochMilli(now).atZone(istZone).toLocalDate()
+    val monday = todayIst.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
     val dateFmt = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
     val sorted = state.members.sortedWith(compareByDescending<GroupMember> { it.weeklyFocusMs }.thenBy { it.name.lowercase(Locale.ROOT) }.thenBy { it.uid })
     GlassCard(Modifier.fillMaxWidth(), liquid) {
         Text("This week", style = MaterialTheme.typography.titleLarge)
-        Text("Monday–Sunday · UTC · ${monday.format(dateFmt)} – ${monday.plusDays(6).format(dateFmt)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Monday–Sunday · IST · ${monday.format(dateFmt)} – ${monday.plusDays(6).format(dateFmt)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (sorted.isEmpty()) { Spacer(Modifier.height(12.dp)); Text("No weekly focus totals yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        val weekEnd = monday.plusDays(7).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+        val weekEnd = monday.plusDays(7).atStartOfDay(istZone).toInstant().toEpochMilli()
         Text("Week ends in ${duration((weekEnd - now).coerceAtLeast(0))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         sorted.forEachIndexed { index, member ->
             val self = member.uid == state.user?.uid

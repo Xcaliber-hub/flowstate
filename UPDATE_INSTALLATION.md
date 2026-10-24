@@ -2,7 +2,7 @@
 
 ## What changed
 
-This source is version **1.1.2**, with Android `versionCode = 4` (previously 3). The package remains `com.flowstate.focus`. Release builds can now use a persistent signing key supplied through environment variables or private Gradle properties, rather than changing source files or embedding credentials in the ZIP.
+This source is version **1.1.3**, with Android `versionCode = 5` (previously 4). The package remains `com.flowstate.focus`. Release builds can now use a persistent signing key supplied through environment variables or private Gradle properties, rather than changing source files or embedding credentials in the ZIP.
 
 **A version bump alone cannot fix a signing-key mismatch.** Android must recognize the new APK as an update to the installed app. Ordinary sideload updates need the same application ID and signing certificate, and each distributed release should increase `versionCode` beyond the installed version. Changing `versionName` alone is not sufficient.
 
