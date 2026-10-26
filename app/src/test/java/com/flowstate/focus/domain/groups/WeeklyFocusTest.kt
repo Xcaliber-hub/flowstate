@@ -27,4 +27,29 @@ class WeeklyFocusTest {
         assertEquals("2025-W03", weeklyWeekKeyIst(reset))
         assertEquals(0L, weeklyTotal(listOf((beforeReset - 1_800_000L) to 1_800_000L), reset))
     }
+
+    @Test fun countsSessionsStartedThisIstWeek() {
+        val mondayIst = utc(2025, 1, 5, 18, 30)
+        val now = utc(2025, 1, 8)
+        assertEquals(2, weeklySessionCount(listOf(mondayIst, mondayIst + 3_600_000L, mondayIst - 1L), now))
+    }
+
+    @Test fun dailyTotalClipsToIstMidnight() {
+        // 26 Oct 2026 00:00 IST is 25 Oct 18:30 UTC.
+        val midnight = utc(2026, 10, 25, 18, 30)
+        val now = midnight + 10 * 3_600_000L
+        assertEquals(midnight, dayStartIst(now))
+        assertEquals("2026-10-26", dayKeyIst(now))
+        assertEquals("2026-10-25", dayKeyIst(midnight - 1L))
+        val sessions = listOf((midnight - 1_800_000L) to 3_600_000L, (midnight + 3_600_000L) to 1_200_000L)
+        assertEquals(1_800_000L + 1_200_000L, dailyTotalIst(sessions, now))
+        assertEquals(0L, dailyTotalIst(emptyList(), now))
+    }
+
+    @Test fun leaguesFollowWeeklyFocus() {
+        assertEquals(null, League.of(0L))
+        assertEquals(League.BRONZE, League.of(5 * 3_600_000L))
+        assertEquals(League.SILVER, League.of(19 * 3_600_000L))
+        assertEquals(League.DIAMOND, League.of(100 * 3_600_000L))
+    }
 }

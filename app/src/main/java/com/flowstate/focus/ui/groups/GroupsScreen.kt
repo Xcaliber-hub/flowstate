@@ -91,6 +91,7 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
     var profileAvatar by rememberSaveable { mutableStateOf("") }
     var profileSaveVersion by rememberSaveable { mutableLongStateOf(0L) }
     var selectedTab by rememberSaveable { mutableStateOf(0) }
+    var profileMemberUid by rememberSaveable { mutableStateOf<String?>(null) }
     val context = LocalContext.current
     LaunchedEffect(state.user?.uid) { if (state.user != null) password = "" }
     LaunchedEffect(state.profileSaveVersion) {
@@ -140,10 +141,10 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
                     } }
                     item { TabRow(selectedTabIndex = selectedTab) {
                         Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { Text("Leaderboard") })
-                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("● Live (${state.members.count { now - it.updatedAt <= 90_000L && it.live?.isFocusRunning == true }})") })
+                        Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { Text("● Live (${state.members.count { isLiveFocusing(it, now) }})") })
                     } }
-                    if (selectedTab == 0) item { WeeklyBoard(state, settings.liquidUi, now) }
-                    else item { LiveRoom(state, settings.liquidUi, now, vm, onOpenFocus, timer) }
+                    if (selectedTab == 0) item { WeeklyBoard(state, settings.liquidUi, now, onMemberClick = { profileMemberUid = it }) }
+                    else item { LiveRoom(state, settings.liquidUi, now, vm, onOpenFocus, timer, onMemberClick = { profileMemberUid = it }) }
                     item {
                         val cs = MaterialTheme.colorScheme
                         val actionColors = ButtonDefaults.outlinedButtonColors(
@@ -176,6 +177,13 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
                 TextButton(onClick = vm::clearError) { Text("Dismiss") }
             } } }
         }
+    }
+
+    profileMemberUid?.let { uid ->
+        val ranked = rankedMembers(state.members)
+        val index = ranked.indexOfFirst { it.uid == uid }
+        if (index >= 0) MemberProfileSheet(ranked[index], rank = index + 1, onDismiss = { profileMemberUid = null })
+        else LaunchedEffect(uid) { profileMemberUid = null }
     }
 
     when (dialog) {
@@ -248,16 +256,17 @@ private fun ProfileCard(state: GroupsState, liquid: Boolean, onEdit: () -> Unit,
 }
 
 @Composable
-private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsViewModel, onOpenFocus: () -> Unit, timer: TimerState) {
+private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsViewModel, onOpenFocus: () -> Unit, timer: TimerState, onMemberClick: (String) -> Unit) {
     val group = state.selectedGroup ?: return
     val context = LocalContext.current
     val uid = state.user?.uid
-    val locallyActive = uid != null && timer.isFocusRunning
+    // A paused focus block still counts as focusing; it just shows "Paused" under the clock.
+    val locallyActive = uid != null && timer.isFocusInProgress
     val own = if (locallyActive) state.members.firstOrNull { it.uid == uid }?.copy(live = timer, updatedAt = now, name = state.user?.name.orEmpty(), avatarId = state.user?.avatarId.orEmpty())
         ?: state.user?.let { user -> GroupMember(user.uid, user.name, 0L, timer, now, avatarId = user.avatarId) } else null
     val members = state.members.filterNot { locallyActive && it.uid == uid }.let { if (own != null) it + own else it }
-    val active = members.filter { now - it.updatedAt <= 90_000L && it.live?.isFocusRunning == true }
-    val inactive = members.filterNot { now - it.updatedAt <= 90_000L && it.live?.isFocusRunning == true }
+    val active = members.filter { isLiveFocusing(it, now) }
+    val inactive = members.filterNot { isLiveFocusing(it, now) }
     GlassCard(Modifier.fillMaxWidth(), liquid) {
         Text("Focusing now", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(12.dp))
@@ -271,10 +280,13 @@ private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsV
                     OutlinedButton(onClick = { val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "Join ${group.name} on Flowstate with code: ${group.id}"); context.startActivity(Intent.createChooser(send, "Invite friends")) }, modifier = Modifier.size(58.dp)) { Text("+") }
                     Text("Invite a friend", maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                 }
-                rowUsers.forEach { member -> Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                rowUsers.forEach { member -> Column(Modifier.weight(1f).memberClick(member, onMemberClick), horizontalAlignment = Alignment.CenterHorizontally) {
                     ProfileAvatar(member.name, member.avatarId, 58)
                     Text(member.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                    Text(clock(member.live!!.elapsedAt(now)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val live = member.live!!
+                    // elapsedAt freezes at pausedAt, so a paused member's clock stops where they paused.
+                    Text(clock(live.elapsedAt(now)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (live.status == Status.PAUSED) Text("Paused", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                 } }
                 repeat(((if (rowIndex == 0) 2 else 3) - rowUsers.size).coerceAtLeast(0)) { Spacer(Modifier.weight(1f)) }
             }
@@ -284,27 +296,34 @@ private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsV
             Spacer(Modifier.height(12.dp)); Text("Not focusing", style = MaterialTheme.typography.titleMedium)
             inactive.chunked(3).forEach { row ->
                 Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { member -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                    row.forEach { member -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f).memberClick(member, onMemberClick)) {
                         ProfileAvatar(member.name, member.avatarId, 44)
                         Text(member.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
-                        Text(when { now - member.updatedAt > 90_000L -> "Offline"; member.live?.status == Status.PAUSED -> "Paused"; member.live?.phase != com.flowstate.focus.domain.Phase.IDLE && member.live != null -> "Break"; else -> "Idle" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // Today's focus total (IST day) instead of an Offline/Idle status. "—" means the
+                        // member's app is too old to share it.
+                        val today = member.todayFocusMs?.let(::duration) ?: "—"
+                        Text(today, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.semantics { contentDescription = "Focused $today today" })
                     } }
                     repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onOpenFocus, modifier = Modifier.fillMaxWidth()) { Text("Start Focus") }
+        // No second session while one is running or paused on this device.
+        if (!timer.isFocusInProgress) {
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = onOpenFocus, modifier = Modifier.fillMaxWidth()) { Text("Start Focus") }
+        }
     }
 }
 
 @Composable
-private fun WeeklyBoard(state: GroupsState, liquid: Boolean, now: Long) {
+private fun WeeklyBoard(state: GroupsState, liquid: Boolean, now: Long, onMemberClick: (String) -> Unit) {
     val istZone = ZoneId.of("Asia/Kolkata")
     val todayIst = Instant.ofEpochMilli(now).atZone(istZone).toLocalDate()
     val monday = todayIst.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
     val dateFmt = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
-    val sorted = state.members.sortedWith(compareByDescending<GroupMember> { it.weeklyFocusMs }.thenBy { it.name.lowercase(Locale.ROOT) }.thenBy { it.uid })
+    val sorted = rankedMembers(state.members)
     GlassCard(Modifier.fillMaxWidth(), liquid) {
         Text("This week", style = MaterialTheme.typography.titleLarge)
         Text("Monday–Sunday · IST · ${monday.format(dateFmt)} – ${monday.plusDays(6).format(dateFmt)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -313,7 +332,7 @@ private fun WeeklyBoard(state: GroupsState, liquid: Boolean, now: Long) {
         Text("Week ends in ${duration((weekEnd - now).coerceAtLeast(0))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         sorted.forEachIndexed { index, member ->
             val self = member.uid == state.user?.uid
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp).then(if (self) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f), MaterialTheme.shapes.small).padding(6.dp) else Modifier), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().padding(top = 14.dp).clip(MaterialTheme.shapes.small).then(if (self) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f), MaterialTheme.shapes.small) else Modifier).memberClick(member, onMemberClick).then(if (self) Modifier.padding(6.dp) else Modifier), verticalAlignment = Alignment.CenterVertically) {
                 Text("${index + 1}", modifier = Modifier.size(30.dp).semantics { contentDescription = "Rank ${index + 1}" }, style = MaterialTheme.typography.titleMedium)
                 ProfileAvatar(member.name, member.avatarId, 38, ring = when (index) { 0 -> 0xFFFFC107; 1 -> 0xFFB0BEC5; 2 -> 0xFFB87333; else -> null })
                 Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(member.name + if (self) " · You" else "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall); Text("Weekly focus", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -322,6 +341,21 @@ private fun WeeklyBoard(state: GroupsState, liquid: Boolean, now: Long) {
         }
     }
 }
+
+/**
+ * Focusing now: a fresh presence (heartbeat within 90 s) with a focus block running or paused. The
+ * live map's "status" field (RUNNING / PAUSED) is what carries the paused state.
+ */
+private fun isLiveFocusing(member: GroupMember, now: Long): Boolean =
+    now - member.updatedAt <= 90_000L && member.live?.isFocusInProgress == true
+
+/** Leaderboard order, shared by the board and the profile sheet's rank. */
+private fun rankedMembers(members: List<GroupMember>): List<GroupMember> =
+    members.sortedWith(compareByDescending<GroupMember> { it.weeklyFocusMs }.thenBy { it.name.lowercase(Locale.ROOT) }.thenBy { it.uid })
+
+/** Tapping a member anywhere opens their profile sheet. */
+private fun Modifier.memberClick(member: GroupMember, onClick: (String) -> Unit): Modifier =
+    clickable(onClickLabel = "View ${member.name}'s profile") { onClick(member.uid) }
 
 @Composable
 private fun TextEntryDialog(title: String, label: String, value: String, update: (String) -> Unit, confirm: () -> Unit, busy: Boolean, dismiss: () -> Unit) = AlertDialog(onDismissRequest = dismiss, title = { Text(title) }, text = { OutlinedTextField(value, update, label = { Text(label) }, singleLine = true, modifier = Modifier.fillMaxWidth()) }, confirmButton = { TextButton(onClick = confirm, enabled = value.isNotBlank() && !busy) { Text("Continue") } }, dismissButton = { TextButton(onClick = dismiss) { Text("Cancel") } })
@@ -334,7 +368,7 @@ private fun clock(ms: Long): String {
     return "%d:%02d:%02d".format(Locale.ROOT, seconds / 3600, (seconds / 60) % 60, seconds % 60)
 }
 
-private fun duration(ms: Long): String {
+internal fun duration(ms: Long): String {
     val minutes = ms.coerceAtLeast(0) / 60_000
     val hours = minutes / 60
     return if (hours > 0) "${hours}h ${minutes % 60}m" else "${minutes}m"

@@ -61,6 +61,7 @@ import com.flowstate.focus.service.FocusBlockerService
 import com.flowstate.focus.ui.components.Entrance
 import com.flowstate.focus.ui.components.GlassCard
 import com.flowstate.focus.ui.components.ScreenContainer
+import com.flowstate.focus.ui.components.formatDuration
 import com.flowstate.focus.ui.components.screenContentPadding
 import com.flowstate.focus.ui.theme.AccentColors
 import kotlin.math.roundToInt
@@ -144,7 +145,8 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                         SliderRow("Long break", s.longBreakMin, 5..60, "min") { v -> vm.update { it.copy(longBreakMin = v) } }
                         SliderRow("Rounds before long break", s.rounds, 2..8, "") { v -> vm.update { it.copy(rounds = v) } }
                         SliderRow("Countdown default", s.countdownMin, 5..180, "min") { v -> vm.update { it.copy(countdownMin = v) } }
-                        SliderRow("Daily goal", s.dailyGoalMin, 15..480, "min") { v -> vm.update { it.copy(dailyGoalMin = v) } }
+                        // Up to 16 hours, in 15-minute steps.
+                        SliderRow("Daily goal", s.dailyGoalMin, DAILY_GOAL_RANGE_MIN, "", step = 15, format = { formatDuration(it * 60_000L) }) { v -> vm.update { it.copy(dailyGoalMin = v) } }
                         ToggleRow("Keep screen on", "While a session is running", s.keepScreenOn) { v -> vm.update { it.copy(keepScreenOn = v) } }
                     }
                 }
@@ -233,19 +235,34 @@ private fun LinkRow(title: String, subtitle: String, onClick: () -> Unit) {
     }
 }
 
-/** Keeps the thumb position local while dragging and writes to DataStore once, when the finger lifts. */
+/** Daily focus goal limits in minutes: 15 minutes to 16 hours. */
+private val DAILY_GOAL_RANGE_MIN = 15..960
+
+/**
+ * Keeps the thumb position local while dragging and writes to DataStore once, when the finger lifts.
+ * A [step] above 1 snaps the slider to multiples of it; [format] overrides the "value suffix" label.
+ */
 @Composable
-private fun SliderRow(title: String, value: Int, range: IntRange, suffix: String, onCommit: (Int) -> Unit) {
-    var local by remember(value) { mutableFloatStateOf(value.toFloat()) }
+private fun SliderRow(
+    title: String,
+    value: Int,
+    range: IntRange,
+    suffix: String,
+    step: Int = 1,
+    format: ((Int) -> String)? = null,
+    onCommit: (Int) -> Unit,
+) {
+    var local by remember(value) { mutableFloatStateOf(value.coerceIn(range).toFloat()) }
+    val snapped = if (step > 1) ((local / step).roundToInt() * step).coerceIn(range) else local.roundToInt()
     Column {
         Row(Modifier.fillMaxWidth()) {
             Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Text("${local.roundToInt()} $suffix".trim(), style = MaterialTheme.typography.titleSmall)
+            Text(format?.invoke(snapped) ?: "$snapped $suffix".trim(), style = MaterialTheme.typography.titleSmall)
         }
         Slider(
             value = local,
             onValueChange = { local = it },
-            onValueChangeFinished = { onCommit(local.roundToInt()) },
+            onValueChangeFinished = { onCommit(snapped) },
             valueRange = range.first.toFloat()..range.last.toFloat(),
         )
     }

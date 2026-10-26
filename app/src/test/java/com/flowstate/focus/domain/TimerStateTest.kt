@@ -36,4 +36,23 @@ class TimerStateTest {
         assertTrue(stopwatch.countsUp)
         assertEquals(3_600_000L, stopwatch.elapsedAt(3_601_000))
     }
+
+    @Test fun retiredFlowModeFallsBackSafely() {
+        assertEquals(TimerMode.STOPWATCH, TimerMode.fromName("FLOW"))
+        assertEquals(TimerMode.POMODORO, TimerMode.fromName("SOMETHING_ELSE"))
+        assertEquals(TimerMode.POMODORO, TimerMode.fromName(null))
+        assertEquals(TimerMode.COUNTDOWN, TimerMode.fromName("COUNTDOWN"))
+        assertEquals("Flow", TimerMode.labelFor("FLOW"))
+        assertEquals("Stopwatch", TimerMode.labelFor("STOPWATCH"))
+        assertEquals(listOf("POMODORO", "COUNTDOWN", "STOPWATCH"), TimerMode.entries.map { it.name })
+    }
+
+    @Test fun breaksAreNotFocusInProgress() {
+        val rest = TimerState(phase = Phase.SHORT_BREAK, status = Status.RUNNING, phaseDurationMs = 300_000, standaloneBreak = true)
+        assertTrue(rest.isBreak)
+        assertFalse(rest.isFocusInProgress)
+        val paused = TimerState(phase = Phase.FOCUS, status = Status.PAUSED, phaseDurationMs = 300_000)
+        assertTrue(paused.isFocusInProgress)
+        assertFalse(TimerState().isFocusInProgress)
+    }
 }

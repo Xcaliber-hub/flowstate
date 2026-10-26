@@ -9,14 +9,11 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -25,13 +22,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
 /**
- * Translucent surface with a hairline border and a soft tinted glow.
+ * Translucent surface with a hairline border and a soft tinted glow (see [Depth]).
  *
  * Real backdrop blur is deliberately not used here: it is expensive on mid-range GPUs and is the
  * most common cause of dropped frames. A translucent layer over the AMOLED background gives the
@@ -43,25 +39,14 @@ fun GlassCard(
     liquid: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val cs = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(28.dp)
-    Surface(
-        modifier = modifier
-            .breathing(liquid)
-            .shadow(6.dp, shape, ambientColor = cs.primary.copy(alpha = 0.18f), spotColor = cs.primary.copy(alpha = 0.18f)),
-        shape = shape,
-        color = cs.surfaceContainer.copy(alpha = if (cs.background == androidx.compose.ui.graphics.Color.Black) 0.96f else 0.78f),
-        // Alpha-adjusted colors cannot be matched by Surface's automatic contentColorFor lookup.
-        contentColor = cs.onSurface,
-        border = BorderStroke(
-            1.dp,
-            if (cs.background == androidx.compose.ui.graphics.Color.Black) cs.outlineVariant
-            else cs.outlineVariant.copy(alpha = 0.35f),
-        ),
-    ) {
+    // The breathing scale is applied before the shadow so the shadow scales with the card.
+    DepthSurface(shape = CardShape, modifier = modifier.breathing(liquid)) {
         Column(Modifier.padding(20.dp), content = content)
     }
 }
+
+/** Corner shape shared by every card. */
+val CardShape = RoundedCornerShape(28.dp)
 
 /** Liquid UI: a barely visible scale pulse. The scale is read in the draw phase, so nothing recomposes. */
 private fun Modifier.breathing(enabled: Boolean): Modifier =

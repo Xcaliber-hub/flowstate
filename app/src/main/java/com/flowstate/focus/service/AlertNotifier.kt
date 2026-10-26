@@ -33,6 +33,7 @@ class AlertNotifier @Inject constructor(@ApplicationContext private val context:
             TimerEvent.FOCUS_DONE_BREAK_NEXT -> "Focus complete" to "Nice work. Time for a break."
             TimerEvent.BREAK_DONE_FOCUS_NEXT -> "Break over" to "Your next focus block has started."
             TimerEvent.SESSION_DONE -> "Session complete" to "You stayed with it to the end."
+            TimerEvent.BREAK_DONE -> "Break over" to "Ready when you are. Start your next focus block."
         }
         post(Notifications.ID_ALERT, title, text)
     }

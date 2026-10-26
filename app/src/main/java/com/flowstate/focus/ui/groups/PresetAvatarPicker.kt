@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,10 +28,13 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.flowstate.focus.R
 
-// All twelve approved designs are bundled locally; no uploads or remote images.
+// All twenty-four approved designs are bundled locally; no uploads or remote images.
+private const val PICKER_COLUMNS = 3
+
 private data class AvatarArtwork(val id: String, val label: String, val resource: Int)
 private val approvedArtwork = listOf(
     AvatarArtwork("sprout", "Sprout", R.drawable.avatar_sprout),
@@ -45,6 +49,18 @@ private val approvedArtwork = listOf(
     AvatarArtwork("jelly", "Jelly", R.drawable.avatar_jelly),
     AvatarArtwork("comet", "Comet", R.drawable.avatar_comet),
     AvatarArtwork("bloom", "Bloom", R.drawable.avatar_bloom),
+    AvatarArtwork("cat", "Cat", R.drawable.avatar_cat),
+    AvatarArtwork("owl", "Owl", R.drawable.avatar_owl),
+    AvatarArtwork("panda", "Panda", R.drawable.avatar_panda),
+    AvatarArtwork("penguin", "Penguin", R.drawable.avatar_penguin),
+    AvatarArtwork("cactus", "Cactus", R.drawable.avatar_cactus),
+    AvatarArtwork("octopus", "Octopus", R.drawable.avatar_octopus),
+    AvatarArtwork("mushroom", "Mushroom", R.drawable.avatar_mushroom),
+    AvatarArtwork("coffee", "Coffee", R.drawable.avatar_coffee),
+    AvatarArtwork("rocket", "Rocket", R.drawable.avatar_rocket),
+    AvatarArtwork("wave", "Wave", R.drawable.avatar_wave),
+    AvatarArtwork("snowflake", "Snowflake", R.drawable.avatar_snowflake),
+    AvatarArtwork("bolt", "Bolt", R.drawable.avatar_bolt),
 )
 
 @Composable
@@ -71,7 +87,8 @@ internal fun PresetAvatarPicker(name: String, selectedId: String, enabled: Boole
         Text("Choose an avatar", style = MaterialTheme.typography.titleSmall)
         Text("Bundled presets only. No photo uploads.", style = MaterialTheme.typography.bodySmall,
             color = colors.onSurfaceVariant)
-        approvedArtwork.chunked(2).forEach { row ->
+        // Three per row keeps all twenty-four presets to eight compact rows in the scrolling dialog.
+        approvedArtwork.chunked(PICKER_COLUMNS).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { artwork ->
                     val selected = selectedId == artwork.id
@@ -81,17 +98,19 @@ internal fun PresetAvatarPicker(name: String, selectedId: String, enabled: Boole
                             .border(BorderStroke(if (selected) 2.dp else 1.dp,
                                 if (selected) colors.primary else colors.outline), MaterialTheme.shapes.medium)
                             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(artwork.id) })
-                            .padding(8.dp),
+                            .padding(horizontal = 4.dp, vertical = 8.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        ProfileAvatar(name, artwork.id, 52)
-                        Text(artwork.label, style = MaterialTheme.typography.labelLarge,
+                        ProfileAvatar(name, artwork.id, 48)
+                        Text(artwork.label, style = MaterialTheme.typography.labelMedium, maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             color = if (selected) colors.onSecondaryContainer else colors.onSurface)
                         Text(if (selected) "Selected" else "Select", style = MaterialTheme.typography.labelSmall,
                             color = if (selected) colors.onSecondaryContainer else colors.onSurfaceVariant)
                     }
                 }
+                repeat(PICKER_COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
         TextButton(onClick = { onSelect("") }, enabled = enabled,

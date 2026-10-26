@@ -71,6 +71,53 @@ class TimerEngine @Inject constructor(
         }
     }
 
+    /**
+     * Starts a break on its own, outside a Pomodoro cycle. Only allowed when nothing is running, so it
+     * can never overlap a focus block. A notification is posted when it ends, even in the background.
+     */
+    fun startBreak(durationMs: Long, mode: TimerMode) {
+        synchronized(lock) {
+            if (_state.value.status != Status.IDLE || durationMs <= 0L) return@synchronized
+            publish(
+                TimerState(
+                    mode = mode,
+                    phase = Phase.SHORT_BREAK,
+                    status = Status.RUNNING,
+                    phaseDurationMs = durationMs,
+                    phaseStartedAt = System.currentTimeMillis(),
+                    standaloneBreak = true,
+                )
+            )
+            scheduleCompletion()
+        }
+    }
+
+    /**
+     * Cuts the current break short to get back to work. Inside a Pomodoro cycle the next focus round
+     * starts right away and true is returned; a standalone break simply ends, returning false so the
+     * caller can start a new session with the user's current setup. ([stop] ends a break outright.)
+     */
+    fun skipBreak(): Boolean = synchronized(lock) {
+        val s = _state.value
+        if (!s.isBreak) return@synchronized false
+        completionJob?.cancel()
+        if (s.mode == TimerMode.POMODORO && !s.standaloneBreak) {
+            publish(
+                s.copy(
+                    phase = Phase.FOCUS,
+                    status = Status.RUNNING,
+                    phaseDurationMs = s.plan.focusMs,
+                    phaseStartedAt = System.currentTimeMillis(),
+                    pausedAt = 0L,
+                )
+            )
+            scheduleCompletion()
+            return@synchronized true
+        }
+        finish()
+        false
+    }
+
     /** Ignored while a strict focus block is running. */
     fun pause() {
         synchronized(lock) {
@@ -99,25 +146,8 @@ class TimerEngine @Inject constructor(
             if (s.strict && s.phase == Phase.FOCUS && !force) return@synchronized
             completionJob?.cancel()
             val now = System.currentTimeMillis()
-            if (s.phase == Phase.FOCUS) {
-                val elapsed = s.elapsedAt(now)
-                record(s, elapsed, completed = s.countsUp)
-                // Flow mode earns a break worth a fifth of the time you just focused.
-                if (s.mode == TimerMode.FLOW && elapsed >= 5 * 60_000L) {
-                    publish(
-                        s.copy(
-                            phase = Phase.SHORT_BREAK,
-                            status = Status.RUNNING,
-                            phaseDurationMs = (elapsed / 5).coerceAtMost(30 * 60_000L),
-                            phaseStartedAt = now,
-                            pausedAt = 0L,
-                            strict = false,
-                        )
-                    )
-                    scheduleCompletion()
-                    return@synchronized
-                }
-            }
+            // Breaks are never recorded, so ending one early never counts as focus time.
+            if (s.phase == Phase.FOCUS) record(s, s.elapsedAt(now), completed = s.countsUp)
             finish()
         }
     }
@@ -160,13 +190,13 @@ class TimerEngine @Inject constructor(
                     }
                 }
                 Phase.SHORT_BREAK, Phase.LONG_BREAK -> {
-                    if (s.mode == TimerMode.POMODORO) {
+                    if (s.mode == TimerMode.POMODORO && !s.standaloneBreak) {
                         publish(s.copy(phase = Phase.FOCUS, phaseDurationMs = s.plan.focusMs, phaseStartedAt = endAt))
                         alerts.alert(TimerEvent.BREAK_DONE_FOCUS_NEXT)
                         scheduleCompletion()
                     } else {
                         finish()
-                        alerts.alert(TimerEvent.SESSION_DONE)
+                        alerts.alert(TimerEvent.BREAK_DONE)
                     }
                 }
                 Phase.IDLE -> Unit
@@ -210,6 +240,7 @@ class TimerEngine @Inject constructor(
                 putLong("pShort", s.plan.shortBreakMs)
                 putLong("pLong", s.plan.longBreakMs)
                 putInt("pRounds", s.plan.rounds)
+                putBoolean("standaloneBreak", s.standaloneBreak)
             }
         }.apply()
     }
@@ -219,7 +250,8 @@ class TimerEngine @Inject constructor(
             val status = Status.valueOf(prefs.getString("status", null) ?: return)
             if (status == Status.IDLE) return
             TimerState(
-                mode = TimerMode.valueOf(prefs.getString("mode", null) ?: return),
+                // fromName maps the retired Flow mode, so an upgrade mid-session never drops the block.
+                mode = TimerMode.fromName(prefs.getString("mode", null) ?: return),
                 phase = Phase.valueOf(prefs.getString("phase", null) ?: return),
                 status = status,
                 phaseDurationMs = prefs.getLong("duration", 0L),
@@ -234,6 +266,7 @@ class TimerEngine @Inject constructor(
                     longBreakMs = prefs.getLong("pLong", Plan().longBreakMs),
                     rounds = prefs.getInt("pRounds", Plan().rounds),
                 ),
+                standaloneBreak = prefs.getBoolean("standaloneBreak", false),
             )
         }.getOrNull() ?: return
 

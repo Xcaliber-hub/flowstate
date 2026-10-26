@@ -13,6 +13,9 @@ const group = (db, id = gid) => doc(db, 'groups', id);
 const member = (db, uid) => doc(db, 'groups', gid, 'members', uid);
 const alice = () => env.authenticatedContext('alice').firestore();
 const bob = () => env.authenticatedContext('bob').firestore();
+const newAvatars = ['cat', 'owl', 'panda', 'penguin', 'cactus', 'octopus', 'mushroom', 'coffee', 'rocket', 'wave', 'snowflake', 'bolt'];
+const allAvatars = ['sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit', 'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom', ...newAvatars];
+const stats = { weeklySessions: 10, todayFocusMs: 4_320_000, dayKey: '2026-10-26' };
 const payload = (avatarId) => ({ name: 'Alice', ...(avatarId === undefined ? {} : { avatarId }), photoUrl: '', weeklyFocusMs: 0, weekKey: '2026-W43', live: {}, updatedAt: serverTimestamp() });
 after(() => env.cleanup());
 beforeEach(async () => {
@@ -79,7 +82,7 @@ describe('Flowstate Firestore authorization', () => {
   it('accepts only approved optional avatar IDs in owner profiles and group members', async () => {
     const db = alice();
     const profile = doc(db, 'users', 'alice');
-    for (const avatarId of ['sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit', 'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom', '']) {
+    for (const avatarId of [...allAvatars, '']) {
       await assertSucceeds(setDoc(profile, { name: 'Alice', avatarId }));
       await assertSucceeds(setDoc(member(db, 'alice'), payload(avatarId)));
     }
@@ -162,7 +165,9 @@ describe('Flowstate Firestore authorization', () => {
     await assertFails(setDoc(doc(db, 'users', 'alice'), { name: '', avatarId: 'bloom' }));
   });
   it('reproduces the six-work-six-fail symptom when the deployed rules are still old', async () => {
-    const oldRules = rules.replace("'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom'", '');
+    // Keep only the original six presets in the avatar list.
+    const oldRules = rules.replace(/'summit',[\s\S]*?\n(\s*)\]\);/, "'summit'\n$1]);");
+    assert.notEqual(oldRules, rules);
     const oldEnv = await initializeTestEnvironment({ projectId: 'demo-flowstate-six-avatar', firestore: { rules: oldRules } });
     try {
       const profile = doc(oldEnv.authenticatedContext('alice').firestore(), 'users', 'alice');
@@ -174,5 +179,44 @@ describe('Flowstate Firestore authorization', () => {
         assert.equal((await getDoc(profile)).data().avatarId, 'summit');
       }
     } finally { await oldEnv.cleanup(); }
+  });
+  it('accepts all 24 presets and rejects the 12 newest under the 1.1.2/1.1.3 rules', async () => {
+    const db = alice();
+    for (const avatarId of newAvatars) {
+      await assertSucceeds(setDoc(doc(db, 'users', 'alice'), { name: 'Alice', avatarId }));
+      await assertSucceeds(setDoc(member(db, 'alice'), { ...payload(avatarId), ...stats }));
+    }
+    const oldRules = rules.replace(/'bloom',[\s\S]*?\n(\s*)\]\);/, "'bloom'\n$1]);");
+    assert.notEqual(oldRules, rules);
+    const oldEnv = await initializeTestEnvironment({ projectId: 'demo-flowstate-twelve-avatar', firestore: { rules: oldRules } });
+    try {
+      const profile = doc(oldEnv.authenticatedContext('alice').firestore(), 'users', 'alice');
+      await assertSucceeds(setDoc(profile, { name: 'Alice', avatarId: 'bloom' }));
+      for (const avatarId of newAvatars) await assertFails(setDoc(profile, { name: 'Alice', avatarId }));
+    } finally { await oldEnv.cleanup(); }
+  });
+  it('accepts optional member stats from 1.1.4 and the legacy payload without them', async () => {
+    const db = alice();
+    await assertSucceeds(setDoc(member(db, 'alice'), payload('fox')));
+    await assertSucceeds(setDoc(member(db, 'alice'), { ...payload('fox'), ...stats }));
+    await assertSucceeds(setDoc(member(db, 'alice'), { ...payload('fox'), weeklySessions: 0, todayFocusMs: 0, dayKey: '2026-01-01' }));
+    const saved = (await assertSucceeds(getDoc(member(bob(), 'alice')))).data();
+    assert.equal(saved.weeklySessions, 0);
+    for (const changes of [{ weeklySessions: -1 }, { weeklySessions: 1.5 }, { weeklySessions: '3' }, { weeklySessions: 10001 },
+      { todayFocusMs: -1 }, { todayFocusMs: 86_400_001 }, { todayFocusMs: '0' },
+      { dayKey: 26 }, { dayKey: '26-10-2026' }, { dayKey: '2026-10-26T00' }]) {
+      await assertFails(setDoc(member(db, 'alice'), { ...payload('fox'), ...stats, ...changes }));
+    }
+  });
+  it('accepts running and paused live snapshots and rejects unknown timer states', async () => {
+    const db = alice();
+    const live = (status, extra = {}) => ({ mode: 'POMODORO', phase: 'FOCUS', status, phaseDurationMs: 1_500_000, phaseStartedAt: 1_000, pausedAt: 0, subject: '', ...extra });
+    await assertSucceeds(setDoc(member(db, 'alice'), { ...payload('fox'), ...stats, live: live('RUNNING') }));
+    await assertSucceeds(setDoc(member(db, 'alice'), { ...payload('fox'), ...stats, live: live('PAUSED', { pausedAt: 901_000 }) }));
+    await assertSucceeds(setDoc(member(db, 'alice'), { ...payload('fox'), live: { ...live('IDLE'), phase: 'IDLE', mode: 'FLOW' } }));
+    assert.equal((await assertSucceeds(getDoc(member(bob(), 'alice')))).data().live.mode, 'FLOW');
+    for (const bad of [live('SLEEPING'), { ...live('RUNNING'), phase: 'NAP' }, live('PAUSED', { pausedAt: -5 }), live('PAUSED', { pausedAt: 'x' })]) {
+      await assertFails(setDoc(member(db, 'alice'), { ...payload('fox'), ...stats, live: bad }));
+    }
   });
 });

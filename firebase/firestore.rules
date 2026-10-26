@@ -1,12 +1,14 @@
 rules_version = '2';
-// Flowstate 1.1.2 — all 12 avatars. Publish to flowstate-241f0 / (default).
+// Flowstate 1.1.4 — all 24 avatars, member session/daily stats. Publish to flowstate-241f0 / (default).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function validAvatar(data) {
       return !('avatarId' in data) || (data.avatarId is string && data.avatarId in [
         '', 'sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit',
-        'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom'
+        'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom',
+        'cat', 'owl', 'panda', 'penguin', 'cactus', 'octopus',
+        'mushroom', 'coffee', 'rocket', 'wave', 'snowflake', 'bolt'
       ]);
     }
     function validName(data) {
@@ -19,12 +21,29 @@ service cloud.firestore {
       return signedIn() && groupExists(gid)
         && request.auth.uid in get(/databases/$(database)/documents/groups/$(gid)).data.memberIds;
     }
+    // Optional since 1.1.4; 1.1.3 clients omit them and stay valid.
+    function validMemberStats(data) {
+      return (!('weeklySessions' in data) || (data.weeklySessions is int
+          && data.weeklySessions >= 0 && data.weeklySessions <= 10000))
+        && (!('todayFocusMs' in data) || (data.todayFocusMs is int
+          && data.todayFocusMs >= 0 && data.todayFocusMs <= 86400000))
+        && (!('dayKey' in data) || (data.dayKey is string
+          && data.dayKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')));
+    }
+    // Live timer snapshot. "status" carries running/paused; every key stays optional so older
+    // clients' snapshots (and an empty map) remain valid.
+    function validLive(live) {
+      return (!('status' in live) || live.status in ['IDLE', 'RUNNING', 'PAUSED'])
+        && (!('phase' in live) || live.phase in ['IDLE', 'FOCUS', 'SHORT_BREAK', 'LONG_BREAK'])
+        && (!('pausedAt' in live) || (live.pausedAt is int && live.pausedAt >= 0));
+    }
     function validMember(data) {
-      return data.keys().hasOnly(['name', 'avatarId', 'photoUrl', 'weeklyFocusMs', 'weekKey', 'live', 'updatedAt'])
-        && validName(data) && validAvatar(data)
+      return data.keys().hasOnly(['name', 'avatarId', 'photoUrl', 'weeklyFocusMs', 'weekKey', 'live', 'updatedAt',
+          'weeklySessions', 'todayFocusMs', 'dayKey'])
+        && validName(data) && validAvatar(data) && validMemberStats(data)
         && data.photoUrl is string && data.photoUrl == ''
         && data.weeklyFocusMs is int && data.weeklyFocusMs >= 0
-        && data.weekKey is string && data.live is map
+        && data.weekKey is string && data.live is map && validLive(data.live)
         && data.updatedAt == request.time;
     }
     match /groups/{gid} {

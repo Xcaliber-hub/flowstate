@@ -5,7 +5,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.widthIn
@@ -20,7 +19,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -61,16 +59,12 @@ fun FloatingNavBar(
         ),
         label = "navOffset",
     )
-    Surface(
-        modifier = modifier.widthIn(max = 600.dp).navigationBarsPadding().padding(bottom = 16.dp).offset(y = offsetY),
+    DepthSurface(
         shape = CircleShape,
+        modifier = modifier.widthIn(max = 600.dp).navigationBarsPadding().padding(bottom = 16.dp).offset(y = offsetY),
+        elevation = Depth.Floating,
         // Keep the floating bar visually distinct over content in both themes.
-        color = cs.surfaceContainerHigh.copy(alpha = if (cs.background == Color.Black) 0.98f else 0.82f),
-        shadowElevation = 14.dp,
-        border = BorderStroke(
-            1.dp,
-            if (cs.background == Color.Black) cs.outlineVariant else cs.outlineVariant.copy(alpha = 0.4f),
-        ),
+        colors = depthColors(base = cs.surfaceContainerHigh, darkAlpha = 0.98f, lightAlpha = 0.82f),
     ) {
         Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             tabs.forEach { tab ->

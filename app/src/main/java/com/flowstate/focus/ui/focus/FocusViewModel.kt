@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.ZoneId
 import javax.inject.Inject
@@ -56,7 +57,7 @@ class FocusViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val engine: TimerEngine,
     settingsRepo: SettingsRepository,
-    sessionRepo: SessionRepository,
+    private val sessionRepo: SessionRepository,
 ) : ViewModel() {
 
     private val selection = MutableStateFlow(Selection())
@@ -95,22 +96,52 @@ class FocusViewModel @Inject constructor(
     fun setStrict(strict: Boolean) = selection.update { it.copy(strict = strict) }
     fun setSubject(subject: String) = selection.update { it.copy(subject = subject.take(40)) }
 
+    /**
+     * Starts a focus block from what the user picked on the idle screen. Reads the selection directly
+     * rather than [ui], which may still show the break that was just ended.
+     */
     fun start() {
-        val s = ui.value
-        val st = s.settings
-        val plan = when (s.mode) {
-            TimerMode.POMODORO -> Plan(s.durationMin * 60_000L, st.shortBreakMin * 60_000L, st.longBreakMin * 60_000L, st.rounds)
-            TimerMode.COUNTDOWN -> Plan(focusMs = s.durationMin * 60_000L)
-            else -> Plan()
+        // Never start a second session on top of one that is running or paused.
+        if (engine.state.value.isActive) return
+        val st = ui.value.settings
+        val sel = selection.value
+        val mode = sel.mode
+        val durationMin = sel.durationMin ?: defaultMinutes(mode, st)
+        val plan = when (mode) {
+            TimerMode.POMODORO -> Plan(durationMin * 60_000L, st.shortBreakMin * 60_000L, st.longBreakMin * 60_000L, st.rounds)
+            TimerMode.COUNTDOWN -> Plan(focusMs = durationMin * 60_000L)
+            TimerMode.STOPWATCH -> Plan()
         }
-        engine.start(s.mode, plan, s.strict, s.subject.trim())
+        engine.start(mode, plan, sel.strict ?: st.strictByDefault, sel.subject.trim())
         startService()
+    }
+
+    /** Starts a standalone break. A notification is posted when it ends, also in the background. */
+    fun startBreak(minutes: Int) {
+        if (engine.state.value.isActive) return
+        engine.startBreak(minutes.coerceIn(1, MAX_BREAK_MIN) * 60_000L, selection.value.mode)
+        startService()
+    }
+
+    /** From a break: jump into the next Pomodoro round, or end the break and start a fresh session. */
+    fun startFocusFromBreak() {
+        if (!engine.skipBreak()) start()
+    }
+
+    /** Hold-to-delete on a past session. Stats and streaks recompute from the Room flow. */
+    fun deleteSession(id: Long) {
+        viewModelScope.launch { sessionRepo.delete(id) }
     }
 
     fun pause() = engine.pause()
     fun resume() = engine.resume()
     fun stop() = engine.stop()
     fun forceStop() = engine.stop(force = true)
+
+    companion object {
+        val BreakPresetsMin = listOf(5, 10, 15)
+        const val MAX_BREAK_MIN = 60
+    }
 
     private fun startService() =
         ContextCompat.startForegroundService(context, Intent(context, TimerService::class.java))

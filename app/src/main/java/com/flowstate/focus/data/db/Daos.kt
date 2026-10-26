@@ -17,6 +17,9 @@ interface SessionDao {
 
     @Query("SELECT * FROM sessions ORDER BY startedAt DESC")
     suspend fun all(): List<SessionEntity>
+
+    @Query("DELETE FROM sessions WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }
 
 @Dao

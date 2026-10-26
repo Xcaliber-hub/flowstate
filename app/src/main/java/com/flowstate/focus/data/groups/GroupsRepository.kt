@@ -3,11 +3,15 @@ package com.flowstate.focus.data.groups
 import android.content.Context
 import com.flowstate.focus.R
 import com.flowstate.focus.data.repo.SessionRepository
+import com.flowstate.focus.domain.groups.dailyTotalIst
+import com.flowstate.focus.domain.groups.dayKeyIst
+import com.flowstate.focus.domain.groups.weeklySessionCount
 import com.flowstate.focus.domain.groups.weeklyTotal
 import com.flowstate.focus.domain.groups.weeklyWeekKeyIst
 import com.flowstate.focus.domain.groups.weeklyWeekStartIst
 import com.flowstate.focus.domain.groups.PresetAvatars
 import com.flowstate.focus.domain.Phase
+import com.flowstate.focus.domain.TimerMode
 import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.service.TimerEngine
 import com.google.firebase.FirebaseApp
@@ -46,7 +50,8 @@ import javax.inject.Singleton
 
  data class GroupUser(val uid: String, val name: String, val avatarId: String = "")
  data class FocusGroup(val id: String, val name: String, val memberIds: List<String>)
- data class GroupMember(val uid: String, val name: String, val weeklyFocusMs: Long, val live: TimerState?, val updatedAt: Long, val avatarId: String = "")
+ /** [weeklySessions] and [todayFocusMs] are null when the member's app predates them (shown as "—"). */
+ data class GroupMember(val uid: String, val name: String, val weeklyFocusMs: Long, val live: TimerState?, val updatedAt: Long, val avatarId: String = "", val weeklySessions: Int? = null, val todayFocusMs: Long? = null)
  data class GroupsState(val configured: Boolean = false, val user: GroupUser? = null, val groups: List<FocusGroup> = emptyList(), val selectedGroup: FocusGroup? = null, val members: List<GroupMember> = emptyList(), val loading: Boolean = false, val busy: Boolean = false, val error: String? = null, val notice: String? = null, val profileSaving: Boolean = false, val profileSaveVersion: Long = 0L)
 
 @Singleton
@@ -71,6 +76,9 @@ class GroupsRepository @Inject constructor(
     private val publishMutex = Mutex()
     private val random = SecureRandom()
     private val ownership = context.getSharedPreferences("group_session_owners", Context.MODE_PRIVATE)
+    // Until the 1.1.4 rules are published, Firestore rejects the new member fields. Fall back to the
+    // 1.1.3 payload so presence and weekly totals keep syncing, and retry the full one later.
+    @Volatile private var legacyMemberPayloadUntil = 0L
 
     init {
         val appId = readResource(R.string.flowstate_firebase_application_id)
@@ -213,19 +221,33 @@ class GroupsRepository @Inject constructor(
             if (err != null) { setError(err); _state.update { it.copy(loading = false) }; return@addSnapshotListener }
             selectedMembers = snap?.documents.orEmpty().mapNotNull { d ->
                 val uid = d.id; if (uid !in group.memberIds) return@mapNotNull null; val week = d.getString("weekKey").orEmpty(); val liveMap = d.get("live") as? Map<*, *>
-                GroupMember(uid, d.getString("name").orEmpty(), if (week == weekKey(System.currentTimeMillis())) d.getLong("weeklyFocusMs") ?: 0L else 0L, liveMap?.let(::decodeTimer), d.getTimestamp("updatedAt")?.toDate()?.time ?: 0L, PresetAvatars.fallback(d.get("avatarId") as? String))
+                val nowMs = System.currentTimeMillis(); val thisWeek = week == weekKey(nowMs)
+                // Missing fields mean an older app version: keep null so the UI shows "—". A stale
+                // week or day means nothing was focused since, so it reads as zero.
+                val sessionsThisWeek = d.getLong("weeklySessions")?.let { if (thisWeek) it.toInt().coerceAtLeast(0) else 0 }
+                val today = d.getLong("todayFocusMs")?.let { if (d.getString("dayKey") == dayKeyIst(nowMs)) it.coerceAtLeast(0L) else 0L }
+                GroupMember(uid, d.getString("name").orEmpty(), if (thisWeek) d.getLong("weeklyFocusMs") ?: 0L else 0L, liveMap?.let(::decodeTimer), d.getTimestamp("updatedAt")?.toDate()?.time ?: 0L, PresetAvatars.fallback(d.get("avatarId") as? String), sessionsThisWeek, today)
             }.sortedWith(compareByDescending<GroupMember> { it.weeklyFocusMs }.thenBy { it.name.lowercase() })
             if (_state.value.selectedGroup?.id == group.id) _state.update { it.copy(members = selectedMembers, loading = false) }
         }
     }
-    private suspend fun writeMember(groupId: String, user: GroupUser, total: Long, week: Long = weekStartIst(System.currentTimeMillis()), live: TimerState = timer.state.value) {
+    private suspend fun writeMember(groupId: String, user: GroupUser, total: Long, week: Long = weekStartIst(System.currentTimeMillis()), live: TimerState = timer.state.value, weeklySessions: Int = 0, todayMs: Long = 0L, dayKey: String = dayKeyIst(System.currentTimeMillis())) {
         if (authRequired().currentUser?.uid != user.uid || activeUser != user) return
-        cloudOperation("Sync group groups/$groupId/members/${user.uid}") {
-            // This is an app-owned snapshot, not a partial update. Replace it so obsolete
-            // legacy keys cannot survive merge and violate the rules' allowed-key list.
-            dbRequired().collection("groups").document(groupId).collection("members").document(user.uid)
-                .set(mapOf("name" to user.name, "avatarId" to user.avatarId, "photoUrl" to "", "weeklyFocusMs" to total, "weekKey" to weekKey(week), "live" to encodeTimer(live), "updatedAt" to FieldValue.serverTimestamp())).await()
+        val doc = dbRequired().collection("groups").document(groupId).collection("members").document(user.uid)
+        // This is an app-owned snapshot, not a partial update. Replace it so obsolete
+        // legacy keys cannot survive merge and violate the rules' allowed-key list.
+        val legacy = mapOf("name" to user.name, "avatarId" to user.avatarId, "photoUrl" to "", "weeklyFocusMs" to total, "weekKey" to weekKey(week), "live" to encodeTimer(live), "updatedAt" to FieldValue.serverTimestamp())
+        if (System.currentTimeMillis() >= legacyMemberPayloadUntil) {
+            try {
+                doc.set(legacy + mapOf("weeklySessions" to weeklySessions.coerceAtLeast(0), "todayFocusMs" to todayMs.coerceAtLeast(0L), "dayKey" to dayKey)).await()
+                return
+            } catch (e: CancellationException) { throw e }
+            catch (e: FirebaseFirestoreException) {
+                if (e.code != FirebaseFirestoreException.Code.PERMISSION_DENIED) throw e
+                legacyMemberPayloadUntil = System.currentTimeMillis() + LEGACY_RETRY_MS
+            }
         }
+        cloudOperation("Sync group groups/$groupId/members/${user.uid}") { doc.set(legacy).await() }
     }
     private suspend fun publishCurrent(ts: TimerState = timer.state.value, rows: List<com.flowstate.focus.data.db.SessionEntity>? = null) {
         try { publishMutex.withLock { publishCurrentLocked(ts, rows) } }
@@ -239,11 +261,16 @@ class GroupsRepository @Inject constructor(
         val allRows = rows ?: runCatching { sessions.all() }.getOrDefault(emptyList())
         val owned = allRows.filter { ownership.getString("owner_${it.id}", null) == uid }
         val week = weeklyWeekStartIst(System.currentTimeMillis())
-        val total = weeklyTotal(owned.map { it.startedAt to it.durationMs }, System.currentTimeMillis())
-        groupList.forEach { g -> if (uid == authRequired().currentUser?.uid) writeMember(g.id, user, total, week, ts) }
+        val now = System.currentTimeMillis()
+        val intervals = owned.map { it.startedAt to it.durationMs }
+        val total = weeklyTotal(intervals, now)
+        val count = weeklySessionCount(owned.map { it.startedAt }, now)
+        val today = dailyTotalIst(intervals, now)
+        val dayKey = dayKeyIst(now)
+        groupList.forEach { g -> if (uid == authRequired().currentUser?.uid) writeMember(g.id, user, total, week, ts, count, today, dayKey) }
     }
     private fun encodeTimer(t: TimerState): Map<String, Any> = mapOf("mode" to t.mode.name, "phase" to t.phase.name, "status" to t.status.name, "phaseDurationMs" to t.phaseDurationMs, "phaseStartedAt" to t.phaseStartedAt, "pausedAt" to t.pausedAt, "subject" to t.subject.take(80))
-    private fun decodeTimer(m: Map<*, *>): TimerState? = runCatching { TimerState(mode = com.flowstate.focus.domain.TimerMode.valueOf(m["mode"] as String), phase = Phase.valueOf(m["phase"] as String), status = com.flowstate.focus.domain.Status.valueOf(m["status"] as String), phaseDurationMs = (m["phaseDurationMs"] as Number).toLong(), phaseStartedAt = (m["phaseStartedAt"] as Number).toLong(), pausedAt = (m["pausedAt"] as? Number)?.toLong() ?: 0, subject = m["subject"] as? String ?: "") }.getOrNull()
+    private fun decodeTimer(m: Map<*, *>): TimerState? = runCatching { TimerState(mode = TimerMode.fromName(m["mode"] as? String), phase = Phase.valueOf(m["phase"] as String), status = com.flowstate.focus.domain.Status.valueOf(m["status"] as String), phaseDurationMs = (m["phaseDurationMs"] as Number).toLong(), phaseStartedAt = (m["phaseStartedAt"] as Number).toLong(), pausedAt = (m["pausedAt"] as? Number)?.toLong() ?: 0, subject = m["subject"] as? String ?: "") }.getOrNull()
     private fun cleanupListeners() { groupListener?.remove(); groupListener = null; clearMemberListeners(); syncJob?.cancel(); syncJob = null }
     private fun clearMemberListeners() { memberListeners.forEach { it.remove() }; memberListeners.clear() }
     private fun requireUser() = authRequired().currentUser ?: error("Sign in first.")
@@ -272,5 +299,5 @@ class GroupsRepository @Inject constructor(
     private fun emailOk(s: String) = s.trim().length <= 254 && android.util.Patterns.EMAIL_ADDRESS.matcher(s.trim()).matches()
     private fun weekStartIst(now: Long): Long = weeklyWeekStartIst(now)
     private fun weekKey(ms: Long): String = weeklyWeekKeyIst(ms)
-    private companion object { const val APP_NAME="flowstate-groups"; const val MAX_GROUP_SIZE=20; const val WEEK_MS=7*24*60*60*1000L; const val ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789" }
+    private companion object { const val APP_NAME="flowstate-groups"; const val MAX_GROUP_SIZE=20; const val WEEK_MS=7*24*60*60*1000L; const val ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const val LEGACY_RETRY_MS=15*60_000L }
 }

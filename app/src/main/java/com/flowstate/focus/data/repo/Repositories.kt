@@ -11,12 +11,14 @@ interface SessionRepository {
     fun sessionsSince(fromMs: Long): Flow<List<SessionEntity>>
     suspend fun insert(session: SessionEntity)
     suspend fun all(): List<SessionEntity>
+    suspend fun delete(id: Long)
 }
 
 class SessionRepositoryImpl @Inject constructor(private val dao: SessionDao) : SessionRepository {
     override fun sessionsSince(fromMs: Long): Flow<List<SessionEntity>> = dao.since(fromMs)
     override suspend fun insert(session: SessionEntity) = dao.insert(session)
     override suspend fun all(): List<SessionEntity> = dao.all()
+    override suspend fun delete(id: Long) = dao.deleteById(id)
 }
 
 interface TaskRepository {

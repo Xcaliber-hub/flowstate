@@ -32,7 +32,7 @@ See the setup guide for weekly-total accounting and device limitations. This is 
 
 ## Existing features preserved
 
-Pomodoro, custom countdown, stopwatch and Flow timers; foreground-service chronometer notification; strict focus mode; Focus Guard; app blocking through the Accessibility Service; tasks with categories, priorities and deadlines; day/week/month/year statistics and charts; calendar heatmap, streaks and daily goals; theme, dynamic color, accent, Liquid UI and CSV export; floating navigation and tablet-friendly content width.
+Pomodoro, custom countdown and stopwatch timers; standalone breaks with a break-over notification; foreground-service chronometer notification; strict focus mode; Focus Guard; app blocking through the Accessibility Service; tasks with categories, priorities and deadlines; day/week/month/year statistics and charts; calendar heatmap, streaks and daily goals; theme, dynamic color, accent, Liquid UI and CSV export; floating navigation and tablet-friendly content width.
 
 Enable app blocking in **Settings → Focus mode → App blocking service**, then grant the Accessibility permission. Notification permission is required on recent Android versions. Test background timers on real devices, especially manufacturers with aggressive battery restrictions.
 
@@ -41,6 +41,8 @@ Enable app blocking in **Settings → Focus mode → App blocking service**, the
 Configure release signing. Review the Accessibility Service disclosure and Play Console declaration, and the foreground-service `specialUse` justification. Test multi-user group operations against your own staging Firebase project before distributing a production build.
 
 ## Weekly leaderboard reset
+
+Version **1.1.4** (Android version code **6**) adds hold-to-delete for past sessions, standalone breaks (5/10/15 min or custom) with a break-over notification, a group member profile sheet (weekly focus, league and rank, sessions, average), today's focus time in the Live tab, twelve more preset avatars (24 total), a 16-hour daily goal limit and a shared card depth effect. It hides Start focus while a focus block is running or paused and retires the Flow timer (old Flow sessions still show; a running Flow block resumes as a stopwatch). **Publish the 1.1.4 `firebase/firestore.rules`** so the new avatars and member stats are accepted; until then the app falls back to the 1.1.3 member payload and new-stat fields show "—".
 
 Version **1.1.3** (Android version code **5**) moves the shared group leaderboard week to Monday–Sunday in India Standard Time (IST, Asia/Kolkata). The week and its countdown reset together at Monday 00:00 IST.
 

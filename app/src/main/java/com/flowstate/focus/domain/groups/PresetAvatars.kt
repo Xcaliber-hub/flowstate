@@ -17,6 +17,18 @@ object PresetAvatars {
         Preset("jelly", "Jelly"),
         Preset("comet", "Comet"),
         Preset("bloom", "Bloom"),
+        Preset("cat", "Cat"),
+        Preset("owl", "Owl"),
+        Preset("panda", "Panda"),
+        Preset("penguin", "Penguin"),
+        Preset("cactus", "Cactus"),
+        Preset("octopus", "Octopus"),
+        Preset("mushroom", "Mushroom"),
+        Preset("coffee", "Coffee"),
+        Preset("rocket", "Rocket"),
+        Preset("wave", "Wave"),
+        Preset("snowflake", "Snowflake"),
+        Preset("bolt", "Bolt"),
     )
 
     val ids: Set<String> = all.mapTo(linkedSetOf()) { it.id }

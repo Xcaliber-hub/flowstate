@@ -14,7 +14,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -34,30 +36,39 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Coffee
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,6 +100,7 @@ import com.flowstate.focus.domain.Phase
 import com.flowstate.focus.domain.Status
 import com.flowstate.focus.domain.TimerMode
 import com.flowstate.focus.domain.TimerState
+import com.flowstate.focus.ui.components.DepthSurface
 import com.flowstate.focus.ui.components.Entrance
 import com.flowstate.focus.ui.components.GlassCard
 import com.flowstate.focus.ui.components.ScreenContainer
@@ -119,12 +131,28 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
         onDispose { view.keepScreenOn = false }
     }
 
-    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.start() }
-    fun requestStart() {
-        val needsPermission = Build.VERSION.SDK_INT >= 33 &&
-            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        if (needsPermission) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else vm.start()
+    // Whatever the user asked for still starts if they decline notifications; only the alerts are lost.
+    var pendingBreakMin by remember { mutableStateOf<Int?>(null) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        val breakMin = pendingBreakMin
+        pendingBreakMin = null
+        if (breakMin != null) vm.startBreak(breakMin) else vm.start()
     }
+    fun needsNotificationPermission() = Build.VERSION.SDK_INT >= 33 &&
+        context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+    fun requestStart() {
+        pendingBreakMin = null
+        if (needsNotificationPermission()) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS) else vm.start()
+    }
+    // The break-over notification is the point of a break timer, so ask before it starts.
+    fun requestBreak(minutes: Int) {
+        if (needsNotificationPermission()) {
+            pendingBreakMin = minutes
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else vm.startBreak(minutes)
+    }
+    var showBreakSheet by rememberSaveable { mutableStateOf(false) }
+    var pendingDelete by remember { mutableStateOf<SessionEntity?>(null) }
 
     ScreenContainer {
         LazyColumn(
@@ -150,6 +178,8 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
                     TimerCard(
                         ui = ui,
                         onStart = ::requestStart,
+                        onTakeBreak = { showBreakSheet = true },
+                        onStartFocusFromBreak = vm::startFocusFromBreak,
                         onPause = vm::pause,
                         onResume = vm::resume,
                         onStop = vm::stop,
@@ -170,8 +200,39 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
             }
             item(key = "goal") { Entrance(3) { GoalCard(ui) } }
             item(key = "quote") { Entrance(4) { QuoteCard(ui.settings.liquidUi) } }
-            item(key = "sessions") { Entrance(5) { SessionsCard(ui.todaySessions, ui.settings.liquidUi) } }
+            item(key = "sessions") { Entrance(5) { SessionsCard(ui.todaySessions, ui.settings.liquidUi, onHold = { pendingDelete = it }) } }
         }
+    }
+
+    if (showBreakSheet) {
+        BreakSheet(
+            defaultMin = ui.settings.shortBreakMin,
+            onDismiss = { showBreakSheet = false },
+            onStart = { minutes ->
+                showBreakSheet = false
+                requestBreak(minutes)
+            },
+        )
+    }
+
+    pendingDelete?.let { session ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Delete this session?") },
+            text = {
+                Text(
+                    "${formatDuration(session.durationMs)} of ${sessionLabel(session)} at ${sessionTime(session)} will be removed " +
+                        "from your history, stats and streak. This can't be undone."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.deleteSession(session.id)
+                    pendingDelete = null
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+        )
     }
 }
 
@@ -193,6 +254,8 @@ private fun ModeChips(selected: TimerMode, enabled: Boolean, onSelect: (TimerMod
 private fun TimerCard(
     ui: FocusUiState,
     onStart: () -> Unit,
+    onTakeBreak: () -> Unit,
+    onStartFocusFromBreak: () -> Unit,
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
@@ -206,20 +269,113 @@ private fun TimerCard(
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             TimerDisplay(state = t, mode = ui.mode, idleMs = ui.durationMin * 60_000L, liquid = ui.settings.liquidUi)
             Spacer(Modifier.height(20.dp))
-            if (!t.isActive) {
-                SetupSection(ui, onStrict, onSubject, onDuration)
-                Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = onStart,
-                    modifier = Modifier.fillMaxWidth().height(64.dp),
-                    shape = RoundedCornerShape(32.dp),
-                ) {
-                    Icon(Icons.Rounded.PlayArrow, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Start focus", style = MaterialTheme.typography.titleMedium)
+            when {
+                // "Start focus" only exists while nothing is running, so a second session can't be started.
+                !t.isActive -> {
+                    SetupSection(ui, onStrict, onSubject, onDuration)
+                    Spacer(Modifier.height(16.dp))
+                    StartFocusButton(onStart)
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onTakeBreak,
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        shape = RoundedCornerShape(26.dp),
+                    ) {
+                        Icon(Icons.Rounded.Coffee, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Take a break")
+                    }
                 }
-            } else {
-                ActiveControls(t, onPause, onResume, onStop, onForceStop)
+                t.isBreak -> BreakControls(t, onStartFocusFromBreak, onPause, onResume, onStop)
+                else -> ActiveControls(t, onPause, onResume, onStop, onForceStop)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StartFocusButton(onStart: () -> Unit) {
+    Button(
+        onClick = onStart,
+        modifier = Modifier.fillMaxWidth().height(64.dp),
+        shape = RoundedCornerShape(32.dp),
+    ) {
+        Icon(Icons.Rounded.PlayArrow, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text("Start focus", style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/** During any break: get back to work, or end the break. Break time is never recorded as focus. */
+@Composable
+private fun BreakControls(t: TimerState, onStartFocus: () -> Unit, onPause: () -> Unit, onResume: () -> Unit, onEnd: () -> Unit) {
+    StartFocusButton(onStartFocus)
+    Spacer(Modifier.height(10.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        val running = t.status == Status.RUNNING
+        FilledTonalButton(
+            onClick = if (running) onPause else onResume,
+            modifier = Modifier.weight(1f).height(56.dp),
+            shape = RoundedCornerShape(28.dp),
+        ) {
+            Icon(if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text(if (running) "Pause" else "Resume")
+        }
+        OutlinedButton(onClick = onEnd, modifier = Modifier.weight(1f).height(56.dp), shape = RoundedCornerShape(28.dp)) {
+            Icon(Icons.Rounded.Stop, contentDescription = null)
+            Spacer(Modifier.width(6.dp))
+            Text("End break")
+        }
+    }
+}
+
+/** Break length picker: quick presets plus a custom length. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BreakSheet(defaultMin: Int, onDismiss: () -> Unit, onStart: (Int) -> Unit) {
+    val presets = FocusViewModel.BreakPresetsMin
+    var minutes by rememberSaveable { mutableIntStateOf(if (defaultMin in presets) defaultMin else presets.first()) }
+    var custom by rememberSaveable { mutableStateOf(false) }
+    var customMin by rememberSaveable { mutableFloatStateOf(defaultMin.coerceIn(1, FocusViewModel.MAX_BREAK_MIN).toFloat()) }
+    val chosen = if (custom) customMin.roundToInt() else minutes
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
+    ) {
+        Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Take a break", style = MaterialTheme.typography.titleLarge)
+            Text(
+                "Step away. We'll notify you when the break is over. Breaks don't count as focus time.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            DepthSurface(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        presets.forEach { p ->
+                            FilterChip(selected = !custom && minutes == p, onClick = { custom = false; minutes = p }, label = { Text("$p min") })
+                        }
+                        FilterChip(selected = custom, onClick = { custom = true }, label = { Text("Custom") })
+                    }
+                    if (custom) {
+                        Row(Modifier.fillMaxWidth()) {
+                            Text("Length", style = MaterialTheme.typography.titleSmall)
+                            Spacer(Modifier.weight(1f))
+                            Text("${customMin.roundToInt()} min", style = MaterialTheme.typography.titleSmall)
+                        }
+                        Slider(
+                            value = customMin,
+                            onValueChange = { customMin = it },
+                            valueRange = 1f..FocusViewModel.MAX_BREAK_MIN.toFloat(),
+                            steps = FocusViewModel.MAX_BREAK_MIN - 2,
+                        )
+                    }
+                }
+            }
+            Button(onClick = { onStart(chosen) }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                Text("Start $chosen min break")
             }
         }
     }
@@ -370,8 +526,8 @@ private fun TimerDisplay(state: TimerState, mode: TimerMode, idleMs: Long, liqui
     val label = when (state.phase) {
         Phase.IDLE -> mode.label
         Phase.FOCUS -> if (state.status == Status.PAUSED) "Paused" else "Focusing"
-        Phase.SHORT_BREAK -> "Short break"
-        Phase.LONG_BREAK -> "Long break"
+        Phase.SHORT_BREAK -> if (state.status == Status.PAUSED) "Break paused" else if (state.standaloneBreak) "Break" else "Short break"
+        Phase.LONG_BREAK -> if (state.status == Status.PAUSED) "Break paused" else "Long break"
     }
     val clock = formatClock(seconds)
 
@@ -386,6 +542,7 @@ private fun TimerDisplay(state: TimerState, mode: TimerMode, idleMs: Long, liqui
             Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(clock, style = MaterialTheme.typography.displayLarge, textAlign = TextAlign.Center)
             val sub = when {
+                state.standaloneBreak -> ""
                 state.mode == TimerMode.POMODORO && state.isActive -> "Round ${state.round + 1}"
                 state.subject.isNotBlank() -> state.subject
                 else -> ""
@@ -522,10 +679,27 @@ private fun QuoteCard(liquid: Boolean) {
     }
 }
 
+private val SessionTimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+private fun sessionTime(s: SessionEntity): String =
+    Instant.ofEpochMilli(s.startedAt).atZone(ZoneId.systemDefault()).format(SessionTimeFormat)
+
+/** Subject if one was given, else the mode. Old sessions recorded in the retired Flow mode still read "Flow". */
+private fun sessionLabel(s: SessionEntity): String = s.subject.ifBlank { TimerMode.labelFor(s.mode) }
+
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SessionsCard(sessions: List<SessionEntity>, liquid: Boolean) {
+private fun SessionsCard(sessions: List<SessionEntity>, liquid: Boolean, onHold: (SessionEntity) -> Unit) {
+    val haptics = LocalHapticFeedback.current
     GlassCard(Modifier.fillMaxWidth(), liquid) {
         Text("Today's sessions", style = MaterialTheme.typography.titleMedium)
+        if (sessions.isNotEmpty()) {
+            Text(
+                "Hold a session to delete it",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(8.dp))
         if (sessions.isEmpty()) {
             Text(
@@ -534,17 +708,30 @@ private fun SessionsCard(sessions: List<SessionEntity>, liquid: Boolean) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            val fmt = remember { DateTimeFormatter.ofPattern("HH:mm") }
             sessions.take(8).forEach { s ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .combinedClickable(
+                            onClick = {},
+                            onLongClick = {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                onHold(s)
+                            },
+                            onLongClickLabel = "Delete session",
+                        )
+                        .padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(
-                        Instant.ofEpochMilli(s.startedAt).atZone(ZoneId.systemDefault()).format(fmt),
+                        sessionTime(s),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.width(56.dp),
                     )
                     Text(
-                        s.subject.ifBlank { TimerMode.valueOf(s.mode).label },
+                        sessionLabel(s),
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,

@@ -82,7 +82,7 @@ class TimerService : Service() {
         )
         val title = when (s.phase) {
             Phase.FOCUS -> if (s.subject.isNotBlank()) "Focus: ${s.subject}" else "Focus"
-            Phase.SHORT_BREAK -> "Short break"
+            Phase.SHORT_BREAK -> if (s.standaloneBreak) "Break" else "Short break"
             Phase.LONG_BREAK -> "Long break"
             Phase.IDLE -> "Flowstate"
         }
@@ -116,7 +116,7 @@ class TimerService : Service() {
         if (!locked && s.status != Status.IDLE) {
             if (s.status == Status.RUNNING) builder.addAction(0, "Pause", action(ACTION_PAUSE, 1))
             else builder.addAction(0, "Resume", action(ACTION_RESUME, 2))
-            builder.addAction(0, "Stop", action(ACTION_STOP, 3))
+            builder.addAction(0, if (s.isBreak) "End break" else "Stop", action(ACTION_STOP, 3))
         }
         return builder.build()
     }

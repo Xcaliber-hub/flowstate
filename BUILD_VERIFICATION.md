@@ -1,4 +1,21 @@
-# Flowstate 1.1.3 verification
+# Flowstate 1.1.4 verification
+
+## Checks run for 1.1.4
+
+Checked on an ARM64 Linux sandbox with Gradle 8.9, Android SDK platform 35, build-tools 34.0.0, JDK 17 (Temurin) and an ARM64 `aapt2` 2.19 (passed via `-Pandroid.aapt2FromMavenOverride`, because the Maven `aapt2` is x86-64 only):
+
+```sh
+./gradlew :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug :app:lintDebug
+```
+
+- Kotlin compilation passed with **no compiler warnings**; a debug APK was assembled (version **1.1.4**, code **6**).
+- All **16 JVM unit tests** passed (10 existing, updated for 24 avatars, plus new tests for the retired Flow mode fallback, break state, IST weekly session count, IST daily totals and leagues).
+- Android lint: **0 errors**, 59 warnings, 1 informational (1.1.3 reported 61 warnings).
+- The Firestore emulator suite (`firebase/tests`) was extended for 24 avatars, the optional member stats and live timer validation, but **was not run**: the sandbox could not download the Firestore emulator (HTTP 403). Run `cd firebase/tests && npm install && npm test` (needs JDK 21+) before publishing the rules.
+
+No device or emulator UI check was performed. Recommended manual checks: hold-to-delete on a today's session, Take a break → break-over notification with the app backgrounded, hidden Start focus while focusing or paused (Focus screen and Groups Live tab), the member profile sheet, and the light-mode card depth.
+
+# Flowstate 1.1.3 verification (previous release)
 
 ## Checks passed
 
