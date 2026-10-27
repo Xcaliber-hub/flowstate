@@ -2,6 +2,7 @@ package com.flowstate.focus.service
 
 import android.content.Context
 import com.flowstate.focus.data.db.SessionEntity
+import com.flowstate.focus.data.prefs.SettingsRepository
 import com.flowstate.focus.data.repo.SessionRepository
 import com.flowstate.focus.domain.Phase
 import com.flowstate.focus.domain.Plan
@@ -18,6 +19,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,17 +41,39 @@ class TimerEngine @Inject constructor(
     @ApplicationContext context: Context,
     private val sessions: SessionRepository,
     private val alerts: AlertNotifier,
+    settings: SettingsRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val prefs = context.getSharedPreferences("timer_state", Context.MODE_PRIVATE)
     private val lock = Any()
     private var completionJob: Job? = null
+    private var checkInJob: Job? = null
+    @Volatile private var checkInsEnabled = true
 
     private val _state = MutableStateFlow(TimerState())
     val state: StateFlow<TimerState> = _state.asStateFlow()
 
     init {
         restore()
+        scope.launch {
+            settings.settings.map { it.inactivityCheck }.distinctUntilChanged().collect { enabled ->
+                synchronized(lock) {
+                    checkInsEnabled = enabled
+                    // Turning the check-in off while one is waiting counts as an answer.
+                    if (!enabled && _state.value.checkInAt > 0L) publish(_state.value.copy(checkInAt = 0L))
+                    else scheduleCheckIn()
+                }
+            }
+        }
+    }
+
+    /** "I'm here": answers the waiting check-in, and the next one comes an hour of focus later. */
+    fun confirmPresence() {
+        synchronized(lock) {
+            val s = _state.value
+            if (s.checkInAt == 0L) return@synchronized
+            publish(s.copy(checkInAt = 0L))
+        }
     }
 
     fun start(mode: TimerMode, plan: Plan, strict: Boolean, subject: String) {
@@ -133,7 +158,12 @@ class TimerEngine @Inject constructor(
             val s = _state.value
             if (s.status != Status.PAUSED) return@synchronized
             val shift = System.currentTimeMillis() - s.pausedAt
-            publish(s.copy(status = Status.RUNNING, phaseStartedAt = s.phaseStartedAt + shift, pausedAt = 0L))
+            publish(
+                s.copy(
+                    status = Status.RUNNING, phaseStartedAt = s.phaseStartedAt + shift, pausedAt = 0L,
+                    checkInAt = 0L, autoPaused = false,
+                )
+            )
             scheduleCompletion()
         }
     }
@@ -159,6 +189,53 @@ class TimerEngine @Inject constructor(
         completionJob = scope.launch {
             delay((s.endAt - System.currentTimeMillis()).coerceAtLeast(0L))
             onPhaseFinished()
+        }
+    }
+
+    /**
+     * Inactivity check-ins. After every [CHECK_IN_INTERVAL_MS] of running focus time a "Still focusing?"
+     * prompt appears. If nobody answers within [CHECK_IN_TIMEOUT_MS], the timer pauses with its pause
+     * time set to the moment the prompt appeared, so the unanswered minutes are never counted.
+     * Breaks never get check-ins, and a countdown that ends before the next check-in gets none.
+     */
+    private fun scheduleCheckIn() {
+        checkInJob?.cancel()
+        val s = _state.value
+        if (!checkInsEnabled || !s.isFocusRunning) return
+        val now = System.currentTimeMillis()
+        if (s.checkInAt > 0L) {
+            checkInJob = scope.launch {
+                delay((s.checkInAt + CHECK_IN_TIMEOUT_MS - now).coerceAtLeast(0L))
+                onCheckInTimeout()
+            }
+            return
+        }
+        val elapsed = s.elapsedAt(now)
+        val next = (elapsed / CHECK_IN_INTERVAL_MS + 1) * CHECK_IN_INTERVAL_MS
+        if (!s.countsUp && next >= s.phaseDurationMs) return
+        checkInJob = scope.launch {
+            delay(next - elapsed)
+            onCheckInDue()
+        }
+    }
+
+    private fun onCheckInDue() {
+        synchronized(lock) {
+            val s = _state.value
+            if (!checkInsEnabled || !s.isFocusRunning || s.checkInAt > 0L) return@synchronized
+            publish(s.copy(checkInAt = System.currentTimeMillis()))
+            alerts.checkIn(CHECK_IN_TIMEOUT_MS)
+        }
+    }
+
+    /** Nobody answered. This pause also applies to strict blocks: it is not the user quitting early. */
+    private fun onCheckInTimeout() {
+        synchronized(lock) {
+            val s = _state.value
+            if (!s.awaitingCheckIn || s.phase != Phase.FOCUS) return@synchronized
+            completionJob?.cancel()
+            publish(s.copy(status = Status.PAUSED, pausedAt = s.checkInAt, checkInAt = 0L, autoPaused = true))
+            alerts.autoPaused()
         }
     }
 
@@ -206,9 +283,13 @@ class TimerEngine @Inject constructor(
 
     private fun finish() = publish(TimerState())
 
-    private fun publish(s: TimerState) {
+    private fun publish(next: TimerState) {
+        // A check-in only lives while focus is running; pausing, stopping or moving to a break clears it.
+        val s = if (next.checkInAt > 0L && !next.isFocusRunning) next.copy(checkInAt = 0L) else next
+        if (_state.value.checkInAt > 0L && s.checkInAt == 0L) alerts.cancelCheckIn()
         _state.value = s
         persist(s)
+        scheduleCheckIn()
     }
 
     private fun record(s: TimerState, durationMs: Long, completed: Boolean) {
@@ -241,6 +322,8 @@ class TimerEngine @Inject constructor(
                 putLong("pLong", s.plan.longBreakMs)
                 putInt("pRounds", s.plan.rounds)
                 putBoolean("standaloneBreak", s.standaloneBreak)
+                putLong("checkInAt", s.checkInAt)
+                putBoolean("autoPaused", s.autoPaused)
             }
         }.apply()
     }
@@ -267,6 +350,8 @@ class TimerEngine @Inject constructor(
                     rounds = prefs.getInt("pRounds", Plan().rounds),
                 ),
                 standaloneBreak = prefs.getBoolean("standaloneBreak", false),
+                checkInAt = prefs.getLong("checkInAt", 0L),
+                autoPaused = prefs.getBoolean("autoPaused", false),
             )
         }.getOrNull() ?: return
 
@@ -279,10 +364,14 @@ class TimerEngine @Inject constructor(
         }
         _state.value = restored
         scheduleCompletion()
+        // A check-in that expired while the process was dead pauses the timer right away.
+        scheduleCheckIn()
     }
 
     private companion object {
         const val MIN_RECORD_MS = 30_000L
         const val ABANDON_GRACE_MS = 10 * 60_000L
+        const val CHECK_IN_INTERVAL_MS = 60 * 60_000L
+        const val CHECK_IN_TIMEOUT_MS = 2 * 60_000L
     }
 }

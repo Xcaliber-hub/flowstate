@@ -46,6 +46,7 @@ class TimerService : Service() {
             ACTION_PAUSE -> engine.pause()
             ACTION_RESUME -> engine.resume()
             ACTION_STOP -> engine.stop()
+            ACTION_CHECK_IN_OK -> engine.confirmPresence()
         }
         ServiceCompat.startForeground(
             this,
@@ -107,7 +108,7 @@ class TimerService : Service() {
                     builder.setContentText("Round ${s.round + 1}")
                 }
             }
-            Status.PAUSED -> builder.setContentText("Paused")
+            Status.PAUSED -> builder.setContentText(if (s.autoPaused) "Paused: you seemed away" else "Paused")
             Status.IDLE -> Unit
         }
 
@@ -132,5 +133,6 @@ class TimerService : Service() {
         const val ACTION_PAUSE = "com.flowstate.focus.PAUSE"
         const val ACTION_RESUME = "com.flowstate.focus.RESUME"
         const val ACTION_STOP = "com.flowstate.focus.STOP"
+        const val ACTION_CHECK_IN_OK = "com.flowstate.focus.CHECK_IN_OK"
     }
 }

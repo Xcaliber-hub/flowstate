@@ -61,3 +61,7 @@ The six original accent presets remain Purple, Teal, Pink, Green, Blue and Orang
 Flowstate checks the latest GitHub Release on launch and shows an "Update available" pop-up when a newer version exists. Users tap **Update now**, the APK downloads inside the app, and Android's installer opens (the first time, Android asks them to allow installs from Flowstate).
 
 To ship an update: bump `versionCode` and `versionName` in `app/build.gradle.kts` and push to `main`. The workflow builds the signed release APK and publishes a release tagged `v<versionName>` with the APK attached. Every release must be signed with the same keystore, or Android refuses to install it over the old one.
+
+## Hourly check-in
+
+During a focus block, Flowstate asks "Still focusing?" after every hour of running focus time, both in the app and as a notification with an **I'm here** button. If nobody answers within 2 minutes, the timer pauses itself, backdated to when the prompt appeared, so those minutes are never counted. Breaks get no check-ins, and a countdown shorter than an hour never sees one. It also pauses strict blocks, since being away isn't quitting. Turn it off in Settings under **Hourly check-in**.

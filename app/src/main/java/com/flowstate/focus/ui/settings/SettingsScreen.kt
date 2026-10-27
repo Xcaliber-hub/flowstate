@@ -157,6 +157,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                     Group("Focus mode", liquid) {
                         ToggleRow("Strict mode by default", "Locks each session until it ends", s.strictByDefault) { v -> vm.update { it.copy(strictByDefault = v) } }
                         ToggleRow("Focus Guard", "Nudge me if I leave for another app", s.focusGuard) { v -> vm.update { it.copy(focusGuard = v) } }
+                        ToggleRow("Hourly check-in", "Pause the timer if I don't answer \"Still focusing?\" within 2 minutes", s.inactivityCheck) { v -> vm.update { it.copy(inactivityCheck = v) } }
                         LinkRow("Blocked apps", "${s.blockedPackages.size} selected", onOpenBlockedApps)
                         LinkRow(
                             "App blocking service",

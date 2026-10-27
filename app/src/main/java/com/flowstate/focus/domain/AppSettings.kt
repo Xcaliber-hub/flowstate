@@ -27,5 +27,7 @@ data class AppSettings(
     val keepScreenOn: Boolean = true,
     val strictByDefault: Boolean = false,
     val focusGuard: Boolean = true,
+    /** Asks "Still focusing?" every hour of a focus block and pauses if nobody answers. */
+    val inactivityCheck: Boolean = true,
     val blockedPackages: Set<String> = emptySet(),
 )

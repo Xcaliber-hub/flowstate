@@ -69,6 +69,10 @@ data class TimerState(
     val plan: Plan = Plan(),
     /** A break the user started on its own ("Take a break"), not one inside a Pomodoro cycle. */
     val standaloneBreak: Boolean = false,
+    /** When the current "Still focusing?" check-in was shown, or 0 when none is waiting. */
+    val checkInAt: Long = 0L,
+    /** True when the timer was paused automatically because a check-in went unanswered. */
+    val autoPaused: Boolean = false,
 ) {
     val isActive: Boolean get() = status != Status.IDLE
     /** A focus block is running or paused. While true, no second session may be started. */
@@ -80,6 +84,9 @@ data class TimerState(
 
     fun elapsedAt(now: Long): Long =
         ((if (status == Status.PAUSED) pausedAt else now) - phaseStartedAt).coerceAtLeast(0L)
+
+    /** A check-in is on screen and waiting for "I'm here". */
+    val awaitingCheckIn: Boolean get() = checkInAt > 0L && status == Status.RUNNING
 
     fun remainingAt(now: Long): Long = (phaseDurationMs - elapsedAt(now)).coerceAtLeast(0L)
 }

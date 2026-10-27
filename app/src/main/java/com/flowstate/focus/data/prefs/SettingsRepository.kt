@@ -37,6 +37,7 @@ private object Keys {
     val KEEP_ON = booleanPreferencesKey("keep_on")
     val STRICT = booleanPreferencesKey("strict_default")
     val GUARD = booleanPreferencesKey("guard")
+    val INACTIVITY = booleanPreferencesKey("inactivity_check")
     val BLOCKED = stringSetPreferencesKey("blocked")
 }
 
@@ -56,6 +57,7 @@ private fun Preferences.toSettings(): AppSettings {
         keepScreenOn = this[Keys.KEEP_ON] ?: d.keepScreenOn,
         strictByDefault = this[Keys.STRICT] ?: d.strictByDefault,
         focusGuard = this[Keys.GUARD] ?: d.focusGuard,
+        inactivityCheck = this[Keys.INACTIVITY] ?: d.inactivityCheck,
         blockedPackages = this[Keys.BLOCKED] ?: d.blockedPackages,
     )
 }
@@ -74,6 +76,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[Keys.KEEP_ON] = s.keepScreenOn
     this[Keys.STRICT] = s.strictByDefault
     this[Keys.GUARD] = s.focusGuard
+    this[Keys.INACTIVITY] = s.inactivityCheck
     this[Keys.BLOCKED] = s.blockedPackages
 }
 

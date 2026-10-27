@@ -16,6 +16,7 @@ import androidx.lifecycle.viewModelScope
 import com.flowstate.focus.data.prefs.SettingsRepository
 import com.flowstate.focus.domain.AppSettings
 import com.flowstate.focus.ui.FlowstateAppUi
+import com.flowstate.focus.ui.focus.CheckInPrompt
 import com.flowstate.focus.ui.theme.FlowstateTheme
 import com.flowstate.focus.ui.update.UpdatePrompt
 import dagger.hilt.android.AndroidEntryPoint
@@ -53,6 +54,7 @@ class MainActivity : ComponentActivity() {
                 }
                 FlowstateTheme(s, dark) {
                     FlowstateAppUi(s)
+                    CheckInPrompt()
                     UpdatePrompt()
                 }
             }
