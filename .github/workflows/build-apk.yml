@@ -8,6 +8,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to publish the GitHub Release the app checks for updates
     steps:
       - uses: actions/checkout@v4
 
@@ -38,3 +40,21 @@ jobs:
         with:
           name: flowstate-release-apk
           path: app/build/outputs/apk/release/app-release.apk
+
+      # Publishes a GitHub Release (tag v<versionName>) with the APK attached. The app's update
+      # pop-up reads the latest release, so bump versionName for every release you want users to get.
+      - name: Read version
+        id: version
+        run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk "Flowstate-${{ steps.version.outputs.name }}.apk"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.name }}
+          name: Flowstate ${{ steps.version.outputs.name }}
+          files: Flowstate-${{ steps.version.outputs.name }}.apk
+          generate_release_notes: true
+          make_latest: true

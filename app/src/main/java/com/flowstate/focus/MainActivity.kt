@@ -17,6 +17,7 @@ import com.flowstate.focus.data.prefs.SettingsRepository
 import com.flowstate.focus.domain.AppSettings
 import com.flowstate.focus.ui.FlowstateAppUi
 import com.flowstate.focus.ui.theme.FlowstateTheme
+import com.flowstate.focus.ui.update.UpdatePrompt
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
@@ -50,7 +51,10 @@ class MainActivity : ComponentActivity() {
                     )
                     onDispose { }
                 }
-                FlowstateTheme(s, dark) { FlowstateAppUi(s) }
+                FlowstateTheme(s, dark) {
+                    FlowstateAppUi(s)
+                    UpdatePrompt()
+                }
             }
         }
     }
