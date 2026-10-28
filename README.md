@@ -65,3 +65,7 @@ To ship an update: bump `versionCode` and `versionName` in `app/build.gradle.kts
 ## Check-in
 
 During a focus block, Flowstate asks "Still focusing?" after every 30 min, 1 hr, 1.5 hr, 2 hr or 3 hr of running focus time (1 hr by default), both in the app and as a notification with an **I'm here** button. If nobody answers within 2 minutes, the timer pauses itself, backdated to when the prompt appeared, so those minutes are never counted. Breaks get no check-ins, and a countdown shorter than the interval never sees one. It also pauses strict blocks, since being away isn't quitting. Turn it off in Settings under **Check-in**, where you also pick the interval.
+
+## Side navigation (experimental)
+
+Settings → Appearance → **Side navigation** swaps the floating bottom bar for a vertical glass rail on the right edge, a little below the middle of the screen. The selected tab sits in an accent circle with a dot under it, the rail slides away while you scroll down, and screens keep a lane free on the right so nothing hides behind it. Turn the switch off to get the original bottom bar back.

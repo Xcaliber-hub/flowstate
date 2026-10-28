@@ -29,6 +29,7 @@ private object Keys {
     val DYNAMIC = booleanPreferencesKey("dynamic")
     val ACCENT = intPreferencesKey("accent")
     val LIQUID = booleanPreferencesKey("liquid")
+    val SIDE_NAV = booleanPreferencesKey("side_nav")
     val FOCUS = intPreferencesKey("focus_min")
     val SHORT = intPreferencesKey("short_min")
     val LONG = intPreferencesKey("long_min")
@@ -50,6 +51,7 @@ private fun Preferences.toSettings(): AppSettings {
         dynamicColor = this[Keys.DYNAMIC] ?: d.dynamicColor,
         accentIndex = this[Keys.ACCENT] ?: d.accentIndex,
         liquidUi = this[Keys.LIQUID] ?: d.liquidUi,
+        sideNav = this[Keys.SIDE_NAV] ?: d.sideNav,
         focusMin = this[Keys.FOCUS] ?: d.focusMin,
         shortBreakMin = this[Keys.SHORT] ?: d.shortBreakMin,
         longBreakMin = this[Keys.LONG] ?: d.longBreakMin,
@@ -70,6 +72,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[Keys.DYNAMIC] = s.dynamicColor
     this[Keys.ACCENT] = s.accentIndex
     this[Keys.LIQUID] = s.liquidUi
+    this[Keys.SIDE_NAV] = s.sideNav
     this[Keys.FOCUS] = s.focusMin
     this[Keys.SHORT] = s.shortBreakMin
     this[Keys.LONG] = s.longBreakMin

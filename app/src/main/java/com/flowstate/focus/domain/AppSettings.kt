@@ -18,6 +18,8 @@ data class AppSettings(
     val dynamicColor: Boolean = true,
     val accentIndex: Int = 0,
     val liquidUi: Boolean = true,
+    /** Experimental: a vertical navigation rail on the right edge instead of the bottom bar. */
+    val sideNav: Boolean = false,
     val focusMin: Int = 25,
     val shortBreakMin: Int = 5,
     val longBreakMin: Int = 15,

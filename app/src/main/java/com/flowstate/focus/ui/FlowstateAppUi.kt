@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -32,7 +33,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.flowstate.focus.domain.AppSettings
+import androidx.compose.runtime.CompositionLocalProvider
 import com.flowstate.focus.ui.components.FloatingNavBar
+import com.flowstate.focus.ui.components.LocalNavLayout
+import com.flowstate.focus.ui.components.NavLayout
+import com.flowstate.focus.ui.components.SideNavRail
 import com.flowstate.focus.ui.components.NavTab
 import com.flowstate.focus.ui.focus.FocusScreen
 import com.flowstate.focus.ui.settings.BlockedAppsScreen
@@ -83,6 +88,8 @@ fun FlowstateAppUi(settings: AppSettings) {
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
+        val navLayout = if (settings.sideNav) NavLayout.SIDE else NavLayout.BOTTOM
+        CompositionLocalProvider(LocalNavLayout provides navLayout) {
         Box(Modifier.fillMaxSize().nestedScroll(scrollConnection)) {
             NavHost(
                 navController = nav,
@@ -101,22 +108,35 @@ fun FlowstateAppUi(settings: AppSettings) {
                 composable(Routes.BLOCKED) { BlockedAppsScreen(onBack = { nav.popBackStack() }) }
             }
             if (Tabs.any { it.route == route }) {
-                FloatingNavBar(
-                    tabs = Tabs,
-                    selectedRoute = route,
-                    visible = navVisible,
-                    liquid = settings.liquidUi,
-                    onSelect = { tab ->
-                        navVisible = true
-                        nav.navigate(tab.route) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
+                val onSelect: (NavTab) -> Unit = { tab ->
+                    navVisible = true
+                    nav.navigate(tab.route) {
+                        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+                when (navLayout) {
+                    NavLayout.BOTTOM -> FloatingNavBar(
+                        tabs = Tabs,
+                        selectedRoute = route,
+                        visible = navVisible,
+                        liquid = settings.liquidUi,
+                        onSelect = onSelect,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
+                    // Centered a little below the middle, where the right thumb rests.
+                    NavLayout.SIDE -> SideNavRail(
+                        tabs = Tabs,
+                        selectedRoute = route,
+                        visible = navVisible,
+                        liquid = settings.liquidUi,
+                        onSelect = onSelect,
+                        modifier = Modifier.align(BiasAlignment(horizontalBias = 1f, verticalBias = 0.25f)),
+                    )
+                }
             }
+        }
         }
     }
 }

@@ -57,6 +57,7 @@ import com.flowstate.focus.domain.AppSettings
 import com.flowstate.focus.ui.components.Entrance
 import com.flowstate.focus.ui.components.GlassCard
 import com.flowstate.focus.ui.components.ScreenContainer
+import com.flowstate.focus.ui.components.fabBottomPadding
 import com.flowstate.focus.ui.components.screenContentPadding
 import java.time.Instant
 import java.time.LocalDate
@@ -133,7 +134,7 @@ fun TasksScreen(settings: AppSettings, vm: TasksViewModel = hiltViewModel()) {
             onClick = { showSheet = true },
             icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
             text = { Text("New task") },
-            modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 20.dp, bottom = 104.dp),
+            modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 20.dp, bottom = fabBottomPadding()),
         )
     }
 

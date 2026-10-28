@@ -135,6 +135,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                             }
                         }
                         ToggleRow("Liquid UI", "Breathing cards, fluid navigation and a living progress ring", s.liquidUi) { v -> vm.update { it.copy(liquidUi = v) } }
+                        ToggleRow("Side navigation", "Experimental: move the tabs to a rail on the right edge", s.sideNav) { v -> vm.update { it.copy(sideNav = v) } }
                     }
                 }
             }
