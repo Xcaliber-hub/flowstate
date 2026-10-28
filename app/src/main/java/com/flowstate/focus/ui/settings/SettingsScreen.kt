@@ -55,6 +55,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.flowstate.focus.domain.CHECK_IN_CHOICES
+import com.flowstate.focus.domain.checkInLabel
 import com.flowstate.focus.domain.AppSettings
 import com.flowstate.focus.domain.ThemeMode
 import com.flowstate.focus.service.FocusBlockerService
@@ -157,7 +159,23 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                     Group("Focus mode", liquid) {
                         ToggleRow("Strict mode by default", "Locks each session until it ends", s.strictByDefault) { v -> vm.update { it.copy(strictByDefault = v) } }
                         ToggleRow("Focus Guard", "Nudge me if I leave for another app", s.focusGuard) { v -> vm.update { it.copy(focusGuard = v) } }
-                        ToggleRow("Hourly check-in", "Pause the timer if I don't answer \"Still focusing?\" within 2 minutes", s.inactivityCheck) { v -> vm.update { it.copy(inactivityCheck = v) } }
+                        ToggleRow(
+                            "Check-in",
+                            "Ask \"Still focusing?\" every ${checkInLabel(s.checkInMinutes)} and pause if I don't answer within 2 minutes",
+                            s.inactivityCheck,
+                        ) { v -> vm.update { it.copy(inactivityCheck = v) } }
+                        if (s.inactivityCheck) {
+                            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                                CHECK_IN_CHOICES.forEachIndexed { i, minutes ->
+                                    SegmentedButton(
+                                        selected = s.checkInMinutes == minutes,
+                                        onClick = { vm.update { it.copy(checkInMinutes = minutes) } },
+                                        shape = SegmentedButtonDefaults.itemShape(i, CHECK_IN_CHOICES.size),
+                                        icon = {},
+                                    ) { Text(checkInLabel(minutes), maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                                }
+                            }
+                        }
                         LinkRow("Blocked apps", "${s.blockedPackages.size} selected", onOpenBlockedApps)
                         LinkRow(
                             "App blocking service",

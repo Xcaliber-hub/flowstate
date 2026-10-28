@@ -4,6 +4,7 @@ import android.content.Context
 import com.flowstate.focus.data.db.SessionEntity
 import com.flowstate.focus.data.prefs.SettingsRepository
 import com.flowstate.focus.data.repo.SessionRepository
+import com.flowstate.focus.domain.normalizeCheckInMinutes
 import com.flowstate.focus.domain.Phase
 import com.flowstate.focus.domain.Plan
 import com.flowstate.focus.domain.Status
@@ -49,6 +50,7 @@ class TimerEngine @Inject constructor(
     private var completionJob: Job? = null
     private var checkInJob: Job? = null
     @Volatile private var checkInsEnabled = true
+    @Volatile private var checkInIntervalMs = 60 * 60_000L
 
     private val _state = MutableStateFlow(TimerState())
     val state: StateFlow<TimerState> = _state.asStateFlow()
@@ -56,9 +58,11 @@ class TimerEngine @Inject constructor(
     init {
         restore()
         scope.launch {
-            settings.settings.map { it.inactivityCheck }.distinctUntilChanged().collect { enabled ->
+            settings.settings.map { it.inactivityCheck to it.checkInMinutes }.distinctUntilChanged().collect { (enabled, minutes) ->
                 synchronized(lock) {
                     checkInsEnabled = enabled
+                    // A new interval applies from the current elapsed time; a prompt already on screen stays.
+                    checkInIntervalMs = normalizeCheckInMinutes(minutes) * 60_000L
                     // Turning the check-in off while one is waiting counts as an answer.
                     if (!enabled && _state.value.checkInAt > 0L) publish(_state.value.copy(checkInAt = 0L))
                     else scheduleCheckIn()
@@ -193,7 +197,7 @@ class TimerEngine @Inject constructor(
     }
 
     /**
-     * Inactivity check-ins. After every [CHECK_IN_INTERVAL_MS] of running focus time a "Still focusing?"
+     * Inactivity check-ins. After every [checkInIntervalMs] (30 min to 3 hr, set in Settings) of running focus time a "Still focusing?"
      * prompt appears. If nobody answers within [CHECK_IN_TIMEOUT_MS], the timer pauses with its pause
      * time set to the moment the prompt appeared, so the unanswered minutes are never counted.
      * Breaks never get check-ins, and a countdown that ends before the next check-in gets none.
@@ -211,7 +215,8 @@ class TimerEngine @Inject constructor(
             return
         }
         val elapsed = s.elapsedAt(now)
-        val next = (elapsed / CHECK_IN_INTERVAL_MS + 1) * CHECK_IN_INTERVAL_MS
+        val interval = checkInIntervalMs
+        val next = (elapsed / interval + 1) * interval
         if (!s.countsUp && next >= s.phaseDurationMs) return
         checkInJob = scope.launch {
             delay(next - elapsed)
@@ -371,7 +376,6 @@ class TimerEngine @Inject constructor(
     private companion object {
         const val MIN_RECORD_MS = 30_000L
         const val ABANDON_GRACE_MS = 10 * 60_000L
-        const val CHECK_IN_INTERVAL_MS = 60 * 60_000L
         const val CHECK_IN_TIMEOUT_MS = 2 * 60_000L
     }
 }

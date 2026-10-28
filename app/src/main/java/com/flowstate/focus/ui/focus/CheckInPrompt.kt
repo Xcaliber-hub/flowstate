@@ -54,7 +54,7 @@ class CheckInViewModel @Inject constructor(private val engine: TimerEngine) : Vi
 private const val ANSWER_WINDOW_MS = 2 * 60_000L
 
 /**
- * The in-app side of the hourly inactivity check-in. The same prompt also arrives as a notification,
+ * The in-app side of the inactivity check-in (every 30 min to 3 hr, set in Settings). The same prompt also arrives as a notification,
  * so it works with the app closed. Shows "Still focusing?" with a live countdown, and a "Welcome back"
  * card after the timer paused itself.
  */

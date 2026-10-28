@@ -27,7 +27,22 @@ data class AppSettings(
     val keepScreenOn: Boolean = true,
     val strictByDefault: Boolean = false,
     val focusGuard: Boolean = true,
-    /** Asks "Still focusing?" every hour of a focus block and pauses if nobody answers. */
+    /** Asks "Still focusing?" every [checkInMinutes] of a focus block and pauses if nobody answers. */
     val inactivityCheck: Boolean = true,
+    /** How much running focus time passes between check-ins. One of [CHECK_IN_CHOICES]. */
+    val checkInMinutes: Int = 60,
     val blockedPackages: Set<String> = emptySet(),
 )
+
+/** The check-in intervals offered in Settings, in minutes. */
+val CHECK_IN_CHOICES = listOf(30, 60, 90, 120, 180)
+
+/** Snaps a stored value to an offered interval, so an odd or old value never breaks scheduling. */
+fun normalizeCheckInMinutes(minutes: Int): Int = CHECK_IN_CHOICES.minBy { kotlin.math.abs(it - minutes) }
+
+/** "30 min", "1 hr", "1.5 hr", "2 hr", "3 hr". */
+fun checkInLabel(minutes: Int): String = when {
+    minutes < 60 -> "$minutes min"
+    minutes % 60 == 0 -> "${minutes / 60} hr"
+    else -> "${minutes / 60}.${(minutes % 60) * 10 / 60} hr"
+}

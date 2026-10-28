@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.flowstate.focus.domain.normalizeCheckInMinutes
 import com.flowstate.focus.domain.AppSettings
 import com.flowstate.focus.domain.ThemeMode
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -38,6 +39,7 @@ private object Keys {
     val STRICT = booleanPreferencesKey("strict_default")
     val GUARD = booleanPreferencesKey("guard")
     val INACTIVITY = booleanPreferencesKey("inactivity_check")
+    val CHECK_IN_MINUTES = intPreferencesKey("check_in_minutes")
     val BLOCKED = stringSetPreferencesKey("blocked")
 }
 
@@ -58,6 +60,7 @@ private fun Preferences.toSettings(): AppSettings {
         strictByDefault = this[Keys.STRICT] ?: d.strictByDefault,
         focusGuard = this[Keys.GUARD] ?: d.focusGuard,
         inactivityCheck = this[Keys.INACTIVITY] ?: d.inactivityCheck,
+        checkInMinutes = normalizeCheckInMinutes(this[Keys.CHECK_IN_MINUTES] ?: d.checkInMinutes),
         blockedPackages = this[Keys.BLOCKED] ?: d.blockedPackages,
     )
 }
@@ -77,6 +80,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[Keys.STRICT] = s.strictByDefault
     this[Keys.GUARD] = s.focusGuard
     this[Keys.INACTIVITY] = s.inactivityCheck
+    this[Keys.CHECK_IN_MINUTES] = normalizeCheckInMinutes(s.checkInMinutes)
     this[Keys.BLOCKED] = s.blockedPackages
 }
 
