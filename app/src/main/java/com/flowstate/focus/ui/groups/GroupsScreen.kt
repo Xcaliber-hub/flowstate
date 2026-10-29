@@ -330,14 +330,8 @@ private fun WeeklyBoard(state: GroupsState, liquid: Boolean, now: Long, onMember
         if (sorted.isEmpty()) { Spacer(Modifier.height(12.dp)); Text("No weekly focus totals yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         val weekEnd = monday.plusDays(7).atStartOfDay(istZone).toInstant().toEpochMilli()
         Text("Week ends in ${duration((weekEnd - now).coerceAtLeast(0))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        sorted.forEachIndexed { index, member ->
-            val self = member.uid == state.user?.uid
-            Row(Modifier.fillMaxWidth().padding(top = 14.dp).clip(MaterialTheme.shapes.small).then(if (self) Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = .35f), MaterialTheme.shapes.small) else Modifier).memberClick(member, onMemberClick).then(if (self) Modifier.padding(6.dp) else Modifier), verticalAlignment = Alignment.CenterVertically) {
-                Text("${index + 1}", modifier = Modifier.size(30.dp).semantics { contentDescription = "Rank ${index + 1}" }, style = MaterialTheme.typography.titleMedium)
-                ProfileAvatar(member.name, member.avatarId, 38, ring = when (index) { 0 -> 0xFFFFC107; 1 -> 0xFFB0BEC5; 2 -> 0xFFB87333; else -> null })
-                Column(Modifier.weight(1f).padding(start = 10.dp)) { Text(member.name + if (self) " · You" else "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall); Text("Weekly focus", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                Text(duration(member.weeklyFocusMs), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            }
+        if (sorted.isNotEmpty()) {
+            StackedLeaderboard(sorted, selfUid = state.user?.uid, onMemberClick = onMemberClick, modifier = Modifier.padding(top = 16.dp))
         }
     }
 }

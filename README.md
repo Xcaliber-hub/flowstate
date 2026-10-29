@@ -69,3 +69,7 @@ During a focus block, Flowstate asks "Still focusing?" after every 30 min, 1 hr,
 ## Side navigation (experimental)
 
 Settings → Appearance → **Side navigation** swaps the floating bottom bar for a vertical glass rail on the right edge, a little below the middle of the screen. The selected tab sits in an accent circle with a dot under it, the rail slides away while you scroll down, and screens keep a lane free on the right so nothing hides behind it. Turn the switch off to get the original bottom bar back.
+
+## Stacked leaderboard
+
+The weekly leaderboard in Groups shows each member as an overlapping capsule, fading from deep navy (#06141B) at rank 1 to pale grey (#CCD0CF) at the bottom. Text switches between light and dark to stay readable on each shade, your own row gets an accent ring, and tapping any capsule opens that member's profile.
