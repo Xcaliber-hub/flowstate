@@ -66,6 +66,12 @@ import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.formatDuration
 import com.flowstate.focus.ui.components.screenContentPadding
 import com.flowstate.focus.ui.theme.AccentColors
+import com.flowstate.focus.ui.update.ManualCheck
+import com.flowstate.focus.ui.update.UpdateViewModel
+import androidx.activity.ComponentActivity
+import android.content.ContextWrapper
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import com.flowstate.focus.ui.theme.SlateAccent
 import com.flowstate.focus.ui.theme.SlatePalette
 import androidx.compose.ui.graphics.Brush
@@ -141,7 +147,10 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                             }
                         }
                         ToggleRow("Liquid UI", "Breathing cards, fluid navigation and a living progress ring", s.liquidUi) { v -> vm.update { it.copy(liquidUi = v) } }
-                        ToggleRow("Side navigation", "Experimental: move the tabs to a rail on the right edge", s.sideNav) { v -> vm.update { it.copy(sideNav = v) } }
+                        ToggleRow("Side navigation", "Experimental: a compact rail and a daily-goal water bar on the left edge", s.sideNav) { v -> vm.update { it.copy(sideNav = v) } }
+                        if (s.sideNav) {
+                            ToggleRow("Goal bar on top", "Swap places: water bar above the navigation", s.sideNavSwapped) { v -> vm.update { it.copy(sideNavSwapped = v) } }
+                        }
                     }
                 }
             }
@@ -207,6 +216,14 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                     }
                 }
             }
+
+            item {
+                Entrance(5) {
+                    Group("About", liquid) {
+                        UpdateRow()
+                    }
+                }
+            }
         }
     }
 
@@ -259,6 +276,40 @@ private fun LinkRow(title: String, subtitle: String, onClick: () -> Unit) {
         Text(title, style = MaterialTheme.typography.titleSmall)
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/**
+ * "Check for updates": asks GitHub for the latest release. A newer one opens the same update card as
+ * the launch check (it uses the activity's [UpdateViewModel], so there is only ever one card).
+ */
+@Composable
+private fun UpdateRow() {
+    val activity = LocalContext.current.findActivity() ?: return
+    val updates: UpdateViewModel = hiltViewModel(viewModelStoreOwner = activity)
+    val manual by updates.manual.collectAsStateWithLifecycle()
+    val subtitle = when (val m = manual) {
+        ManualCheck.Idle -> "Version ${updates.currentVersion}"
+        ManualCheck.Checking -> "Checking GitHub…"
+        is ManualCheck.UpToDate -> "You're on the latest version (${m.version})"
+        ManualCheck.Failed -> "Couldn't reach GitHub. Check your connection and try again"
+    }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text("App updates", style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (manual == ManualCheck.Checking) {
+            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
+        } else {
+            FilledTonalButton(onClick = updates::checkNow) { Text("Check for updates") }
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): ComponentActivity? = when (this) {
+    is ComponentActivity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 /** Daily focus goal limits in minutes: 15 minutes to 16 hours. */

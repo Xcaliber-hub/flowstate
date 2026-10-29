@@ -23,14 +23,14 @@ fun ScreenContainer(content: @Composable () -> Unit) {
     }
 }
 
-/** Where the app's navigation sits: the floating bottom bar, or the experimental right-edge rail. */
+/** Where the app's navigation sits: the floating bottom bar, or the experimental left-edge dock. */
 enum class NavLayout { BOTTOM, SIDE }
 
 val LocalNavLayout = staticCompositionLocalOf { NavLayout.BOTTOM }
 
 /**
  * Edge-to-edge padding: clear of the status bar on top and of the navigation. With the bottom bar the
- * content stops above it; with the side rail the content keeps a lane free on the right instead.
+ * content stops above it; with the side dock the content keeps a lane free on the left instead.
  */
 @Composable
 fun screenContentPadding(): PaddingValues {
@@ -38,7 +38,7 @@ fun screenContentPadding(): PaddingValues {
     return when (LocalNavLayout.current) {
         NavLayout.BOTTOM -> PaddingValues(start = 20.dp, end = 20.dp, top = top + 16.dp, bottom = 136.dp)
         NavLayout.SIDE -> PaddingValues(
-            start = 20.dp, end = 84.dp, top = top + 16.dp,
+            start = 10.dp + SideDockWidth + 14.dp, end = 20.dp, top = top + 16.dp,
             bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 32.dp,
         )
     }

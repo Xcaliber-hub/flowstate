@@ -18,8 +18,10 @@ data class AppSettings(
     val dynamicColor: Boolean = true,
     val accentIndex: Int = 0,
     val liquidUi: Boolean = true,
-    /** Experimental: a vertical navigation rail on the right edge instead of the bottom bar. */
+    /** Experimental: a compact navigation rail and daily-goal water bar on the left edge instead of the bottom bar. */
     val sideNav: Boolean = false,
+    /** With side navigation: put the daily-goal water bar above the nav rail instead of below it. */
+    val sideNavSwapped: Boolean = false,
     val focusMin: Int = 25,
     val shortBreakMin: Int = 5,
     val longBreakMin: Int = 15,

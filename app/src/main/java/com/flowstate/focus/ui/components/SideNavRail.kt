@@ -1,22 +1,13 @@
 package com.flowstate.focus.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
@@ -36,40 +27,33 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
+/** Width of the side rail and the goal bar under it; content keeps a lane this wide plus margins. */
+val SideDockWidth = 56.dp
+
 /**
- * Experimental vertical navigation: a slim glass capsule that floats on the right edge, a little
- * below the middle of the screen, within easy reach of the right thumb. The selected tab sits in a
- * filled accent circle with a small dot under it. Like the bottom bar, [visible] slides it off
- * screen (to the right) while scrolling down.
+ * Compact vertical navigation: a slim pill of icons. The selected tab sits in a soft tinted circle
+ * (primary container), the rest are plain icons, as in the reference design. Sliding in and out on
+ * scroll is handled by the dock that holds it.
  */
 @Composable
 fun SideNavRail(
     tabs: List<NavTab>,
     selectedRoute: String?,
-    visible: Boolean,
     liquid: Boolean,
     onSelect: (NavTab) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val haptics = LocalHapticFeedback.current
     val cs = MaterialTheme.colorScheme
-    val offsetX by animateDpAsState(
-        targetValue = if (visible) 0.dp else 96.dp,
-        animationSpec = spring(
-            dampingRatio = if (liquid) Spring.DampingRatioMediumBouncy else Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
-        label = "railOffset",
-    )
     DepthSurface(
         shape = RoundedCornerShape(percent = 50),
-        modifier = modifier.padding(end = 10.dp).offset(x = offsetX),
+        modifier = modifier,
         elevation = Depth.Floating,
         colors = depthColors(base = cs.surfaceContainerHigh, darkAlpha = 0.94f, lightAlpha = 0.82f),
     ) {
         Column(
-            Modifier.padding(horizontal = 6.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             tabs.forEach { tab ->
@@ -87,30 +71,22 @@ fun SideNavRail(
 @Composable
 private fun RailItem(tab: NavTab, selected: Boolean, liquid: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
-    val fill by animateColorAsState(if (selected) cs.primary else Color.Transparent, label = "railFill")
-    val tint by animateColorAsState(if (selected) cs.onPrimary else cs.onSurfaceVariant, label = "railTint")
+    val fill by animateColorAsState(if (selected) cs.primaryContainer else Color.Transparent, label = "railFill")
+    val tint by animateColorAsState(if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant, label = "railTint")
     val scale by animateFloatAsState(
-        targetValue = if (selected) 1f else 0.9f,
+        targetValue = if (selected) 1f else 0.92f,
         animationSpec = if (liquid) spring<Float>(0.45f, Spring.StiffnessMediumLow) else spring<Float>(1f, Spring.StiffnessMedium),
         label = "railScale",
     )
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier
-                .size(52.dp)
-                .scale(scale)
-                .clip(CircleShape)
-                .background(fill)
-                .selectable(selected = selected, role = Role.Tab, onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(tab.icon, contentDescription = tab.label, tint = tint)
-        }
-        AnimatedVisibility(visible = selected, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut()) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(5.dp))
-                Box(Modifier.size(5.dp).clip(CircleShape).background(cs.primary.copy(alpha = 0.8f)))
-            }
-        }
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .scale(scale)
+            .clip(CircleShape)
+            .background(fill)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(tab.icon, contentDescription = tab.label, tint = tint, modifier = Modifier.size(22.dp))
     }
 }

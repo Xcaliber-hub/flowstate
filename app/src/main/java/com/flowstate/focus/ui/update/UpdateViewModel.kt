@@ -24,6 +24,14 @@ sealed interface UpdateState {
     data class Failed(val release: ReleaseInfo) : UpdateState
 }
 
+/** Result of "Check for updates" in Settings. */
+sealed interface ManualCheck {
+    data object Idle : ManualCheck
+    data object Checking : ManualCheck
+    data class UpToDate(val version: String) : ManualCheck
+    data object Failed : ManualCheck
+}
+
 @HiltViewModel
 class UpdateViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -34,8 +42,11 @@ class UpdateViewModel @Inject constructor(
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Hidden)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
 
+    private val _manual = MutableStateFlow<ManualCheck>(ManualCheck.Idle)
+    val manual: StateFlow<ManualCheck> = _manual.asStateFlow()
+
     private val prefs = context.getSharedPreferences("updates", Context.MODE_PRIVATE)
-    private val currentVersion: String =
+    val currentVersion: String =
         runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "0"
 
     init {
@@ -44,6 +55,26 @@ class UpdateViewModel @Inject constructor(
             if (!UpdateChecker.isNewer(release.version, currentVersion)) return@launch
             if (prefs.getString(KEY_SKIPPED, null) == release.version) return@launch
             _state.value = UpdateState.Available(release, currentVersion)
+        }
+    }
+
+    /**
+     * "Check for updates" in Settings. Unlike the launch check, it ignores a skipped version: asking
+     * on purpose should always show what is available. A newer release opens the usual update card.
+     */
+    fun checkNow() {
+        if (_manual.value == ManualCheck.Checking || _state.value is UpdateState.Downloading) return
+        _manual.value = ManualCheck.Checking
+        viewModelScope.launch {
+            val release = checker.latestRelease()
+            _manual.value = when {
+                release == null -> ManualCheck.Failed
+                UpdateChecker.isNewer(release.version, currentVersion) -> {
+                    _state.value = UpdateState.Available(release, currentVersion)
+                    ManualCheck.Idle
+                }
+                else -> ManualCheck.UpToDate(currentVersion)
+            }
         }
     }
 

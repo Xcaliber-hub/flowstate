@@ -68,7 +68,11 @@ During a focus block, Flowstate asks "Still focusing?" after every 30 min, 1 hr,
 
 ## Side navigation (experimental)
 
-Settings → Appearance → **Side navigation** swaps the floating bottom bar for a vertical glass rail on the right edge, a little below the middle of the screen. The selected tab sits in an accent circle with a dot under it, the rail slides away while you scroll down, and screens keep a lane free on the right so nothing hides behind it. Turn the switch off to get the original bottom bar back.
+Settings → Appearance → **Side navigation** swaps the floating bottom bar for a compact dock on the left edge: a slim pill of icons (the selected tab in a soft tinted circle) and, under it, a **daily-goal water bar**. The bar fills like a glass of water as today's focus adds up toward your daily goal, rising live while the timer runs, with ripples and bubbles. With Liquid UI on, it reads the phone's gravity sensor (gyroscope and accelerometer fused): tilt the phone and the water leans to stay level, overshoots and sloshes back. **Goal bar on top** swaps the two. The dock slides away while you scroll down, and screens keep a lane free on the left. Turn the switch off to get the original bottom bar back.
+
+## Checking for updates
+
+Settings → About → **Check for updates** asks GitHub for the latest release. If one is newer, the usual update card opens; otherwise it says you're on the latest version.
 
 ## Stacked leaderboard
 

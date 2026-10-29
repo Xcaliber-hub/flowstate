@@ -30,6 +30,7 @@ private object Keys {
     val ACCENT = intPreferencesKey("accent")
     val LIQUID = booleanPreferencesKey("liquid")
     val SIDE_NAV = booleanPreferencesKey("side_nav")
+    val SIDE_NAV_SWAPPED = booleanPreferencesKey("side_nav_swapped")
     val FOCUS = intPreferencesKey("focus_min")
     val SHORT = intPreferencesKey("short_min")
     val LONG = intPreferencesKey("long_min")
@@ -52,6 +53,7 @@ private fun Preferences.toSettings(): AppSettings {
         accentIndex = this[Keys.ACCENT] ?: d.accentIndex,
         liquidUi = this[Keys.LIQUID] ?: d.liquidUi,
         sideNav = this[Keys.SIDE_NAV] ?: d.sideNav,
+        sideNavSwapped = this[Keys.SIDE_NAV_SWAPPED] ?: d.sideNavSwapped,
         focusMin = this[Keys.FOCUS] ?: d.focusMin,
         shortBreakMin = this[Keys.SHORT] ?: d.shortBreakMin,
         longBreakMin = this[Keys.LONG] ?: d.longBreakMin,
@@ -73,6 +75,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[Keys.ACCENT] = s.accentIndex
     this[Keys.LIQUID] = s.liquidUi
     this[Keys.SIDE_NAV] = s.sideNav
+    this[Keys.SIDE_NAV_SWAPPED] = s.sideNavSwapped
     this[Keys.FOCUS] = s.focusMin
     this[Keys.SHORT] = s.shortBreakMin
     this[Keys.LONG] = s.longBreakMin
