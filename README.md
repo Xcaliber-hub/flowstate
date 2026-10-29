@@ -68,7 +68,11 @@ During a focus block, Flowstate asks "Still focusing?" after every 30 min, 1 hr,
 
 ## Side navigation (experimental)
 
-Settings → Appearance → **Side navigation** swaps the floating bottom bar for a compact dock on the left edge: a slim pill of icons (the selected tab in a soft tinted circle) and, under it, a **daily-goal water bar**. The bar fills like a glass of water as today's focus adds up toward your daily goal, rising live while the timer runs, with ripples and bubbles. With Liquid UI on, it reads the phone's gravity sensor (gyroscope and accelerometer fused): tilt the phone and the water leans to stay level, overshoots and sloshes back. **Goal bar on top** swaps the two. The dock slides away while you scroll down, and screens keep a lane free on the left. Turn the switch off to get the original bottom bar back.
+Settings → Appearance → **Side navigation** swaps the floating bottom bar for a compact dock on the left edge: a slim pill of icons (the selected tab in a soft tinted circle) and, under it, a **daily-goal water bar**. The bar fills like a glass of water as today's focus adds up toward your daily goal, rising live while the timer runs, with ripples and bubbles. With Liquid UI on, it reads the phone's gravity sensor (gyroscope and accelerometer fused): tilt the phone and the water leans to stay level, overshoots and sloshes back. **Goal bar on top** swaps the two. The dock stays fixed in place (it never hides on scroll) and sits centred vertically, and screens keep a lane free on the left. Turn the switch off to get the original bottom bar back.
+
+## Text that fits
+
+Labels, buttons, tabs, stat tiles and leaderboard rows stay on one line and shrink to fit (or end in "…" for names) instead of breaking mid-word in narrow layouts or with a large system font. The focus timer ring is always a circle, and its clock scales with it.
 
 ## Checking for updates
 

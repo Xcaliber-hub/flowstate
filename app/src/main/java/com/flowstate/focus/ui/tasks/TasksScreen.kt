@@ -1,5 +1,6 @@
 package com.flowstate.focus.ui.tasks
 
+import com.flowstate.focus.ui.components.AutoSizeText
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -85,8 +86,8 @@ fun TasksScreen(settings: AppSettings, vm: TasksViewModel = hiltViewModel()) {
                     Entrance(0) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Tasks", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.weight(1f))
-                                if (tasks.any { it.done }) TextButton(onClick = vm::clearDone) { Text("Clear done") }
+                                AutoSizeText("Tasks", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.weight(1f))
+                                if (tasks.any { it.done }) TextButton(onClick = vm::clearDone) { AutoSizeText("Clear done") }
                             }
                             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text("All") })
@@ -100,7 +101,7 @@ fun TasksScreen(settings: AppSettings, vm: TasksViewModel = hiltViewModel()) {
                 item(key = "progress") {
                     Entrance(1) {
                         GlassCard(Modifier.fillMaxWidth(), settings.liquidUi) {
-                            Text(
+                            AutoSizeText(
                                 if (visible.isEmpty()) "Nothing planned" else "$doneCount of ${visible.size} done",
                                 style = MaterialTheme.typography.titleMedium,
                             )
@@ -212,7 +213,7 @@ private fun AddTaskSheet(onDismiss: () -> Unit, onAdd: (String, String, Int, Int
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
     ) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("New task", style = MaterialTheme.typography.titleLarge)
+            AutoSizeText("New task", style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(
                 value = title,
                 onValueChange = { title = it.take(120) },
@@ -224,7 +225,7 @@ private fun AddTaskSheet(onDismiss: () -> Unit, onAdd: (String, String, Int, Int
             ChipRow("Priority", PriorityLabels.mapIndexed { i, l -> l to (i == priority) }) { priority = it }
             ChipRow("Due", dueOptions.map { it.first to (it.second == due) }) { due = dueOptions[it].second }
             Button(onClick = { onAdd(title, category, priority, due) }, enabled = title.isNotBlank(), modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                Text("Add task")
+                AutoSizeText("Add task")
             }
         }
     }
@@ -233,7 +234,7 @@ private fun AddTaskSheet(onDismiss: () -> Unit, onAdd: (String, String, Int, Int
 @Composable
 private fun ChipRow(title: String, options: List<Pair<String, Boolean>>, onSelect: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        AutoSizeText(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             options.forEachIndexed { index, (label, selected) ->
                 FilterChip(selected = selected, onClick = { onSelect(index) }, label = { Text(label) })

@@ -1,5 +1,6 @@
 package com.flowstate.focus.ui.groups
 
+import com.flowstate.focus.ui.components.AutoSizeText
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -84,7 +85,7 @@ internal fun ProfileAvatar(name: String, avatarId: String, size: Int, ring: Long
 internal fun PresetAvatarPicker(name: String, selectedId: String, enabled: Boolean, onSelect: (String) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.selectableGroup()) {
-        Text("Choose an avatar", style = MaterialTheme.typography.titleSmall)
+        AutoSizeText("Choose an avatar", style = MaterialTheme.typography.titleSmall)
         Text("Bundled presets only. No photo uploads.", style = MaterialTheme.typography.bodySmall,
             color = colors.onSurfaceVariant)
         // Three per row keeps all twenty-four presets to eight compact rows in the scrolling dialog.
@@ -116,6 +117,6 @@ internal fun PresetAvatarPicker(name: String, selectedId: String, enabled: Boole
         TextButton(onClick = { onSelect("") }, enabled = enabled,
             modifier = Modifier.fillMaxWidth().semantics {
                 contentDescription = if (selectedId.isEmpty()) "Use initial, selected" else "Use initial instead of preset avatar"
-            }) { Text(if (selectedId.isEmpty()) "Initial selected" else "Use initial instead") }
+            }) { AutoSizeText(if (selectedId.isEmpty()) "Initial selected" else "Use initial instead") }
     }
 }

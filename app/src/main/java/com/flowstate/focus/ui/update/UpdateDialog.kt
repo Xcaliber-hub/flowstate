@@ -1,5 +1,6 @@
 package com.flowstate.focus.ui.update
 
+import com.flowstate.focus.ui.components.AutoSizeText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -97,10 +98,10 @@ private fun AvailableContent(s: UpdateState.Available, vm: UpdateViewModel) {
         ) { Text(s.release.notes.replace("**", ""), style = MaterialTheme.typography.bodyMedium) }
     }
     Spacer(Modifier.height(20.dp))
-    Button(onClick = vm::update, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Update now") }
+    Button(onClick = vm::update, modifier = Modifier.fillMaxWidth().height(48.dp)) { AutoSizeText("Update now") }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        TextButton(onClick = vm::skip) { Text("Skip this version", color = cs.onSurfaceVariant) }
-        TextButton(onClick = vm::later) { Text("Later") }
+        TextButton(onClick = vm::skip) { AutoSizeText("Skip this version", color = cs.onSurfaceVariant) }
+        TextButton(onClick = vm::later) { AutoSizeText("Later") }
     }
 }
 
@@ -115,16 +116,16 @@ private fun DownloadingContent(s: UpdateState.Downloading) {
 private fun ColumnScope.PermissionContent(vm: UpdateViewModel) {
     Header("One more step", "Allow Flowstate to install updates, then come back here. You only do this once.")
     Spacer(Modifier.height(20.dp))
-    Button(onClick = vm::openPermissionSettings, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Open settings") }
-    TextButton(onClick = vm::later, modifier = Modifier.align(Alignment.End)) { Text("Later") }
+    Button(onClick = vm::openPermissionSettings, modifier = Modifier.fillMaxWidth().height(48.dp)) { AutoSizeText("Open settings") }
+    TextButton(onClick = vm::later, modifier = Modifier.align(Alignment.End)) { AutoSizeText("Later") }
 }
 
 @Composable
 private fun ColumnScope.FailedContent(vm: UpdateViewModel) {
     Header("Download failed", "Check your connection and try again.")
     Spacer(Modifier.height(20.dp))
-    Button(onClick = vm::update, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Try again") }
-    TextButton(onClick = vm::later, modifier = Modifier.align(Alignment.End)) { Text("Later") }
+    Button(onClick = vm::update, modifier = Modifier.fillMaxWidth().height(48.dp)) { AutoSizeText("Try again") }
+    TextButton(onClick = vm::later, modifier = Modifier.align(Alignment.End)) { AutoSizeText("Later") }
 }
 
 private fun formatMb(bytes: Long) = String.format(Locale.US, "%.1f MB", bytes / 1_048_576f)

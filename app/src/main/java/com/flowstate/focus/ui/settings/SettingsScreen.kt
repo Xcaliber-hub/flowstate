@@ -1,5 +1,7 @@
 package com.flowstate.focus.ui.settings
 
+import androidx.compose.ui.unit.sp
+import com.flowstate.focus.ui.components.AutoSizeText
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -103,7 +105,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
             contentPadding = screenContentPadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { Entrance(0) { Text("Settings", style = MaterialTheme.typography.headlineLarge) } }
+            item { Entrance(0) { AutoSizeText("Settings", style = MaterialTheme.typography.headlineLarge) } }
 
             item {
                 Entrance(1) {
@@ -114,14 +116,14 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                                     selected = s.themeMode == mode,
                                     onClick = { vm.update { it.copy(themeMode = mode) } },
                                     shape = SegmentedButtonDefaults.itemShape(i, ThemeMode.entries.size),
-                                ) { Text(mode.name.lowercase().replaceFirstChar { c -> c.uppercase() }) }
+                                ) { AutoSizeText(mode.name.lowercase().replaceFirstChar { c -> c.uppercase() }) }
                             }
                         }
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                             ToggleRow("Dynamic color", "Use colors from your wallpaper", s.dynamicColor) { v -> vm.update { it.copy(dynamicColor = v) } }
                         }
                         if (!s.dynamicColor || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
-                            Text("Accent color", style = MaterialTheme.typography.titleSmall)
+                            AutoSizeText("Accent color", style = MaterialTheme.typography.titleSmall)
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth().selectableGroup(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -188,7 +190,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                                         onClick = { vm.update { it.copy(checkInMinutes = minutes) } },
                                         shape = SegmentedButtonDefaults.itemShape(i, CHECK_IN_CHOICES.size),
                                         icon = {},
-                                    ) { Text(checkInLabel(minutes), maxLines = 1, style = MaterialTheme.typography.labelMedium) }
+                                    ) { AutoSizeText(checkInLabel(minutes), style = MaterialTheme.typography.labelMedium, minSize = 9.sp) }
                                 }
                             }
                         }
@@ -243,9 +245,9 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                 TextButton(onClick = {
                     showDisclosure = false
                     context.startActivity(Intent(AndroidSettings.ACTION_ACCESSIBILITY_SETTINGS))
-                }) { Text("Open settings") }
+                }) { AutoSizeText("Open settings") }
             },
-            dismissButton = { TextButton(onClick = { showDisclosure = false }) { Text("Not now") } },
+            dismissButton = { TextButton(onClick = { showDisclosure = false }) { AutoSizeText("Not now") } },
         )
     }
 }
@@ -253,7 +255,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
 @Composable
 private fun Group(title: String, liquid: Boolean, content: @Composable () -> Unit) {
     GlassCard(Modifier.fillMaxWidth(), liquid) {
-        Text(title, style = MaterialTheme.typography.titleLarge)
+        AutoSizeText(title, style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(12.dp))
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { content() }
     }
@@ -263,7 +265,7 @@ private fun Group(title: String, liquid: Boolean, content: @Composable () -> Uni
 private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(title, style = MaterialTheme.typography.titleSmall)
+            AutoSizeText(title, style = MaterialTheme.typography.titleSmall)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = checked, onCheckedChange = onChange)
@@ -273,7 +275,7 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
 @Composable
 private fun LinkRow(title: String, subtitle: String, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall)
+        AutoSizeText(title, style = MaterialTheme.typography.titleSmall)
         Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -295,13 +297,13 @@ private fun UpdateRow() {
     }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text("App updates", style = MaterialTheme.typography.titleSmall)
+            AutoSizeText("App updates", style = MaterialTheme.typography.titleSmall)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (manual == ManualCheck.Checking) {
             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
         } else {
-            FilledTonalButton(onClick = updates::checkNow) { Text("Check for updates") }
+            FilledTonalButton(onClick = updates::checkNow) { AutoSizeText("Check for updates") }
         }
     }
 }
@@ -333,7 +335,7 @@ private fun SliderRow(
     val snapped = if (step > 1) ((local / step).roundToInt() * step).coerceIn(range) else local.roundToInt()
     Column {
         Row(Modifier.fillMaxWidth()) {
-            Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            AutoSizeText(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             Text(format?.invoke(snapped) ?: "$snapped $suffix".trim(), style = MaterialTheme.typography.titleSmall)
         }
         Slider(

@@ -125,10 +125,10 @@ fun FlowstateAppUi(settings: AppSettings) {
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
                     // Compact rail and daily-goal water bar, stacked on the left edge.
+                    // Fixed in place: the side dock never hides on scroll.
                     NavLayout.SIDE -> SideDock(
                         tabs = Tabs,
                         selectedRoute = route,
-                        visible = navVisible,
                         liquid = settings.liquidUi,
                         swapped = settings.sideNavSwapped,
                         onSelect = onSelect,

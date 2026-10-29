@@ -1,5 +1,11 @@
 package com.flowstate.focus.ui.focus
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import com.flowstate.focus.ui.components.AutoSizeText
 import android.annotation.SuppressLint
 import android.Manifest
 import android.content.pm.PackageManager
@@ -163,7 +169,7 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
             item(key = "header") {
                 Entrance(0) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Focus", style = MaterialTheme.typography.headlineLarge)
+                        AutoSizeText("Focus", style = MaterialTheme.typography.headlineLarge)
                         Text(
                             LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM")),
                             style = MaterialTheme.typography.bodyLarge,
@@ -192,9 +198,9 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
             }
             item(key = "tiles") {
                 Entrance(2) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        StatTile("Today", formatDuration(ui.todayMs), null, ui.settings.liquidUi, Modifier.weight(1f))
-                        StatTile("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", Icons.Rounded.LocalFireDepartment, ui.settings.liquidUi, Modifier.weight(1f))
+                    Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        StatTile("Today", formatDuration(ui.todayMs), null, ui.settings.liquidUi, Modifier.weight(1f).fillMaxHeight())
+                        StatTile("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", Icons.Rounded.LocalFireDepartment, ui.settings.liquidUi, Modifier.weight(1f).fillMaxHeight())
                     }
                 }
             }
@@ -229,9 +235,9 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
                 TextButton(onClick = {
                     vm.deleteSession(session.id)
                     pendingDelete = null
-                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                }) { AutoSizeText("Delete", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { AutoSizeText("Cancel") } },
         )
     }
 }
@@ -244,7 +250,7 @@ private fun ModeChips(selected: TimerMode, enabled: Boolean, onSelect: (TimerMod
                 selected = mode == selected,
                 onClick = { onSelect(mode) },
                 enabled = enabled,
-                label = { Text(mode.label) },
+                label = { Text(mode.label, maxLines = 1, softWrap = false) },
             )
         }
     }
@@ -283,7 +289,7 @@ private fun TimerCard(
                     ) {
                         Icon(Icons.Rounded.Coffee, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
-                        Text("Take a break")
+                        AutoSizeText("Take a break")
                     }
                 }
                 t.isBreak -> BreakControls(t, onStartFocusFromBreak, onPause, onResume, onStop)
@@ -302,7 +308,7 @@ private fun StartFocusButton(onStart: () -> Unit) {
     ) {
         Icon(Icons.Rounded.PlayArrow, contentDescription = null)
         Spacer(Modifier.width(8.dp))
-        Text("Start focus", style = MaterialTheme.typography.titleMedium)
+        AutoSizeText("Start focus", style = MaterialTheme.typography.titleMedium)
     }
 }
 
@@ -320,12 +326,12 @@ private fun BreakControls(t: TimerState, onStartFocus: () -> Unit, onPause: () -
         ) {
             Icon(if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, contentDescription = null)
             Spacer(Modifier.width(6.dp))
-            Text(if (running) "Pause" else "Resume")
+            AutoSizeText(if (running) "Pause" else "Resume")
         }
         OutlinedButton(onClick = onEnd, modifier = Modifier.weight(1f).height(56.dp), shape = RoundedCornerShape(28.dp)) {
             Icon(Icons.Rounded.Stop, contentDescription = null)
             Spacer(Modifier.width(6.dp))
-            Text("End break")
+            AutoSizeText("End break")
         }
     }
 }
@@ -345,7 +351,7 @@ private fun BreakSheet(defaultMin: Int, onDismiss: () -> Unit, onStart: (Int) ->
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.92f),
     ) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            Text("Take a break", style = MaterialTheme.typography.titleLarge)
+            AutoSizeText("Take a break", style = MaterialTheme.typography.titleLarge)
             Text(
                 "Step away. We'll notify you when the break is over. Breaks don't count as focus time.",
                 style = MaterialTheme.typography.bodyMedium,
@@ -355,13 +361,13 @@ private fun BreakSheet(defaultMin: Int, onDismiss: () -> Unit, onStart: (Int) ->
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         presets.forEach { p ->
-                            FilterChip(selected = !custom && minutes == p, onClick = { custom = false; minutes = p }, label = { Text("$p min") })
+                            FilterChip(selected = !custom && minutes == p, onClick = { custom = false; minutes = p }, label = { Text("$p min", maxLines = 1, softWrap = false) })
                         }
-                        FilterChip(selected = custom, onClick = { custom = true }, label = { Text("Custom") })
+                        FilterChip(selected = custom, onClick = { custom = true }, label = { Text("Custom", maxLines = 1, softWrap = false) })
                     }
                     if (custom) {
                         Row(Modifier.fillMaxWidth()) {
-                            Text("Length", style = MaterialTheme.typography.titleSmall)
+                            AutoSizeText("Length", style = MaterialTheme.typography.titleSmall)
                             Spacer(Modifier.weight(1f))
                             Text("${customMin.roundToInt()} min", style = MaterialTheme.typography.titleSmall)
                         }
@@ -375,7 +381,7 @@ private fun BreakSheet(defaultMin: Int, onDismiss: () -> Unit, onStart: (Int) ->
                 }
             }
             Button(onClick = { onStart(chosen) }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                Text("Start $chosen min break")
+                AutoSizeText("Start $chosen min break")
             }
         }
     }
@@ -409,7 +415,7 @@ private fun SetupSection(ui: FocusUiState, onStrict: (Boolean) -> Unit, onSubjec
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Strict mode", style = MaterialTheme.typography.titleSmall)
+                AutoSizeText("Strict mode", style = MaterialTheme.typography.titleSmall)
                 Text(
                     "No pausing or quitting until the block ends",
                     style = MaterialTheme.typography.bodySmall,
@@ -424,7 +430,7 @@ private fun SetupSection(ui: FocusUiState, onStrict: (Boolean) -> Unit, onSubjec
 @Composable
 private fun ActiveControls(t: TimerState, onPause: () -> Unit, onResume: () -> Unit, onStop: () -> Unit, onForceStop: () -> Unit) {
     if (t.strict && t.phase == Phase.FOCUS) {
-        Text(
+        AutoSizeText(
             "Strict mode is on",
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -441,7 +447,7 @@ private fun ActiveControls(t: TimerState, onPause: () -> Unit, onResume: () -> U
             ) {
                 Icon(if (running) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
-                Text(if (running) "Pause" else "Resume")
+                AutoSizeText(if (running) "Pause" else "Resume")
             }
             OutlinedButton(onClick = onStop, modifier = Modifier.weight(1f).height(60.dp), shape = RoundedCornerShape(30.dp)) {
                 Icon(Icons.Rounded.Stop, contentDescription = null)
@@ -485,7 +491,7 @@ private fun HoldToQuit(onQuit: () -> Unit) {
             },
         contentAlignment = Alignment.Center,
     ) {
-        Text("Hold to quit", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onErrorContainer)
+        AutoSizeText("Hold to quit", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onErrorContainer)
     }
 }
 
@@ -531,23 +537,35 @@ private fun TimerDisplay(state: TimerState, mode: TimerMode, idleMs: Long, liqui
     }
     val clock = formatClock(seconds)
 
-    Box(
+    // Always a square, up to 280 dp, so the ring stays a circle in narrow layouts (side navigation)
+    // instead of stretching into an ellipse. The clock's size follows the ring.
+    BoxWithConstraints(
         modifier = Modifier
-            .size(280.dp)
+            .fillMaxWidth()
             .semantics(mergeDescendants = true) { contentDescription = "$label, $clock" },
         contentAlignment = Alignment.Center,
     ) {
+        val ring = minOf(maxWidth, 280.dp)
+        val clockSize = (ring.value * if (clock.length > 5) 0.15f else 0.18f).sp
+        Box(Modifier.size(ring).aspectRatio(1f), contentAlignment = Alignment.Center) {
         ProgressRing(progress = progress, liquid = liquid, active = running)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(clock, style = MaterialTheme.typography.displayLarge, textAlign = TextAlign.Center)
+            AutoSizeText(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                clock,
+                style = MaterialTheme.typography.displayMedium.copy(fontSize = clockSize, lineHeight = clockSize * 1.15f),
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+            )
             val sub = when {
                 state.standaloneBreak -> ""
                 state.mode == TimerMode.POMODORO && state.isActive -> "Round ${state.round + 1}"
                 state.subject.isNotBlank() -> state.subject
                 else -> ""
             }
-            if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (sub.isNotEmpty()) Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
         }
     }
 }
@@ -611,10 +629,11 @@ private fun StatTile(title: String, value: String, icon: androidx.compose.ui.gra
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(6.dp))
             }
-            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Spacer(Modifier.height(6.dp))
-        Text(value, style = MaterialTheme.typography.headlineMedium)
+        // One line that shrinks to fit, so "1h 43m" never splits and both tiles keep the same height.
+        AutoSizeText(value, style = MaterialTheme.typography.headlineMedium)
     }
 }
 
@@ -624,7 +643,7 @@ private fun GoalCard(ui: FocusUiState) {
     val ratio = if (goalMs > 0) (ui.todayMs / goalMs.toFloat()).coerceIn(0f, 1f) else 0f
     GlassCard(Modifier.fillMaxWidth(), ui.settings.liquidUi) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Today's goal", style = MaterialTheme.typography.titleMedium)
+            AutoSizeText("Today's goal", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
             Text("${formatDuration(ui.todayMs)} of ${formatDuration(goalMs)}", style = MaterialTheme.typography.bodyMedium)
         }
@@ -692,7 +711,7 @@ private fun sessionLabel(s: SessionEntity): String = s.subject.ifBlank { TimerMo
 private fun SessionsCard(sessions: List<SessionEntity>, liquid: Boolean, onHold: (SessionEntity) -> Unit) {
     val haptics = LocalHapticFeedback.current
     GlassCard(Modifier.fillMaxWidth(), liquid) {
-        Text("Today's sessions", style = MaterialTheme.typography.titleMedium)
+        AutoSizeText("Today's sessions", style = MaterialTheme.typography.titleMedium)
         if (sessions.isNotEmpty()) {
             Text(
                 "Hold a session to delete it",
@@ -724,7 +743,7 @@ private fun SessionsCard(sessions: List<SessionEntity>, liquid: Boolean, onHold:
                         .padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
+                    AutoSizeText(
                         sessionTime(s),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

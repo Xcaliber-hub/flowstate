@@ -1,5 +1,10 @@
 package com.flowstate.focus.ui.stats
 
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
+import com.flowstate.focus.ui.components.AutoSizeText
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -44,14 +49,16 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
             item(key = "header") {
                 Entrance(0) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Statistics", style = MaterialTheme.typography.headlineLarge)
+                        AutoSizeText("Statistics", style = MaterialTheme.typography.headlineLarge)
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                             StatsPeriod.entries.forEachIndexed { index, p ->
                                 SegmentedButton(
                                     selected = p == ui.period,
                                     onClick = { vm.setPeriod(p) },
                                     shape = SegmentedButtonDefaults.itemShape(index, StatsPeriod.entries.size),
-                                ) { Text(p.label) }
+                                    // No check mark: it steals width, and "Month" broke onto two lines in narrow layouts.
+                                    icon = {},
+                                ) { AutoSizeText(p.label, style = MaterialTheme.typography.labelLarge, minSize = 10.sp) }
                             }
                         }
                     }
@@ -60,7 +67,7 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
             item(key = "chart") {
                 Entrance(1) {
                     GlassCard(Modifier.fillMaxWidth(), liquid) {
-                        Text("Focus time", style = MaterialTheme.typography.titleMedium)
+                        AutoSizeText("Focus time", style = MaterialTheme.typography.titleMedium)
                         Text(formatDuration(ui.totalMs), style = MaterialTheme.typography.headlineMedium)
                         Spacer(Modifier.height(16.dp))
                         if (ui.period == StatsPeriod.MONTH) LineChart(ui.buckets) else BarChart(ui.buckets)
@@ -70,13 +77,13 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
             item(key = "numbers") {
                 Entrance(2) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Metric("Sessions", ui.sessionCount.toString(), liquid, Modifier.weight(1f))
-                            Metric("Average length", formatDuration(ui.averageMs), liquid, Modifier.weight(1f))
+                        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Metric("Sessions", ui.sessionCount.toString(), liquid, Modifier.weight(1f.fillMaxHeight())
+                            Metric("Avg. length", formatDuration(ui.averageMs), liquid, Modifier.weight(1f.fillMaxHeight())
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Metric("Completed", "${ui.completionPercent}%", liquid, Modifier.weight(1f))
-                            Metric("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", liquid, Modifier.weight(1f))
+                        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Metric("Completed", "${ui.completionPercent}%", liquid, Modifier.weight(1f.fillMaxHeight())
+                            Metric("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", liquid, Modifier.weight(1f.fillMaxHeight())
                         }
                     }
                 }
@@ -85,7 +92,7 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
                 Entrance(3) {
                     GlassCard(Modifier.fillMaxWidth(), liquid) {
                         Row(Modifier.fillMaxWidth()) {
-                            Text("Productivity score", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                            AutoSizeText("Productivity score", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                             Text("${ui.productivityScore} / 100", style = MaterialTheme.typography.titleMedium)
                         }
                         Spacer(Modifier.height(10.dp))
@@ -106,7 +113,7 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
             item(key = "heatmap") {
                 Entrance(4) {
                     GlassCard(Modifier.fillMaxWidth(), liquid) {
-                        Text("Last 15 weeks", style = MaterialTheme.typography.titleMedium)
+                        AutoSizeText("Last 15 weeks", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
                         Heatmap(ui.perDay, ui.goalMs)
                     }
@@ -115,7 +122,7 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
             item(key = "distribution") {
                 Entrance(5) {
                     GlassCard(Modifier.fillMaxWidth(), liquid) {
-                        Text("Where your focus went", style = MaterialTheme.typography.titleMedium)
+                        AutoSizeText("Where your focus went", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
                         if (ui.distribution.isEmpty()) {
                             Text(
@@ -148,8 +155,8 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
 @Composable
 private fun Metric(title: String, value: String, liquid: Boolean, modifier: Modifier) {
     GlassCard(modifier, liquid) {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(6.dp))
-        Text(value, style = MaterialTheme.typography.headlineMedium)
+        AutoSizeText(value, style = MaterialTheme.typography.headlineMedium)
     }
 }

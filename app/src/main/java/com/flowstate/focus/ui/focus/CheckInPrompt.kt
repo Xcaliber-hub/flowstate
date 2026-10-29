@@ -1,5 +1,6 @@
 package com.flowstate.focus.ui.focus
 
+import com.flowstate.focus.ui.components.AutoSizeText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -116,9 +117,9 @@ private fun PromptCard(
                 Spacer(Modifier.height(6.dp))
                 Text(body, style = MaterialTheme.typography.bodyMedium, color = cs.onSurfaceVariant)
                 Spacer(Modifier.height(20.dp))
-                Button(onClick = primary.second, modifier = Modifier.fillMaxWidth().height(48.dp)) { Text(primary.first) }
+                Button(onClick = primary.second, modifier = Modifier.fillMaxWidth().height(48.dp)) { AutoSizeText(primary.first) }
                 secondary?.let { (label, action) ->
-                    TextButton(onClick = action, modifier = Modifier.align(Alignment.End)) { Text(label) }
+                    TextButton(onClick = action, modifier = Modifier.align(Alignment.End)) { AutoSizeText(label) }
                 }
             }
         }

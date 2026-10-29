@@ -1,5 +1,10 @@
 package com.flowstate.focus.ui.groups
 
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.unit.sp
+import com.flowstate.focus.ui.components.AutoSizeText
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -126,28 +131,41 @@ private fun StackPill(member: GroupMember, rank: Int, color: Color, self: Boolea
             .then(if (ring != null) Modifier.border(ring, PillShape) else Modifier)
             .clickable(onClickLabel = "View ${member.name}'s profile", onClick = onClick),
     ) {
-        // Content sits in the top band, the part that stays visible under the next pill.
-        Row(
-            Modifier.fillMaxWidth().height(PillStep).padding(start = 18.dp, end = 22.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "$rank",
-                modifier = Modifier.width(26.dp).semantics { contentDescription = "Rank $rank" },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = muted,
-            )
-            ProfileAvatar(member.name, member.avatarId, 38, ring = when (rank) { 1 -> 0xFFFFC107; 2 -> 0xFFB0BEC5; 3 -> 0xFFB87333; else -> null })
-            Column(Modifier.weight(1f).padding(start = 12.dp, end = 8.dp)) {
+        // Content sits in the top band, the part that stays visible under the next pill. In narrow
+        // layouts (side navigation, small phones, large system font) the row tightens up and every
+        // label stays on one line: names end in "…", the time shrinks to fit, nothing breaks mid-word.
+        BoxWithConstraints(Modifier.fillMaxWidth().height(PillStep)) {
+            val compact = maxWidth < 320.dp
+            Row(
+                Modifier.fillMaxSize().padding(start = if (compact) 12.dp else 18.dp, end = if (compact) 14.dp else 22.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    member.name + if (self) " · You" else "",
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = onPill,
+                    "$rank",
+                    modifier = Modifier.width(if (compact) 20.dp else 26.dp).semantics { contentDescription = "Rank $rank" },
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = muted,
+                    maxLines = 1,
+                    softWrap = false,
                 )
-                Text("Weekly focus", style = MaterialTheme.typography.bodySmall, color = muted)
+                ProfileAvatar(member.name, member.avatarId, if (compact) 32 else 38, ring = when (rank) { 1 -> 0xFFFFC107; 2 -> 0xFFB0BEC5; 3 -> 0xFFB87333; else -> null })
+                Column(Modifier.weight(1f).padding(start = if (compact) 8.dp else 12.dp, end = 6.dp)) {
+                    Text(
+                        member.name + if (self) " · You" else "",
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false,
+                        style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = onPill,
+                    )
+                    Text("Weekly focus", style = MaterialTheme.typography.bodySmall, color = muted, maxLines = 1, overflow = TextOverflow.Ellipsis, softWrap = false)
+                }
+                AutoSizeText(
+                    duration(member.weeklyFocusMs),
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    color = onPill,
+                    minSize = 11.sp,
+                    modifier = Modifier.widthIn(max = if (compact) 84.dp else 110.dp),
+                )
             }
-            Text(duration(member.weeklyFocusMs), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = onPill)
         }
     }
 }
