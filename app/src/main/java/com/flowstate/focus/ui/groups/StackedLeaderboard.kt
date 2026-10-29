@@ -29,24 +29,46 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.flowstate.focus.data.groups.GroupMember
+import com.flowstate.focus.ui.theme.LocalAccentSeed
+import com.flowstate.focus.ui.theme.SlateAccent
+import com.flowstate.focus.ui.theme.SlatePalette
 
-/** Deep navy to pale grey, the palette the stacked board fades through from rank 1 down. */
-private val StackPalette = listOf(
-    Color(0xFF06141B), Color(0xFF11212D), Color(0xFF253745),
-    Color(0xFF4A5C6A), Color(0xFF9BA8AB), Color(0xFFCCD0CF),
-)
+/**
+ * The six shades the stack fades through, darkest first, built from the accent the same way the
+ * Slate palette is built: deep, near-black tones, the accent itself muted toward grey, then pale
+ * tints. Slate uses its own hand-picked palette.
+ */
+internal fun stackPalette(accent: Color): List<Color> {
+    if (accent == SlateAccent) return SlatePalette
+    val muted = lerp(accent, Color(0xFF5F6B70), 0.45f) // pull saturation down so it sits in a black-and-white UI
+    return listOf(
+        lerp(muted, Color.Black, 0.82f),
+        lerp(muted, Color.Black, 0.66f),
+        lerp(muted, Color.Black, 0.42f),
+        muted,
+        lerp(muted, Color.White, 0.55f),
+        lerp(muted, Color.White, 0.80f),
+    )
+}
+
+/**
+ * The ramp in rank order for the current theme. Rank 1 always gets the most contrast with the
+ * canvas, and the stack fades toward it: dark to pale on a white UI, pale to dark on a black one.
+ */
+internal fun rankedPalette(accent: Color, dark: Boolean): List<Color> =
+    stackPalette(accent).let { if (dark) it.reversed() else it }
 
 private val PillHeight = 84.dp
 /** How much of each pill shows above the next one. */
 private val PillStep = 64.dp
 private val PillShape = RoundedCornerShape(percent = 50)
 
-/** The shade for [index] of [count], spread evenly across [StackPalette]. */
-internal fun stackColor(index: Int, count: Int): Color {
-    if (count <= 1) return StackPalette.first()
-    val pos = index.toFloat() / (count - 1) * (StackPalette.size - 1)
-    val lo = pos.toInt().coerceIn(0, StackPalette.size - 2)
-    return lerp(StackPalette[lo], StackPalette[lo + 1], pos - lo)
+/** The shade for [index] of [count], spread evenly across [palette]. */
+internal fun stackColor(index: Int, count: Int, palette: List<Color>): Color {
+    if (count <= 1) return palette.first()
+    val pos = index.toFloat() / (count - 1) * (palette.size - 1)
+    val lo = pos.toInt().coerceIn(0, palette.size - 2)
+    return lerp(palette[lo], palette[lo + 1], pos - lo)
 }
 
 /**
@@ -61,6 +83,7 @@ internal fun StackedLeaderboard(
     onMemberClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val palette = rankedPalette(LocalAccentSeed.current, dark = MaterialTheme.colorScheme.background.luminance() < 0.5f)
     Layout(
         modifier = modifier.fillMaxWidth(),
         content = {
@@ -68,7 +91,7 @@ internal fun StackedLeaderboard(
                 StackPill(
                     member = member,
                     rank = index + 1,
-                    color = stackColor(index, members.size),
+                    color = stackColor(index, members.size, palette),
                     self = member.uid == selfUid,
                     onClick = { onMemberClick(member.uid) },
                 )
@@ -89,14 +112,15 @@ internal fun StackedLeaderboard(
 
 @Composable
 private fun StackPill(member: GroupMember, rank: Int, color: Color, self: Boolean, onClick: () -> Unit) {
-    val onPill = if (color.luminance() < 0.35f) Color(0xFFF5F7FA) else Color(0xFF121820)
+    val onPill = if (color.luminance() < 0.18f) Color(0xFFF5F7FA) else Color(0xFF121820) // ~0.18 is where white and ink have equal contrast
     val muted = lerp(onPill, color, 0.4f)
-    val ring = if (self) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+    // Your row: a ring in the canvas's ink colour, so it reads on any shade without adding a new colour.
+    val ring = if (self) BorderStroke(2.dp, MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f)) else null
     Box(
         Modifier
             .fillMaxWidth()
             .height(PillHeight)
-            .shadow(elevation = 12.dp, shape = PillShape, clip = false)
+            .shadow(elevation = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 6.dp else 12.dp, shape = PillShape, clip = false)
             .clip(PillShape)
             .background(color)
             .then(if (ring != null) Modifier.border(ring, PillShape) else Modifier)

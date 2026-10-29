@@ -66,6 +66,9 @@ import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.formatDuration
 import com.flowstate.focus.ui.components.screenContentPadding
 import com.flowstate.focus.ui.theme.AccentColors
+import com.flowstate.focus.ui.theme.SlateAccent
+import com.flowstate.focus.ui.theme.SlatePalette
+import androidx.compose.ui.graphics.Brush
 import kotlin.math.roundToInt
 import android.provider.Settings as AndroidSettings
 
@@ -124,9 +127,12 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                                         Modifier
                                             .size(48.dp)
                                             .clip(CircleShape)
-                                            .background(color)
+                                            .then(
+                                                if (color == SlateAccent) Modifier.background(Brush.linearGradient(SlatePalette))
+                                                else Modifier.background(color)
+                                            )
                                             .border(if (selected) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
-                                            .semantics { contentDescription = "Accent color ${index + 1}" }
+                                            .semantics { contentDescription = if (color == SlateAccent) "Slate accent" else "Accent color ${index + 1}" }
                                             .selectable(selected = selected, role = Role.RadioButton, onClick = {
                                                 vm.update { it.copy(accentIndex = index) }
                                             })

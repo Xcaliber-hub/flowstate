@@ -72,4 +72,8 @@ Settings → Appearance → **Side navigation** swaps the floating bottom bar fo
 
 ## Stacked leaderboard
 
-The weekly leaderboard in Groups shows each member as an overlapping capsule, fading from deep navy (#06141B) at rank 1 to pale grey (#CCD0CF) at the bottom. Text switches between light and dark to stay readable on each shade, your own row gets an accent ring, and tapping any capsule opens that member's profile.
+The weekly leaderboard in Groups shows each member as an overlapping capsule. Its six shades are built from your accent colour, muted toward grey so they sit in the black-and-white UI: dark to pale on the light theme, pale fading into black on the dark theme, so rank 1 always has the most contrast. Text flips between light and dark per shade, your row gets an ink-coloured ring, and tapping a capsule opens that member's profile.
+
+## Slate accent
+
+The last swatch under Settings → Appearance → Accent color is **Slate**, built from #06141B, #11212D, #253745, #4A5C6A, #9BA8AB and #CCD0CF. It themes the whole app: buttons, the progress ring, chips, toggles and the nav bar use slate, cards get a faint cool tint, and the canvas stays near-white or true black. With Slate, the leaderboard uses those exact six shades.
