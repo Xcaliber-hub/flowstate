@@ -43,19 +43,14 @@ jobs:
 
       # Publishes a GitHub Release (tag v<versionName>) with the APK attached. The app's update
       # pop-up reads the latest release, so bump versionName for every release you want users to get.
-      # Publishing steps disabled for the 1.2.0 build at Aditya's request (APK only, no release);
-      # restored in the follow-up commit.
       - name: Read version
-        if: false
         id: version
         run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
 
       - name: Rename APK
-        if: false
         run: cp app/build/outputs/apk/release/app-release.apk "Flowstate-${{ steps.version.outputs.name }}.apk"
 
       - name: Publish GitHub Release
-        if: false
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.name }}
