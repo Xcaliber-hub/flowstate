@@ -78,12 +78,12 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
                 Entrance(2) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Metric("Sessions", ui.sessionCount.toString(), liquid, Modifier.weight(1f.fillMaxHeight())
-                            Metric("Avg. length", formatDuration(ui.averageMs), liquid, Modifier.weight(1f.fillMaxHeight())
+                            Metric("Sessions", ui.sessionCount.toString(), liquid, Modifier.weight(1f).fillMaxHeight())
+                            Metric("Avg. length", formatDuration(ui.averageMs), liquid, Modifier.weight(1f).fillMaxHeight())
                         }
                         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Metric("Completed", "${ui.completionPercent}%", liquid, Modifier.weight(1f.fillMaxHeight())
-                            Metric("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", liquid, Modifier.weight(1f.fillMaxHeight())
+                            Metric("Completed", "${ui.completionPercent}%", liquid, Modifier.weight(1f).fillMaxHeight())
+                            Metric("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", liquid, Modifier.weight(1f).fillMaxHeight())
                         }
                     }
                 }
