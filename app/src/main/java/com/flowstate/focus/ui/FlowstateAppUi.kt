@@ -1,5 +1,8 @@
 package com.flowstate.focus.ui
 
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import com.flowstate.focus.ui.components.TopBlur
+import com.flowstate.focus.ui.components.blurSource
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -64,6 +67,7 @@ private val Tabs = listOf(
 @Composable
 fun FlowstateAppUi(settings: AppSettings) {
     val nav = rememberNavController()
+    val contentLayer = rememberGraphicsLayer()
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     var navVisible by remember { mutableStateOf(true) }
 
@@ -93,7 +97,7 @@ fun FlowstateAppUi(settings: AppSettings) {
             NavHost(
                 navController = nav,
                 startDestination = Routes.FOCUS,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().blurSource(contentLayer),
                 enterTransition = { enter },
                 exitTransition = { exit },
                 popEnterTransition = { enter },
@@ -106,6 +110,8 @@ fun FlowstateAppUi(settings: AppSettings) {
                 composable(Routes.SETTINGS) { SettingsScreen(onOpenBlockedApps = { nav.navigate(Routes.BLOCKED) }) }
                 composable(Routes.BLOCKED) { BlockedAppsScreen(onBack = { nav.popBackStack() }) }
             }
+            // Screen content scrolls under a soft blur at the top; the nav dock and bar stay crisp above it.
+            TopBlur(contentLayer, Modifier.align(Alignment.TopCenter))
             if (Tabs.any { it.route == route }) {
                 val onSelect: (NavTab) -> Unit = { tab ->
                     navVisible = true

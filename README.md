@@ -74,6 +74,10 @@ Settings → Appearance → **Side navigation** swaps the floating bottom bar fo
 
 Labels, buttons, tabs, stat tiles and leaderboard rows stay on one line and shrink to fit (or end in "…" for names) instead of breaking mid-word in narrow layouts or with a large system font. The focus timer ring is always a circle, and its clock scales with it.
 
+## Top blur
+
+Content that scrolls up under the status bar softens into a progressive blur, like the Hark app, so it never collides with the clock and icons. Real blur on Android 12 and newer; older phones get a tinted fade. The nav dock and bar stay sharp above it.
+
 ## Checking for updates
 
 Settings → About → **Check for updates** asks GitHub for the latest release. If one is newer, the usual update card opens; otherwise it says you're on the latest version.

@@ -1,5 +1,10 @@
 package com.flowstate.focus.ui.groups
 
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
@@ -68,6 +73,35 @@ private val PillHeight = 84.dp
 private val PillStep = 64.dp
 private val PillShape = RoundedCornerShape(percent = 50)
 
+/**
+ * The depth from the reference: a soft sheen across the top of each capsule, and the shadow the
+ * next capsule casts back onto this one just above where it tucks over. The shadow is drawn inside
+ * this pill as layered capsules that follow the next pill's curved top, so it costs no blur and
+ * looks the same on every Android version.
+ */
+private fun Modifier.pillDepth(covered: Boolean, shadowAlpha: Float): Modifier = drawWithContent {
+    // Sheen: light falling on the top edge, fading out by the middle.
+    drawRect(Brush.verticalGradient(0f to Color.White.copy(alpha = 0.10f), 0.5f to Color.Transparent))
+    if (covered) {
+        val top = PillStep.toPx()
+        val radius = CornerRadius(size.height / 2f)
+        val layers = 14
+        val spread = 18.dp.toPx()
+        for (i in 0 until layers) {
+            // Each layer sits a little lower and adds a little more dark, so the edge is soft and
+            // the shadow is deepest right where the next pill begins.
+            val y = top - spread + spread * i / layers
+            drawRoundRect(
+                color = Color.Black.copy(alpha = shadowAlpha / layers),
+                topLeft = Offset(0f, y),
+                size = Size(size.width, size.height),
+                cornerRadius = radius,
+            )
+        }
+    }
+    drawContent()
+}
+
 /** The shade for [index] of [count], spread evenly across [palette]. */
 internal fun stackColor(index: Int, count: Int, palette: List<Color>): Color {
     if (count <= 1) return palette.first()
@@ -98,6 +132,7 @@ internal fun StackedLeaderboard(
                     rank = index + 1,
                     color = stackColor(index, members.size, palette),
                     self = member.uid == selfUid,
+                    covered = index < members.size - 1,
                     onClick = { onMemberClick(member.uid) },
                 )
             }
@@ -116,7 +151,8 @@ internal fun StackedLeaderboard(
 }
 
 @Composable
-private fun StackPill(member: GroupMember, rank: Int, color: Color, self: Boolean, onClick: () -> Unit) {
+private fun StackPill(member: GroupMember, rank: Int, color: Color, self: Boolean, covered: Boolean, onClick: () -> Unit) {
+    val darkCanvas = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val onPill = if (color.luminance() < 0.18f) Color(0xFFF5F7FA) else Color(0xFF121820) // ~0.18 is where white and ink have equal contrast
     val muted = lerp(onPill, color, 0.4f)
     // Your row: a ring in the canvas's ink colour, so it reads on any shade without adding a new colour.
@@ -125,9 +161,10 @@ private fun StackPill(member: GroupMember, rank: Int, color: Color, self: Boolea
         Modifier
             .fillMaxWidth()
             .height(PillHeight)
-            .shadow(elevation = if (MaterialTheme.colorScheme.background.luminance() < 0.5f) 6.dp else 12.dp, shape = PillShape, clip = false)
+            .shadow(elevation = if (darkCanvas) 6.dp else 12.dp, shape = PillShape, clip = false)
             .clip(PillShape)
             .background(color)
+            .pillDepth(covered, shadowAlpha = if (darkCanvas) 0.55f else 0.30f)
             .then(if (ring != null) Modifier.border(ring, PillShape) else Modifier)
             .clickable(onClickLabel = "View ${member.name}'s profile", onClick = onClick),
     ) {
