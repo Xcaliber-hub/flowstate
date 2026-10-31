@@ -19,8 +19,8 @@ import com.flowstate.focus.ui.components.NavTab
 import com.flowstate.focus.ui.components.SideDockWidth
 import com.flowstate.focus.ui.components.SideNavRail
 
-/** Rail height: 5 items of 44 dp, 4 gaps of 4 dp, 8 dp padding top and bottom. */
-private val RailHeight = 252.dp
+/** Rail height: 5 items of 40 dp, 4 gaps of 4 dp, 8 dp padding top and bottom. */
+private val RailHeight = 232.dp
 private val DockGap = 14.dp
 
 /**
@@ -43,7 +43,7 @@ fun SideDock(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxHeight()
-            .padding(start = 10.dp, top = top + 16.dp, bottom = bottom + 16.dp)
+            .padding(start = 8.dp, top = top + 16.dp, bottom = bottom + 16.dp)
             .width(SideDockWidth),
     ) {
         // The water bar (with its time label) takes what is left, between 150 and 300 dp.

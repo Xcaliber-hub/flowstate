@@ -1,5 +1,10 @@
 package com.flowstate.focus.ui.stats
 
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.sp
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -57,6 +62,22 @@ private fun BucketLabels(buckets: List<Bucket>) {
     }
 }
 
+/** Short focus time for a bar label: "45m", "3h 5m", or "3.1h" when the long form is too wide. */
+internal fun barLabel(ms: Long, short: Boolean): String {
+    val minutes = ms / 60_000
+    return when {
+        minutes < 60 -> "${minutes}m"
+        short -> String.format(java.util.Locale.US, "%.1fh", minutes / 60f).replace(".0h", "h")
+        minutes % 60 == 0L -> "${minutes / 60}h"
+        else -> "${minutes / 60}h ${minutes % 60}m"
+    }
+}
+
+/**
+ * Bars with the focus time printed above each one (Week and Year, where there are few enough bars to
+ * label; Day's 24 hours stay unlabelled). A label that does not fit its bar's slot switches to the
+ * short form, then shrinks, so it never overlaps its neighbours.
+ */
 @Composable
 fun BarChart(buckets: List<Bucket>, modifier: Modifier = Modifier) {
     val primary = MaterialTheme.colorScheme.primary
@@ -64,20 +85,47 @@ fun BarChart(buckets: List<Bucket>, modifier: Modifier = Modifier) {
     val track = if (colors.background == Color.Black) colors.surfaceVariant else colors.surfaceVariant.copy(alpha = 0.6f)
     val reveal = rememberReveal(buckets)
     val max = (buckets.maxOfOrNull { it.valueMs } ?: 0L).coerceAtLeast(1L)
+    val measurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelSmall.copy(color = colors.onSurface, fontWeight = FontWeight.SemiBold)
+    val labelled = buckets.size <= 12
     Column(modifier) {
-        Canvas(Modifier.fillMaxWidth().height(150.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(if (labelled) 168.dp else 150.dp)) {
             if (buckets.isEmpty()) return@Canvas
             val slot = size.width / buckets.size
             val barWidth = slot * 0.62f
             val minHeight = 4.dp.toPx()
+            val gap = 4.dp.toPx()
+            val headroom = if (labelled) 18.dp.toPx() else 0f
+            val area = size.height - headroom
+            // One format and size for every label, so the row reads evenly: "4h 22m" when all fit,
+            // otherwise "4.4h" for all, then a smaller size if even that is too wide.
+            val fit = slot - 2.dp.toPx()
+            fun measureAll(short: Boolean, fontSize: Float) = buckets.map { b ->
+                if (!labelled || b.valueMs < 60_000L) null
+                else measurer.measure(barLabel(b.valueMs, short), labelStyle.copy(fontSize = fontSize.sp), maxLines = 1, softWrap = false)
+            }
+            fun fits(ls: List<TextLayoutResult?>) = ls.all { it == null || it.size.width <= fit }
+            var fontSize = labelStyle.fontSize.value
+            var labels = measureAll(false, fontSize)
+            if (!fits(labels)) labels = measureAll(true, fontSize)
+            while (!fits(labels) && fontSize > 8f) { fontSize -= 1f; labels = measureAll(true, fontSize) }
             buckets.forEachIndexed { i, b ->
-                val h = maxOf(size.height * (b.valueMs / max.toFloat()) * reveal.value, minHeight)
+                val h = maxOf(area * (b.valueMs / max.toFloat()) * reveal.value, minHeight)
+                val top = size.height - h
                 drawRoundRect(
                     color = if (b.valueMs > 0) primary else track,
-                    topLeft = Offset(i * slot + (slot - barWidth) / 2f, size.height - h),
+                    topLeft = Offset(i * slot + (slot - barWidth) / 2f, top),
                     size = Size(barWidth, h),
                     cornerRadius = CornerRadius(barWidth / 2f),
                 )
+                val layout = labels[i]
+                if (layout != null) {
+                    drawText(
+                        layout,
+                        topLeft = Offset(i * slot + (slot - layout.size.width) / 2f, (top - gap - layout.size.height).coerceAtLeast(0f)),
+                        alpha = reveal.value.coerceIn(0f, 1f),
+                    )
+                }
             }
         }
         BucketLabels(buckets)

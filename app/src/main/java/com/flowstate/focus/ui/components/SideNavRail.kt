@@ -28,7 +28,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 
 /** Width of the side rail and the goal bar under it; content keeps a lane this wide plus margins. */
-val SideDockWidth = 56.dp
+val SideDockWidth = 48.dp
 
 /**
  * Compact vertical navigation: a slim pill of icons. The selected tab sits in a soft tinted circle
@@ -52,7 +52,7 @@ fun SideNavRail(
         colors = depthColors(base = cs.surfaceContainerHigh, darkAlpha = 0.94f, lightAlpha = 0.82f),
     ) {
         Column(
-            Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+            Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -80,13 +80,13 @@ private fun RailItem(tab: NavTab, selected: Boolean, liquid: Boolean, onClick: (
     )
     Box(
         modifier = Modifier
-            .size(44.dp)
+            .size(40.dp)
             .scale(scale)
             .clip(CircleShape)
             .background(fill)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(tab.icon, contentDescription = tab.label, tint = tint, modifier = Modifier.size(22.dp))
+        Icon(tab.icon, contentDescription = tab.label, tint = tint, modifier = Modifier.size(20.dp))
     }
 }

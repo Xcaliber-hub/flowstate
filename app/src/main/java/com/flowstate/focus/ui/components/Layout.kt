@@ -38,7 +38,7 @@ fun screenContentPadding(): PaddingValues {
     return when (LocalNavLayout.current) {
         NavLayout.BOTTOM -> PaddingValues(start = 20.dp, end = 20.dp, top = top + 16.dp, bottom = 136.dp)
         NavLayout.SIDE -> PaddingValues(
-            start = 10.dp + SideDockWidth + 14.dp, end = 20.dp, top = top + 16.dp,
+            start = 8.dp + SideDockWidth + 10.dp, end = 20.dp, top = top + 16.dp,
             bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 32.dp,
         )
     }

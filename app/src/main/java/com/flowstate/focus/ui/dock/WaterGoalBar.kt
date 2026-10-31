@@ -142,13 +142,13 @@ fun WaterGoalBar(
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        Text(
+        // The dock is only 48 dp wide, so a long time like "10h 45m" shrinks instead of wrapping.
+        com.flowstate.focus.ui.components.AutoSizeText(
             formatDuration(doneMs),
-            modifier = Modifier.padding(top = 6.dp),
             style = MaterialTheme.typography.labelSmall,
             color = cs.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
+            minSize = 8.sp,
+            modifier = Modifier.padding(top = 6.dp),
         )
     }
 }
