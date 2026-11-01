@@ -67,6 +67,10 @@ import com.flowstate.focus.ui.components.GlassCard
 import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.formatDuration
 import com.flowstate.focus.ui.components.screenContentPadding
+import com.flowstate.focus.ui.components.ScreenTopBar
+import com.flowstate.focus.ui.components.TopBarSpec
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Settings
 import com.flowstate.focus.ui.theme.AccentColors
 import com.flowstate.focus.ui.update.ManualCheck
 import com.flowstate.focus.ui.update.UpdateViewModel
@@ -99,13 +103,13 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
     }
     val liquid = s.liquidUi
 
+    ScreenTopBar(TopBarSpec(key = "settings", title = "Settings", subtitle = "Appearance, timer and more", icon = Icons.Rounded.Settings))
     ScreenContainer {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = screenContentPadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { Entrance(0) { AutoSizeText("Settings", style = MaterialTheme.typography.headlineLarge) } }
 
             item {
                 Entrance(1) {

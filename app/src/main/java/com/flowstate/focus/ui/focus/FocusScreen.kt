@@ -113,6 +113,9 @@ import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.formatClock
 import com.flowstate.focus.ui.components.formatDuration
 import com.flowstate.focus.ui.components.screenContentPadding
+import com.flowstate.focus.ui.components.ScreenTopBar
+import com.flowstate.focus.ui.components.TopBarMenuItem
+import com.flowstate.focus.ui.components.TopBarSpec
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -160,25 +163,31 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
     var showBreakSheet by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<SessionEntity?>(null) }
 
+    val modeDetails = mapOf(
+        TimerMode.POMODORO to "Focus + breaks",
+        TimerMode.COUNTDOWN to "One fixed block",
+        TimerMode.STOPWATCH to "Count up freely",
+    )
+    val goalMs = ui.settings.dailyGoalMin * 60_000L
+    ScreenTopBar(
+        TopBarSpec(
+            key = "focus",
+            title = "Focus",
+            subtitle = LocalDate.now().format(DateTimeFormatter.ofPattern("EEE, d MMM")) + " · " + ui.mode.label,
+            progress = if (goalMs > 0) ui.todayMs / goalMs.toFloat() else null,
+            menuTitle = if (ui.timer.isActive) "Timer mode · stop the timer to change" else "Timer mode",
+            menu = TimerMode.entries.map { mode ->
+                TopBarMenuItem(mode.label, modeDetails[mode], selected = mode == ui.mode, enabled = !ui.timer.isActive) { vm.setMode(mode) }
+            },
+        ),
+    )
+
     ScreenContainer {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = screenContentPadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item(key = "header") {
-                Entrance(0) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        AutoSizeText("Focus", style = MaterialTheme.typography.headlineLarge)
-                        Text(
-                            LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM")),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        ModeChips(ui.mode, enabled = !ui.timer.isActive, onSelect = vm::setMode)
-                    }
-                }
-            }
             item(key = "timer") {
                 Entrance(1) {
                     TimerCard(
@@ -239,20 +248,6 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
             },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { AutoSizeText("Cancel") } },
         )
-    }
-}
-
-@Composable
-private fun ModeChips(selected: TimerMode, enabled: Boolean, onSelect: (TimerMode) -> Unit) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TimerMode.entries.forEach { mode ->
-            FilterChip(
-                selected = mode == selected,
-                onClick = { onSelect(mode) },
-                enabled = enabled,
-                label = { Text(mode.label, maxLines = 1, softWrap = false) },
-            )
-        }
     }
 }
 

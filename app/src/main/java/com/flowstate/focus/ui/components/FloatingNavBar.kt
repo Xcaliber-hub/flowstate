@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Row
@@ -59,12 +60,10 @@ fun FloatingNavBar(
         ),
         label = "navOffset",
     )
-    DepthSurface(
+    // Frosted glass: the screen blurs behind the bar as it scrolls.
+    FrostedGlassSurface(
         shape = CircleShape,
         modifier = modifier.widthIn(max = 600.dp).navigationBarsPadding().padding(bottom = 16.dp).offset(y = offsetY),
-        elevation = Depth.Floating,
-        // Keep the floating bar visually distinct over content in both themes.
-        colors = depthColors(base = cs.surfaceContainerHigh, darkAlpha = 0.98f, lightAlpha = 0.82f),
     ) {
         Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             tabs.forEach { tab ->
@@ -81,14 +80,16 @@ fun FloatingNavBar(
 
 @Composable
 private fun NavItem(tab: NavTab, selected: Boolean, liquid: Boolean, onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val background by animateColorAsState(if (selected) cs.primaryContainer else Color.Transparent, label = "navBg")
-    val tint = if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant
+    val glass = Glass.content()
+    val background by animateColorAsState(if (selected) Glass.selectedFill() else Color.Transparent, label = "navBg")
+    val rim by animateColorAsState(if (selected) Glass.selectedBorder() else Color.Transparent, label = "navRim")
+    val tint = if (selected) glass else glass.copy(alpha = 0.7f)
     val sizeSpec = if (liquid) spring<IntSize>(0.55f, Spring.StiffnessMediumLow) else spring<IntSize>(1f, Spring.StiffnessMedium)
     Row(
         modifier = Modifier
             .clip(CircleShape)
             .background(background)
+            .border(1.dp, rim, CircleShape)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick)
             .animateContentSize(sizeSpec)
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)

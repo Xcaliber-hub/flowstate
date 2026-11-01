@@ -11,6 +11,21 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
 - Editable profile names and a preset-avatar picker with Sprout, Sunbeam, Moon, Fox, Orbit, Summit, Cloud, Ember, Turtle, Jelly, Comet and Bloom. Avatar IDs are persisted in Firestore; artwork is bundled and initials remain available. No photo uploads or Firebase Storage.
 - The supplied owl replaces the launcher and splash artwork. The pale outer border and corner decoration are removed. Adaptive icons use a separate full-bleed gray background and transparent owl artwork; legacy-density icons are also included.
 
+## Frosted top bar (1.4.2)
+
+The big page titles are gone. Every tab now has a floating frosted top bar: a round back button, a pill with the screen's title and a one-line summary, and on Focus, Statistics and Tasks a round three-line button.
+
+- **Focus**: the pill shows a ring for today's progress toward your daily goal. The menu holds Pomodoro, Countdown and Stopwatch, which replace the old mode chips. It's locked while a timer runs.
+- **Statistics**: the menu holds Day, Week, Month and Year, which replace the segmented buttons.
+- **Tasks**: the ring shows how much is done. The menu holds All and each category, plus Clear done.
+- **Settings and Groups** get the back button and the pill only.
+
+The menu is bouncy in the style of ColorOS. Slide a finger up and down it and a bubble springs after you, stretching like jelly as it moves and wobbling when it lands. The row under your finger swells and ticks, and pulling past the ends rubber-bands. Lift to choose, or just tap. Back goes to the previous tab, or leaves the app from the first one. The progressive blur now runs along the bottom edge too, under the nav bar.
+
+## Frosted-glass navigation (1.4.1)
+
+The floating bottom bar and the side rail are now frosted glass: content blurs behind them as it scrolls, with a soft tint, a top sheen and a thin bright rim. The selected tab is a translucent bubble with a light edge. Real blur needs Android 12+; older phones get a solid tint. The 1.4.0 avatar builder was removed, so avatars are back to the 24 presets. Any built avatar someone saved shows as their initial until they pick a preset. If you published the 1.4.0 Firestore rules, you can republish `firebase/firestore.rules`, but you don't have to.
+
 ## Open and build
 
 Open this folder in Android Studio with JDK 17 or newer and an Android 35 SDK. Gradle 8.9 wrapper scripts and the wrapper JAR are included.

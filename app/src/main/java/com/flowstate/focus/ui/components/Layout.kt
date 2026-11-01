@@ -23,6 +23,9 @@ fun ScreenContainer(content: @Composable () -> Unit) {
     }
 }
 
+/** Gap between the status bar and the floating frosted top bar. */
+val TopBarTopGap = 8.dp
+
 /** Where the app's navigation sits: the floating bottom bar, or the experimental left-edge dock. */
 enum class NavLayout { BOTTOM, SIDE }
 
@@ -36,9 +39,9 @@ val LocalNavLayout = staticCompositionLocalOf { NavLayout.BOTTOM }
 fun screenContentPadding(): PaddingValues {
     val top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     return when (LocalNavLayout.current) {
-        NavLayout.BOTTOM -> PaddingValues(start = 20.dp, end = 20.dp, top = top + 16.dp, bottom = 136.dp)
+        NavLayout.BOTTOM -> PaddingValues(start = 20.dp, end = 20.dp, top = top + TopBarTopGap + TopBarHeight + 16.dp, bottom = 136.dp)
         NavLayout.SIDE -> PaddingValues(
-            start = 8.dp + SideDockWidth + 10.dp, end = 20.dp, top = top + 16.dp,
+            start = 8.dp + SideDockWidth + 10.dp, end = 20.dp, top = top + TopBarTopGap + TopBarHeight + 16.dp,
             bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 32.dp,
         )
     }

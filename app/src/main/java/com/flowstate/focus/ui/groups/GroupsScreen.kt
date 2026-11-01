@@ -67,6 +67,10 @@ import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.ui.components.GlassCard
 import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.screenContentPadding
+import com.flowstate.focus.ui.components.ScreenTopBar
+import com.flowstate.focus.ui.components.TopBarSpec
+import androidx.compose.material.icons.rounded.Groups
+import androidx.compose.material.icons.Icons
 import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
@@ -103,9 +107,9 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(lifecycleOwner) { lifecycleOwner.lifecycle.repeatOnLifecycle(STARTED) { while (true) { now = System.currentTimeMillis(); delay(1_000) } } }
 
+    ScreenTopBar(TopBarSpec(key = "groups", title = "Groups", subtitle = state.selectedGroup?.name ?: "Focus together", icon = Icons.Rounded.Groups))
     ScreenContainer {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = screenContentPadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            item { Text("Groups", style = MaterialTheme.typography.headlineLarge) }
             if (!state.configured) {
                 item { GlassCard(Modifier.fillMaxWidth(), settings.liquidUi) {
                     AutoSizeText("Groups are getting ready", style = MaterialTheme.typography.titleLarge)

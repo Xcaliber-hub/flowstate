@@ -34,36 +34,33 @@ import com.flowstate.focus.ui.components.GlassCard
 import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.formatDuration
 import com.flowstate.focus.ui.components.screenContentPadding
+import com.flowstate.focus.ui.components.ScreenTopBar
+import com.flowstate.focus.ui.components.TopBarMenuItem
+import com.flowstate.focus.ui.components.TopBarSpec
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.BarChart
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val liquid = settings.liquidUi
+    ScreenTopBar(
+        TopBarSpec(
+            key = "stats",
+            title = "Statistics",
+            subtitle = "${ui.period.label} · ${formatDuration(ui.totalMs)}",
+            icon = Icons.Rounded.BarChart,
+            menuTitle = "Range",
+            menu = StatsPeriod.entries.map { p -> TopBarMenuItem(p.label, selected = p == ui.period) { vm.setPeriod(p) } },
+        ),
+    )
     ScreenContainer {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = screenContentPadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item(key = "header") {
-                Entrance(0) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        AutoSizeText("Statistics", style = MaterialTheme.typography.headlineLarge)
-                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                            StatsPeriod.entries.forEachIndexed { index, p ->
-                                SegmentedButton(
-                                    selected = p == ui.period,
-                                    onClick = { vm.setPeriod(p) },
-                                    shape = SegmentedButtonDefaults.itemShape(index, StatsPeriod.entries.size),
-                                    // No check mark: it steals width, and "Month" broke onto two lines in narrow layouts.
-                                    icon = {},
-                                ) { AutoSizeText(p.label, style = MaterialTheme.typography.labelLarge, minSize = 10.sp) }
-                            }
-                        }
-                    }
-                }
-            }
             item(key = "chart") {
                 Entrance(1) {
                     GlassCard(Modifier.fillMaxWidth(), liquid) {

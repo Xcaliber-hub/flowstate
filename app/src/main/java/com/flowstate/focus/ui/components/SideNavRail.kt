@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -45,12 +46,7 @@ fun SideNavRail(
 ) {
     val haptics = LocalHapticFeedback.current
     val cs = MaterialTheme.colorScheme
-    DepthSurface(
-        shape = RoundedCornerShape(percent = 50),
-        modifier = modifier,
-        elevation = Depth.Floating,
-        colors = depthColors(base = cs.surfaceContainerHigh, darkAlpha = 0.94f, lightAlpha = 0.82f),
-    ) {
+    FrostedGlassSurface(shape = RoundedCornerShape(percent = 50), modifier = modifier) {
         Column(
             Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -70,9 +66,10 @@ fun SideNavRail(
 
 @Composable
 private fun RailItem(tab: NavTab, selected: Boolean, liquid: Boolean, onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    val fill by animateColorAsState(if (selected) cs.primaryContainer else Color.Transparent, label = "railFill")
-    val tint by animateColorAsState(if (selected) cs.onPrimaryContainer else cs.onSurfaceVariant, label = "railTint")
+    val glass = Glass.content()
+    val fill by animateColorAsState(if (selected) Glass.selectedFill() else Color.Transparent, label = "railFill")
+    val rim by animateColorAsState(if (selected) Glass.selectedBorder() else Color.Transparent, label = "railRim")
+    val tint by animateColorAsState(if (selected) glass else glass.copy(alpha = 0.7f), label = "railTint")
     val scale by animateFloatAsState(
         targetValue = if (selected) 1f else 0.92f,
         animationSpec = if (liquid) spring<Float>(0.45f, Spring.StiffnessMediumLow) else spring<Float>(1f, Spring.StiffnessMedium),
@@ -84,6 +81,7 @@ private fun RailItem(tab: NavTab, selected: Boolean, liquid: Boolean, onClick: (
             .scale(scale)
             .clip(CircleShape)
             .background(fill)
+            .border(1.dp, rim, CircleShape)
             .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {

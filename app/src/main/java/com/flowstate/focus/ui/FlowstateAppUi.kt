@@ -3,6 +3,21 @@ package com.flowstate.focus.ui
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import com.flowstate.focus.ui.components.TopBlur
 import com.flowstate.focus.ui.components.blurSource
+import com.flowstate.focus.ui.components.LocalBlurSource
+import com.flowstate.focus.ui.components.BottomBlur
+import com.flowstate.focus.ui.components.FrostedTopBar
+import com.flowstate.focus.ui.components.FrostedTopBarMenu
+import com.flowstate.focus.ui.components.LocalTopBarState
+import com.flowstate.focus.ui.components.TopBarHeight
+import com.flowstate.focus.ui.components.TopBarState
+import com.flowstate.focus.ui.components.TopBarTopGap
+import com.flowstate.focus.ui.components.SideDockWidth
+import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.ui.unit.dp
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
@@ -70,6 +85,8 @@ fun FlowstateAppUi(settings: AppSettings) {
     val contentLayer = rememberGraphicsLayer()
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     var navVisible by remember { mutableStateOf(true) }
+    val topBar = remember { TopBarState() }
+    val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
 
     // Hide the nav bar while scrolling down, bring it back on any upward scroll.
     val scrollConnection = remember {
@@ -92,7 +109,7 @@ fun FlowstateAppUi(settings: AppSettings) {
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
         val navLayout = if (settings.sideNav) NavLayout.SIDE else NavLayout.BOTTOM
-        CompositionLocalProvider(LocalNavLayout provides navLayout) {
+        CompositionLocalProvider(LocalNavLayout provides navLayout, LocalBlurSource provides contentLayer, LocalTopBarState provides topBar) {
         Box(Modifier.fillMaxSize().nestedScroll(scrollConnection)) {
             NavHost(
                 navController = nav,
@@ -112,7 +129,20 @@ fun FlowstateAppUi(settings: AppSettings) {
             }
             // Screen content scrolls under a soft blur at the top; the nav dock and bar stay crisp above it.
             TopBlur(contentLayer, Modifier.align(Alignment.TopCenter))
+            if (navLayout == NavLayout.BOTTOM) BottomBlur(contentLayer, Modifier.align(Alignment.BottomCenter))
             if (Tabs.any { it.route == route }) {
+                // Frosted top bar: back, the screen's title pill and, where it has options, the three-line menu.
+                val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+                val barStart = if (navLayout == NavLayout.SIDE) 8.dp + SideDockWidth + 10.dp else 16.dp
+                FrostedTopBar(
+                    state = topBar,
+                    onBack = { if (!nav.popBackStack()) backDispatcher?.onBackPressed() },
+                    modifier = Modifier.align(Alignment.TopCenter).padding(start = barStart, end = 16.dp, top = statusTop + TopBarTopGap),
+                )
+                FrostedTopBarMenu(
+                    state = topBar,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(end = 16.dp, top = statusTop + TopBarTopGap + TopBarHeight + 10.dp),
+                )
                 val onSelect: (NavTab) -> Unit = { tab ->
                     navVisible = true
                     nav.navigate(tab.route) {

@@ -60,6 +60,9 @@ import com.flowstate.focus.ui.components.GlassCard
 import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.fabBottomPadding
 import com.flowstate.focus.ui.components.screenContentPadding
+import com.flowstate.focus.ui.components.ScreenTopBar
+import com.flowstate.focus.ui.components.TopBarMenuItem
+import com.flowstate.focus.ui.components.TopBarSpec
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -75,6 +78,19 @@ fun TasksScreen(settings: AppSettings, vm: TasksViewModel = hiltViewModel()) {
     val visible = remember(tasks, filter) { tasks.filter { filter == null || it.category == filter } }
     val doneCount = visible.count { it.done }
 
+    ScreenTopBar(
+        TopBarSpec(
+            key = "tasks",
+            title = "Tasks",
+            subtitle = "${filter ?: "All"} · " + if (visible.isEmpty()) "nothing planned" else "$doneCount of ${visible.size} done",
+            progress = if (visible.isEmpty()) 0f else doneCount / visible.size.toFloat(),
+            menuTitle = "Category",
+            menu = listOf(TopBarMenuItem("All", selected = filter == null) { filter = null }) +
+                TaskCategories.map { c -> TopBarMenuItem(c, selected = filter == c) { filter = c } } +
+                (if (tasks.any { it.done }) listOf(TopBarMenuItem("Clear done", "Remove finished tasks") { vm.clearDone() }) else emptyList()),
+        ),
+    )
+
     Box(Modifier.fillMaxSize()) {
         ScreenContainer {
             LazyColumn(
@@ -82,22 +98,6 @@ fun TasksScreen(settings: AppSettings, vm: TasksViewModel = hiltViewModel()) {
                 contentPadding = screenContentPadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item(key = "header") {
-                    Entrance(0) {
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                AutoSizeText("Tasks", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.weight(1f))
-                                if (tasks.any { it.done }) TextButton(onClick = vm::clearDone) { AutoSizeText("Clear done") }
-                            }
-                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                FilterChip(selected = filter == null, onClick = { filter = null }, label = { Text("All") })
-                                TaskCategories.forEach { c ->
-                                    FilterChip(selected = filter == c, onClick = { filter = c }, label = { Text(c) })
-                                }
-                            }
-                        }
-                    }
-                }
                 item(key = "progress") {
                     Entrance(1) {
                         GlassCard(Modifier.fillMaxWidth(), settings.liquidUi) {
