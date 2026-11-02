@@ -1,5 +1,5 @@
 rules_version = '2';
-// Flowstate 1.1.4 — all 24 avatars, member session/daily stats. Publish to flowstate-241f0 / (default).
+// Flowstate 1.4.3 — all 24 avatars, member session/daily stats, emoji pings between group members. Publish to flowstate-241f0 / (default).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -46,6 +46,22 @@ service cloud.firestore {
         && data.weekKey is string && data.live is map && validLive(data.live)
         && data.updatedAt == request.time;
     }
+    // Emoji pings (1.4.3). One pending ping per sender and friend: the doc id is "<from>_<to>",
+    // so sending again replaces the last one instead of piling up. Only the friend can read or clear it.
+    function validEmoji(e) {
+      return e in ['🔥', '💪', '👏', '📚', '🎯', '☕', '👀', '😴'];
+    }
+    function validPing(gid, pingId, data) {
+      return data.keys().hasOnly(['fromUid', 'fromName', 'fromAvatarId', 'toUid', 'emoji', 'sentAt'])
+        && data.fromUid == request.auth.uid
+        && data.toUid is string && data.toUid != request.auth.uid
+        && data.toUid in get(/databases/$(database)/documents/groups/$(gid)).data.memberIds
+        && pingId == request.auth.uid + '_' + data.toUid
+        && data.fromName is string && data.fromName.size() >= 1 && data.fromName.size() <= 40
+        && validAvatar({'avatarId': data.fromAvatarId})
+        && data.emoji is string && validEmoji(data.emoji)
+        && data.sentAt == request.time;
+    }
     match /groups/{gid} {
       // Authenticated invite-code holders can fetch a group directly, not list all groups.
       allow get: if signedIn();
@@ -75,6 +91,11 @@ service cloud.firestore {
         allow create, update: if signedIn() && uid == request.auth.uid
           && member(gid) && validMember(request.resource.data);
         allow delete: if signedIn() && uid == request.auth.uid && groupExists(gid);
+      }
+      match /pings/{pingId} {
+        allow read: if member(gid) && resource.data.toUid == request.auth.uid;
+        allow create, update: if member(gid) && validPing(gid, pingId, request.resource.data);
+        allow delete: if signedIn() && resource.data.toUid == request.auth.uid;
       }
     }
     match /users/{uid} {

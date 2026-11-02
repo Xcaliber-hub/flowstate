@@ -187,7 +187,12 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
     profileMemberUid?.let { uid ->
         val ranked = rankedMembers(state.members)
         val index = ranked.indexOfFirst { it.uid == uid }
-        if (index >= 0) MemberProfileSheet(ranked[index], rank = index + 1, onDismiss = { profileMemberUid = null })
+        val groupId = state.selectedGroup?.id
+        if (index >= 0) MemberProfileSheet(
+            ranked[index], rank = index + 1, onDismiss = { profileMemberUid = null },
+            canSendEmoji = groupId != null && uid != state.user?.uid,
+            onSendEmoji = { emoji -> if (groupId != null) vm.sendEmoji(groupId, uid, emoji) },
+        )
         else LaunchedEffect(uid) { profileMemberUid = null }
     }
 

@@ -5,6 +5,8 @@ import com.flowstate.focus.ui.components.AutoSizeText
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import com.flowstate.focus.data.update.UpdateChecker
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -227,6 +229,11 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                 Entrance(5) {
                     Group("About", liquid) {
                         UpdateRow()
+                        LinkRow("Source code", "github.com/${UpdateChecker.OWNER}/${UpdateChecker.REPO}") {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/${UpdateChecker.OWNER}/${UpdateChecker.REPO}")))
+                            }
+                        }
                     }
                 }
             }

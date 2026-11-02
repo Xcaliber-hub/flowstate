@@ -31,6 +31,7 @@ import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Groups
 import com.flowstate.focus.ui.groups.GroupsScreen
+import com.flowstate.focus.ui.groups.EmojiInbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -172,6 +173,8 @@ fun FlowstateAppUi(settings: AppSettings) {
                     )
                 }
             }
+            // Emojis friends sent while the app was closed pop up over everything, once each.
+            EmojiInbox()
         }
         }
     }

@@ -10,6 +10,7 @@ import com.flowstate.focus.domain.groups.weeklyTotal
 import com.flowstate.focus.domain.groups.weeklyWeekKeyIst
 import com.flowstate.focus.domain.groups.weeklyWeekStartIst
 import com.flowstate.focus.domain.groups.PresetAvatars
+import com.flowstate.focus.domain.groups.EmojiPings
 import com.flowstate.focus.domain.Phase
 import com.flowstate.focus.domain.TimerMode
 import com.flowstate.focus.domain.TimerState
@@ -52,7 +53,9 @@ import javax.inject.Singleton
  data class FocusGroup(val id: String, val name: String, val memberIds: List<String>)
  /** [weeklySessions] and [todayFocusMs] are null when the member's app predates them (shown as "—"). */
  data class GroupMember(val uid: String, val name: String, val weeklyFocusMs: Long, val live: TimerState?, val updatedAt: Long, val avatarId: String = "", val weeklySessions: Int? = null, val todayFocusMs: Long? = null)
- data class GroupsState(val configured: Boolean = false, val user: GroupUser? = null, val groups: List<FocusGroup> = emptyList(), val selectedGroup: FocusGroup? = null, val members: List<GroupMember> = emptyList(), val loading: Boolean = false, val busy: Boolean = false, val error: String? = null, val notice: String? = null, val profileSaving: Boolean = false, val profileSaveVersion: Long = 0L)
+ /** An emoji a group friend sent; shown once when the app opens, then cleared. */
+ data class EmojiPing(val groupId: String, val groupName: String, val fromUid: String, val fromName: String, val fromAvatarId: String, val emoji: String, val sentAt: Long)
+ data class GroupsState(val incomingPings: List<EmojiPing> = emptyList(), val configured: Boolean = false, val user: GroupUser? = null, val groups: List<FocusGroup> = emptyList(), val selectedGroup: FocusGroup? = null, val members: List<GroupMember> = emptyList(), val loading: Boolean = false, val busy: Boolean = false, val error: String? = null, val notice: String? = null, val profileSaving: Boolean = false, val profileSaveVersion: Long = 0L)
 
 @Singleton
 class GroupsRepository @Inject constructor(
@@ -67,6 +70,8 @@ class GroupsRepository @Inject constructor(
     private var db: FirebaseFirestore? = null
     private var groupListener: ListenerRegistration? = null
     private var memberListeners = mutableListOf<ListenerRegistration>()
+    private val pingListeners = mutableMapOf<String, ListenerRegistration>()
+    private val pingsByGroup = mutableMapOf<String, List<EmojiPing>>()
     private var selectedMembers = emptyList<GroupMember>()
     private var syncJob: kotlinx.coroutines.Job? = null
     private var activeUser: GroupUser? = null
@@ -166,6 +171,31 @@ class GroupsRepository @Inject constructor(
         runCatching { ref.collection("members").document(u.uid).delete().await() }
         refreshGroups()
     }
+    /** Sends [emoji] to [toUid] in [groupId]. A newer ping to the same friend replaces the older one. */
+    fun sendEmoji(groupId: String, toUid: String, emoji: String) = scope.launch {
+        try {
+            val u = requireUser(); val me = activeUser?.takeIf { it.uid == u.uid } ?: error("Sign in first.")
+            require(emoji in EmojiPings.ALL) { "Choose one of the emojis." }
+            require(toUid != u.uid) { "You can't send an emoji to yourself." }
+            dbRequired().collection("groups").document(groupId).collection("pings").document("${u.uid}_$toUid")
+                .set(mapOf("fromUid" to u.uid, "fromName" to me.name, "fromAvatarId" to me.avatarId, "toUid" to toUid, "emoji" to emoji, "sentAt" to FieldValue.serverTimestamp())).await()
+        } catch (e: CancellationException) { throw e }
+        catch (e: FirebaseFirestoreException) {
+            if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) _state.update { it.copy(error = "Couldn't send the emoji. Publish the 1.4.3 Firestore rules in project ${readResource(R.string.flowstate_firebase_project_id)} so emoji pings are allowed.") }
+            else setError(e)
+        } catch (e: Exception) { setError(e) }
+    }
+    /** Marks a ping as seen: it is deleted so it never shows again. */
+    fun dismissPing(ping: EmojiPing) {
+        val uid = activeUser?.uid ?: return
+        // The same friend can have a ping waiting in more than one shared group; clear them all.
+        val groups = pingsByGroup.filterValues { list -> list.any { it.fromUid == ping.fromUid } }.keys.toList()
+        groups.forEach { id -> pingsByGroup[id] = pingsByGroup[id].orEmpty().filterNot { it.fromUid == ping.fromUid } }
+        publishPings()
+        scope.launch {
+            groups.forEach { id -> runCatching { dbRequired().collection("groups").document(id).collection("pings").document("${ping.fromUid}_$uid").delete().await() } }
+        }
+    }
     fun clearError() { _state.update { it.copy(error = null, notice = null) } }
 
     private suspend fun acceptAuth(uid: String?, name: String?) {
@@ -205,6 +235,7 @@ class GroupsRepository @Inject constructor(
             if (authRequired().currentUser?.uid != listenerUid || activeUser?.uid != listenerUid) return@addSnapshotListener
             if (err != null) { setError(err); _state.value = _state.value.copy(loading = false); return@addSnapshotListener }
             groupList = snap?.documents.orEmpty().mapNotNull { d -> d.getString("name")?.let { FocusGroup(d.id, it, (d.get("memberIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()) } }
+            attachPings(groupList, listenerUid)
             val previous = _state.value.selectedGroup
             val oldId = previous?.id
             val chosen = groupList.firstOrNull { it.id == oldId } ?: groupList.firstOrNull()
@@ -213,6 +244,30 @@ class GroupsRepository @Inject constructor(
             else if (chosen == null) { clearMemberListeners(); _state.update { it.copy(members = emptyList(), loading = false) } }
         }
     }
+    /** Listens for emoji pings addressed to this user in every group they are in. */
+    private fun attachPings(groups: List<FocusGroup>, uid: String) {
+        val ids = groups.map { it.id }.toSet()
+        (pingListeners.keys - ids).forEach { id -> pingListeners.remove(id)?.remove(); pingsByGroup.remove(id) }
+        groups.filter { it.id !in pingListeners }.forEach { g ->
+            pingListeners[g.id] = dbRequired().collection("groups").document(g.id).collection("pings").whereEqualTo("toUid", uid)
+                .addSnapshotListener { snap, err ->
+                    if (err != null || activeUser?.uid != uid) return@addSnapshotListener
+                    pingsByGroup[g.id] = snap?.documents.orEmpty().mapNotNull { d ->
+                        val emoji = d.getString("emoji")?.takeIf { it in EmojiPings.ALL } ?: return@mapNotNull null
+                        EmojiPing(g.id, g.name, d.getString("fromUid").orEmpty(), d.getString("fromName").orEmpty().ifBlank { "A friend" },
+                            PresetAvatars.fallback(d.getString("fromAvatarId")), emoji, d.getTimestamp("sentAt")?.toDate()?.time ?: System.currentTimeMillis())
+                    }
+                    publishPings()
+                }
+        }
+        publishPings()
+    }
+    private fun publishPings() {
+        // A friend in two groups may have pinged in both; show only their newest.
+        val all = pingsByGroup.values.flatten().groupBy { it.fromUid }.values.mapNotNull { list -> list.maxByOrNull { it.sentAt } }.sortedBy { it.sentAt }
+        _state.update { it.copy(incomingPings = all) }
+    }
+    private fun clearPingListeners() { pingListeners.values.forEach { it.remove() }; pingListeners.clear(); pingsByGroup.clear() }
     private fun attachMembers(group: FocusGroup) {
         clearMemberListeners(); selectedMembers = emptyList()
         val u = activeUser ?: return
@@ -271,7 +326,7 @@ class GroupsRepository @Inject constructor(
     }
     private fun encodeTimer(t: TimerState): Map<String, Any> = mapOf("mode" to t.mode.name, "phase" to t.phase.name, "status" to t.status.name, "phaseDurationMs" to t.phaseDurationMs, "phaseStartedAt" to t.phaseStartedAt, "pausedAt" to t.pausedAt, "subject" to t.subject.take(80))
     private fun decodeTimer(m: Map<*, *>): TimerState? = runCatching { TimerState(mode = TimerMode.fromName(m["mode"] as? String), phase = Phase.valueOf(m["phase"] as String), status = com.flowstate.focus.domain.Status.valueOf(m["status"] as String), phaseDurationMs = (m["phaseDurationMs"] as Number).toLong(), phaseStartedAt = (m["phaseStartedAt"] as Number).toLong(), pausedAt = (m["pausedAt"] as? Number)?.toLong() ?: 0, subject = m["subject"] as? String ?: "") }.getOrNull()
-    private fun cleanupListeners() { groupListener?.remove(); groupListener = null; clearMemberListeners(); syncJob?.cancel(); syncJob = null }
+    private fun cleanupListeners() { groupListener?.remove(); groupListener = null; clearMemberListeners(); clearPingListeners(); syncJob?.cancel(); syncJob = null }
     private fun clearMemberListeners() { memberListeners.forEach { it.remove() }; memberListeners.clear() }
     private fun requireUser() = authRequired().currentUser ?: error("Sign in first.")
     private fun authRequired() = auth ?: error("Firebase is not configured.")

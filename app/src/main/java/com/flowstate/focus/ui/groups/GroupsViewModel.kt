@@ -3,6 +3,7 @@ package com.flowstate.focus.ui.groups
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.flowstate.focus.data.groups.GroupsRepository
+import com.flowstate.focus.data.groups.EmojiPing
 import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.service.TimerEngine
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,4 +30,6 @@ class GroupsViewModel @Inject constructor(
     fun selectGroup(id: String) = repository.selectGroup(id)
     fun leaveGroup() = repository.leaveGroup()
     fun clearError() = repository.clearError()
+    fun sendEmoji(groupId: String, toUid: String, emoji: String) = repository.sendEmoji(groupId, toUid, emoji)
+    fun dismissPing(ping: EmojiPing) = repository.dismissPing(ping)
 }

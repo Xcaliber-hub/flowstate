@@ -5,7 +5,7 @@ import { describe, it, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 const require = createRequire(import.meta.url);
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
-const { doc, getDoc, setDoc, updateDoc, collection, getDocs, query, where, serverTimestamp } = require('firebase/firestore');
+const { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, where, serverTimestamp } = require('firebase/firestore');
 const rules = readFileSync(fileURLToPath(new URL('../firestore.rules', import.meta.url)), 'utf8');
 const env = await initializeTestEnvironment({ projectId: 'demo-flowstate', firestore: { rules } });
 const gid = 'AB12CD34EF56';
@@ -218,5 +218,25 @@ describe('Flowstate Firestore authorization', () => {
     for (const bad of [live('SLEEPING'), { ...live('RUNNING'), phase: 'NAP' }, live('PAUSED', { pausedAt: -5 }), live('PAUSED', { pausedAt: 'x' })]) {
       await assertFails(setDoc(member(db, 'alice'), { ...payload('fox'), ...stats, live: bad }));
     }
+  });
+  it('lets members send one replaceable emoji ping that only the friend can read and clear', async () => {
+    const ping = (db, id) => doc(db, 'groups', gid, 'pings', id);
+    const body = (over = {}) => ({ fromUid: 'alice', fromName: 'Alice', fromAvatarId: 'cat', toUid: 'bob', emoji: '🔥', sentAt: serverTimestamp(), ...over });
+    await assertSucceeds(setDoc(ping(alice(), 'alice_bob'), body()));
+    await assertSucceeds(setDoc(ping(alice(), 'alice_bob'), body({ emoji: '💪' })));
+    await assertFails(setDoc(ping(alice(), 'alice_bob'), body({ emoji: '💩' })));
+    await assertFails(setDoc(ping(alice(), 'random'), body()));
+    await assertFails(setDoc(ping(alice(), 'alice_alice'), body({ toUid: 'alice' })));
+    await assertFails(setDoc(ping(alice(), 'alice_zed'), body({ toUid: 'zed' })));
+    await assertFails(setDoc(ping(bob(), 'alice_bob'), body()));
+    await assertFails(setDoc(ping(alice(), 'alice_bob'), body({ extra: 1 })));
+    await assertFails(setDoc(ping(env.authenticatedContext('charlie').firestore(), 'charlie_bob'), body({ fromUid: 'charlie' })));
+    await assertFails(getDoc(ping(alice(), 'alice_bob')));
+    const inbox = await assertSucceeds(getDocs(query(collection(bob(), 'groups', gid, 'pings'), where('toUid', '==', 'bob'))));
+    assert.equal(inbox.size, 1);
+    assert.equal(inbox.docs[0].data().emoji, '💪');
+    await assertFails(getDocs(collection(bob(), 'groups', gid, 'pings')));
+    await assertFails(deleteDoc(ping(alice(), 'alice_bob')));
+    await assertSucceeds(deleteDoc(ping(bob(), 'alice_bob')));
   });
 });
