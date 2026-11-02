@@ -31,5 +31,6 @@ class GroupsViewModel @Inject constructor(
     fun leaveGroup() = repository.leaveGroup()
     fun clearError() = repository.clearError()
     fun sendEmoji(groupId: String, toUid: String, emoji: String) = repository.sendEmoji(groupId, toUid, emoji)
+    fun refreshPings() = repository.refreshPings()
     fun dismissPing(ping: EmojiPing) = repository.dismissPing(ping)
 }

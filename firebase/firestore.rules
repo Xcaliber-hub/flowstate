@@ -1,5 +1,5 @@
 rules_version = '2';
-// Flowstate 1.4.3 — all 24 avatars, member session/daily stats, emoji pings between group members. Publish to flowstate-241f0 / (default).
+// Flowstate 1.4.3/1.4.4 — all 24 avatars, member session/daily stats, emoji pings between group members. Publish to flowstate-241f0 / (default).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }

@@ -30,7 +30,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +65,13 @@ import kotlin.math.sin
 fun EmojiInbox(modifier: Modifier = Modifier) {
     val vm: GroupsViewModel = hiltViewModel()
     val state by vm.state.collectAsStateWithLifecycle()
+    // Each time the app comes back to the screen, listen afresh so a ping is never missed.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) vm.refreshPings() }
+        lifecycle.addObserver(observer)
+        onDispose { lifecycle.removeObserver(observer) }
+    }
     val ping = state.incomingPings.firstOrNull()
     // Keep the last ping on the card while it fades out.
     var shown by remember { mutableStateOf<EmojiPing?>(null) }

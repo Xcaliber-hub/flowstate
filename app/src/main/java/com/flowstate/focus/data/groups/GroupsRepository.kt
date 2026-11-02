@@ -1,5 +1,6 @@
 package com.flowstate.focus.data.groups
 
+import android.util.Log
 import android.content.Context
 import com.flowstate.focus.R
 import com.flowstate.focus.data.repo.SessionRepository
@@ -251,7 +252,15 @@ class GroupsRepository @Inject constructor(
         groups.filter { it.id !in pingListeners }.forEach { g ->
             pingListeners[g.id] = dbRequired().collection("groups").document(g.id).collection("pings").whereEqualTo("toUid", uid)
                 .addSnapshotListener { snap, err ->
-                    if (err != null || activeUser?.uid != uid) return@addSnapshotListener
+                    if (activeUser?.uid != uid) return@addSnapshotListener
+                    if (err != null) {
+                        // A failed listener never recovers on its own (for example, it started before the
+                        // 1.4.3 rules were published). Drop it and try again shortly.
+                        Log.w("Flowstate", "Emoji ping listener failed for group ${g.id}", err)
+                        pingListeners.remove(g.id)?.remove()
+                        scope.launch(Dispatchers.Main) { delay(PING_RETRY_MS); if (activeUser?.uid == uid && g.id !in pingListeners) attachPings(groupList, uid) }
+                        return@addSnapshotListener
+                    }
                     pingsByGroup[g.id] = snap?.documents.orEmpty().mapNotNull { d ->
                         val emoji = d.getString("emoji")?.takeIf { it in EmojiPings.ALL } ?: return@mapNotNull null
                         EmojiPing(g.id, g.name, d.getString("fromUid").orEmpty(), d.getString("fromName").orEmpty().ifBlank { "A friend" },
@@ -266,6 +275,12 @@ class GroupsRepository @Inject constructor(
         // A friend in two groups may have pinged in both; show only their newest.
         val all = pingsByGroup.values.flatten().groupBy { it.fromUid }.values.mapNotNull { list -> list.maxByOrNull { it.sentAt } }.sortedBy { it.sentAt }
         _state.update { it.copy(incomingPings = all) }
+    }
+    /** Re-listens for pings from scratch; called whenever the app comes to the foreground. */
+    fun refreshPings() {
+        val uid = activeUser?.uid ?: return
+        pingListeners.values.forEach { it.remove() }; pingListeners.clear()
+        attachPings(groupList, uid)
     }
     private fun clearPingListeners() { pingListeners.values.forEach { it.remove() }; pingListeners.clear(); pingsByGroup.clear() }
     private fun attachMembers(group: FocusGroup) {
@@ -356,3 +371,5 @@ class GroupsRepository @Inject constructor(
     private fun weekKey(ms: Long): String = weeklyWeekKeyIst(ms)
     private companion object { const val APP_NAME="flowstate-groups"; const val MAX_GROUP_SIZE=20; const val WEEK_MS=7*24*60*60*1000L; const val ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const val LEGACY_RETRY_MS=15*60_000L }
 }
+
+private const val PING_RETRY_MS = 15_000L

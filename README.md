@@ -11,6 +11,10 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
 - Editable profile names and a preset-avatar picker with Sprout, Sunbeam, Moon, Fox, Orbit, Summit, Cloud, Ember, Turtle, Jelly, Comet and Bloom. Avatar IDs are persisted in Firestore; artwork is bundled and initials remain available. No photo uploads or Firebase Storage.
 - The supplied owl replaces the launcher and splash artwork. The pale outer border and corner decoration are removed. Adaptive icons use a separate full-bleed gray background and transparent owl artwork; legacy-density icons are also included.
 
+## 1.4.4: emoji pings always arrive
+
+Fixed: if the app was opened before the 1.4.3 rules were published, or the connection dropped, the emoji listener stopped for good and that person never saw incoming emojis. It now retries every 15 seconds and re-listens each time the app comes to the front.
+
 ## Emoji pings (1.4.3)
 
 Open a friend's profile in a group by tapping them on the leaderboard or in the live room. Tap the round emoji button to the left of their avatar and pick one: 🔥 💪 👏 📚 🎯 ☕ 👀 😴. The next time they open Flowstate, it pops up over the app with a jelly bounce, showing who sent it and from which group. They can tap Nice to clear it, or Send one back. If you send again before they've seen it, the new emoji replaces the old one, so nobody gets spammed.
