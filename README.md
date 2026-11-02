@@ -2,6 +2,26 @@
 
 A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt, Room and DataStore. This is the **Flowstate** project (`com.flowstate.focus`), not Stride.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td align="center"><img src="screenshots/focus.jpg" width="260" alt="Focus timer"><br>Focus</td>
+    <td align="center"><img src="screenshots/focus-timer-modes.jpg" width="260" alt="Timer modes menu"><br>Timer modes</td>
+    <td align="center"><img src="screenshots/tasks.jpg" width="260" alt="Tasks"><br>Tasks</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="screenshots/tasks-categories.jpg" width="260" alt="Task categories menu"><br>Task categories</td>
+    <td align="center"><img src="screenshots/statistics.jpg" width="260" alt="Statistics"><br>Statistics</td>
+    <td align="center"><img src="screenshots/statistics-range.jpg" width="260" alt="Statistics range menu"><br>Statistics ranges</td>
+  </tr>
+  <tr>
+    <td align="center"><img src="screenshots/groups.jpg" width="260" alt="Groups"><br>Groups</td>
+    <td align="center"><img src="screenshots/groups-leaderboard.jpg" width="260" alt="Group leaderboard"><br>Leaderboard</td>
+    <td align="center"><img src="screenshots/groups-live.jpg" width="260" alt="Live focusing in a group"><br>Live</td>
+  </tr>
+</table>
+
 ## New in 1.1
 
 - A Groups navigation tab, with email/password account creation, sign-in, password reset and sign-out.
