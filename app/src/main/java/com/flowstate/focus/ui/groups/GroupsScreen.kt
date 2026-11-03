@@ -82,8 +82,9 @@ import java.util.Locale
 private enum class AuthForm { SIGN_IN, SIGN_UP, RESET }
 
 @Composable
-fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
+fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, onOpenChat: () -> Unit = {}, vm: GroupsViewModel = hiltViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val chat by vm.chat.collectAsStateWithLifecycle()
     var form by rememberSaveable { mutableStateOf(AuthForm.SIGN_IN) }
     var email by rememberSaveable { mutableStateOf("") }
     var name by rememberSaveable { mutableStateOf("") }
@@ -140,7 +141,11 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
                     }
                 }
                 state.selectedGroup?.let { group ->
-                    item { GroupHeader(group.name, group.memberIds.size, settings.liquidUi) {
+                    item { GroupHeader(group.name, group.memberIds.size, settings.liquidUi,
+                        chatAvatars = state.members.filter { it.uid != state.user?.uid }.ifEmpty { state.members }.take(4),
+                        unread = group.id in chat.unreadGroups,
+                        preview = chat.lastMessages[group.id]?.let { m -> (if (m.uid == state.user?.uid) "You" else m.name) + ": " + m.text },
+                        onChat = onOpenChat) {
                         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "Join ${group.name} on Flowstate with code: ${group.id}")
                         context.startActivity(Intent.createChooser(send, "Invite friends"))
                     } }
@@ -218,12 +223,14 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, vm: GroupsViewM
 }
 
 @Composable
-private fun GroupHeader(name: String, members: Int, liquid: Boolean, invite: () -> Unit) {
+private fun GroupHeader(name: String, members: Int, liquid: Boolean, chatAvatars: List<GroupMember>, unread: Boolean, preview: String?, onChat: () -> Unit, invite: () -> Unit) {
     GlassCard(Modifier.fillMaxWidth(), liquid) {
         OutlinedButton(onClick = invite) { AutoSizeText("Invite friends") }
         Spacer(Modifier.height(8.dp))
         Text(name, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text("$members members · Private", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(14.dp))
+        ChatPill(chatAvatars, unread, preview, onChat)
     }
 }
 

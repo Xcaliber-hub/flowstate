@@ -89,6 +89,16 @@ fun DepthSurface(
     colors: DepthColors = depthColors(),
     content: @Composable BoxScope.() -> Unit,
 ) {
+    if (LocalGlassUi.current) {
+        // Glass UI: see-through card with a sheen and bright rim. No shadow, which would muddy the glass.
+        Surface(
+            modifier = modifier.glassPanel(shape),
+            shape = shape,
+            color = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ) { Box(content = content) }
+        return
+    }
     Surface(
         modifier = modifier.depthShadow(shape, colors.shadow, elevation),
         shape = shape,

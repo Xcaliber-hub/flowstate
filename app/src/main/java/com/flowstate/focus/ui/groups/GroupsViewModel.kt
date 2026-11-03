@@ -18,6 +18,7 @@ class GroupsViewModel @Inject constructor(
     engine: TimerEngine,
 ) : ViewModel() {
     val state = repository.state
+    val chat = repository.chat
     val timer: StateFlow<TimerState> = engine.state
 
     fun signIn(email: String, password: String) = repository.signIn(email.trim(), password)
@@ -33,4 +34,10 @@ class GroupsViewModel @Inject constructor(
     fun sendEmoji(groupId: String, toUid: String, emoji: String) = repository.sendEmoji(groupId, toUid, emoji)
     fun refreshPings() = repository.refreshPings()
     fun dismissPing(ping: EmojiPing) = repository.dismissPing(ping)
+    fun openChat(groupId: String) = repository.openChat(groupId)
+    fun closeChat() = repository.closeChat()
+    fun loadOlderChat() = repository.loadOlderChat()
+    fun sendChat(groupId: String, text: String): Boolean = repository.sendChat(groupId, text)
+    fun deleteChat(groupId: String, messageId: String) = repository.deleteChat(groupId, messageId)
+    fun clearChatError() = repository.clearChatError()
 }

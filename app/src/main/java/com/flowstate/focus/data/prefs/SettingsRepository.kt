@@ -29,6 +29,7 @@ private object Keys {
     val DYNAMIC = booleanPreferencesKey("dynamic")
     val ACCENT = intPreferencesKey("accent")
     val LIQUID = booleanPreferencesKey("liquid")
+    val GLASS = booleanPreferencesKey("glass_ui")
     val SIDE_NAV = booleanPreferencesKey("side_nav")
     val SIDE_NAV_SWAPPED = booleanPreferencesKey("side_nav_swapped")
     val FOCUS = intPreferencesKey("focus_min")
@@ -52,6 +53,7 @@ private fun Preferences.toSettings(): AppSettings {
         dynamicColor = this[Keys.DYNAMIC] ?: d.dynamicColor,
         accentIndex = this[Keys.ACCENT] ?: d.accentIndex,
         liquidUi = this[Keys.LIQUID] ?: d.liquidUi,
+        glassUi = this[Keys.GLASS] ?: d.glassUi,
         sideNav = this[Keys.SIDE_NAV] ?: d.sideNav,
         sideNavSwapped = this[Keys.SIDE_NAV_SWAPPED] ?: d.sideNavSwapped,
         focusMin = this[Keys.FOCUS] ?: d.focusMin,
@@ -74,6 +76,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[Keys.DYNAMIC] = s.dynamicColor
     this[Keys.ACCENT] = s.accentIndex
     this[Keys.LIQUID] = s.liquidUi
+    this[Keys.GLASS] = s.glassUi
     this[Keys.SIDE_NAV] = s.sideNav
     this[Keys.SIDE_NAV_SWAPPED] = s.sideNavSwapped
     this[Keys.FOCUS] = s.focusMin

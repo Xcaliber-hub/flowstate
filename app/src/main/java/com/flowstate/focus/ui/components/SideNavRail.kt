@@ -46,7 +46,7 @@ fun SideNavRail(
 ) {
     val haptics = LocalHapticFeedback.current
     val cs = MaterialTheme.colorScheme
-    FrostedGlassSurface(shape = RoundedCornerShape(percent = 50), modifier = modifier) {
+    FrostedGlassSurface(shape = RoundedCornerShape(percent = 50), modifier = modifier, tinted = true) {
         Column(
             Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),

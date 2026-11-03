@@ -32,6 +32,8 @@ import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.Groups
 import com.flowstate.focus.ui.groups.GroupsScreen
 import com.flowstate.focus.ui.groups.EmojiInbox
+import com.flowstate.focus.ui.groups.GroupChatScreen
+import com.flowstate.focus.ui.components.LocalGlassUi
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -70,6 +72,7 @@ object Routes {
     const val STATS = "stats"
     const val SETTINGS = "settings"
     const val BLOCKED = "blocked"
+    const val GROUP_CHAT = "group_chat"
 }
 
 private val Tabs = listOf(
@@ -110,7 +113,7 @@ fun FlowstateAppUi(settings: AppSettings) {
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
         val navLayout = if (settings.sideNav) NavLayout.SIDE else NavLayout.BOTTOM
-        CompositionLocalProvider(LocalNavLayout provides navLayout, LocalBlurSource provides contentLayer, LocalTopBarState provides topBar) {
+        CompositionLocalProvider(LocalNavLayout provides navLayout, LocalBlurSource provides contentLayer, LocalTopBarState provides topBar, LocalGlassUi provides settings.glassUi) {
         Box(Modifier.fillMaxSize().nestedScroll(scrollConnection)) {
             NavHost(
                 navController = nav,
@@ -122,15 +125,19 @@ fun FlowstateAppUi(settings: AppSettings) {
                 popExitTransition = { exit },
             ) {
                 composable(Routes.FOCUS) { FocusScreen(settings) }
-                composable(Routes.GROUPS) { GroupsScreen(settings, onOpenFocus = { nav.navigate(Routes.FOCUS) { launchSingleTop = true } }) }
+                composable(Routes.GROUPS) { GroupsScreen(settings, onOpenFocus = { nav.navigate(Routes.FOCUS) { launchSingleTop = true } }, onOpenChat = { nav.navigate(Routes.GROUP_CHAT) { launchSingleTop = true } }) }
+                composable(Routes.GROUP_CHAT) { GroupChatScreen(onBack = { nav.popBackStack() }) }
                 composable(Routes.TASKS) { TasksScreen(settings) }
                 composable(Routes.STATS) { StatsScreen(settings) }
                 composable(Routes.SETTINGS) { SettingsScreen(onOpenBlockedApps = { nav.navigate(Routes.BLOCKED) }) }
                 composable(Routes.BLOCKED) { BlockedAppsScreen(onBack = { nav.popBackStack() }) }
             }
             // Screen content scrolls under a soft blur at the top; the nav dock and bar stay crisp above it.
-            TopBlur(contentLayer, Modifier.align(Alignment.TopCenter))
-            if (navLayout == NavLayout.BOTTOM) BottomBlur(contentLayer, Modifier.align(Alignment.BottomCenter))
+            // The group chat draws its own frosted bars, so the screen-edge blurs stay off there.
+            if (route != Routes.GROUP_CHAT) {
+                TopBlur(contentLayer, Modifier.align(Alignment.TopCenter))
+                if (navLayout == NavLayout.BOTTOM) BottomBlur(contentLayer, Modifier.align(Alignment.BottomCenter))
+            }
             if (Tabs.any { it.route == route }) {
                 // Frosted top bar: back, the screen's title pill and, where it has options, the three-line menu.
                 val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()

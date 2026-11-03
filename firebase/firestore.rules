@@ -1,5 +1,5 @@
 rules_version = '2';
-// Flowstate 1.4.3/1.4.4 — all 24 avatars, member session/daily stats, emoji pings between group members. Publish to flowstate-241f0 / (default).
+// Flowstate 1.4.5 — all 24 avatars, member session/daily stats, emoji pings, group chat. Publish to flowstate-241f0 / (default).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -62,6 +62,15 @@ service cloud.firestore {
         && data.emoji is string && validEmoji(data.emoji)
         && data.sentAt == request.time;
     }
+    // Group chat (1.4.5). Text only, kept until the sender deletes it. Members read and post;
+    // nobody can edit a message, and only its sender can delete it.
+    function validMessage(data) {
+      return data.keys().hasOnly(['uid', 'name', 'avatarId', 'text', 'sentAt'])
+        && data.uid == request.auth.uid
+        && validName(data) && validAvatar(data)
+        && data.text is string && data.text.size() >= 1 && data.text.size() <= 500
+        && data.sentAt == request.time;
+    }
     match /groups/{gid} {
       // Authenticated invite-code holders can fetch a group directly, not list all groups.
       allow get: if signedIn();
@@ -96,6 +105,12 @@ service cloud.firestore {
         allow read: if member(gid) && resource.data.toUid == request.auth.uid;
         allow create, update: if member(gid) && validPing(gid, pingId, request.resource.data);
         allow delete: if signedIn() && resource.data.toUid == request.auth.uid;
+      }
+      match /messages/{messageId} {
+        allow read: if member(gid);
+        allow create: if member(gid) && validMessage(request.resource.data);
+        allow update: if false;
+        allow delete: if member(gid) && resource.data.uid == request.auth.uid;
       }
     }
     match /users/{uid} {

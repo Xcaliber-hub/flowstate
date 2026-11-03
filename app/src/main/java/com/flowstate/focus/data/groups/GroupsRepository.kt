@@ -24,6 +24,11 @@ import com.google.firebase.firestore.FirebaseFirestoreException
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.DocumentChange
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.MetadataChanges
+import com.google.firebase.firestore.Query
+import kotlinx.coroutines.withContext
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +61,10 @@ import javax.inject.Singleton
  data class GroupMember(val uid: String, val name: String, val weeklyFocusMs: Long, val live: TimerState?, val updatedAt: Long, val avatarId: String = "", val weeklySessions: Int? = null, val todayFocusMs: Long? = null)
  /** An emoji a group friend sent; shown once when the app opens, then cleared. */
  data class EmojiPing(val groupId: String, val groupName: String, val fromUid: String, val fromName: String, val fromAvatarId: String, val emoji: String, val sentAt: Long)
+ /** One group chat message. [pending] is true until the server has accepted it. */
+ data class ChatMessage(val id: String, val uid: String, val name: String, val avatarId: String, val text: String, val sentAt: Long, val pending: Boolean = false)
+ /** The open group chat, newest message first. [unreadGroups] drives the dot on the Chat button. */
+ data class ChatState(val groupId: String? = null, val messages: List<ChatMessage> = emptyList(), val loaded: Boolean = false, val loadingOlder: Boolean = false, val reachedStart: Boolean = false, val error: String? = null, val unreadGroups: Set<String> = emptySet(), val lastMessages: Map<String, ChatMessage> = emptyMap())
  data class GroupsState(val incomingPings: List<EmojiPing> = emptyList(), val configured: Boolean = false, val user: GroupUser? = null, val groups: List<FocusGroup> = emptyList(), val selectedGroup: FocusGroup? = null, val members: List<GroupMember> = emptyList(), val loading: Boolean = false, val busy: Boolean = false, val error: String? = null, val notice: String? = null, val profileSaving: Boolean = false, val profileSaveVersion: Long = 0L)
 
 @Singleton
@@ -67,6 +76,13 @@ class GroupsRepository @Inject constructor(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(GroupsState())
     val state: StateFlow<GroupsState> = _state.asStateFlow()
+    private val _chat = MutableStateFlow(ChatState())
+    val chat: StateFlow<ChatState> = _chat.asStateFlow()
+    // Snapshot callbacks run on the main thread; sign-out may clear these from IO, hence the concurrent map.
+    private var chatListener: ListenerRegistration? = null
+    private val chatById = java.util.concurrent.ConcurrentHashMap<String, ChatMessage>()
+    private var chatCursor: DocumentSnapshot? = null
+    private val chatSeen = context.getSharedPreferences("group_chat_seen", Context.MODE_PRIVATE)
     private var auth: FirebaseAuth? = null
     private var db: FirebaseFirestore? = null
     private var groupListener: ListenerRegistration? = null
@@ -186,6 +202,131 @@ class GroupsRepository @Inject constructor(
             else setError(e)
         } catch (e: Exception) { setError(e) }
     }
+    // ---- Group chat (1.4.5) ----
+    // groups/{gid}/messages/{auto-id}. Messages stay forever; the chat listens to the newest
+    // CHAT_PAGE and fetches older pages only as you scroll up, which keeps reads low on Spark.
+
+    /** Starts listening to [groupId]'s newest messages. Call when the chat screen opens. */
+    fun openChat(groupId: String) {
+        val uid = activeUser?.uid ?: return
+        if (_chat.value.groupId == groupId && chatListener != null) return
+        closeChat()
+        _chat.update { it.copy(groupId = groupId, messages = emptyList(), loaded = false, reachedStart = false, error = null, unreadGroups = it.unreadGroups - groupId) }
+        chatListener = messagesRef(groupId).orderBy("sentAt", Query.Direction.DESCENDING).limit(CHAT_PAGE)
+            .addSnapshotListener(MetadataChanges.INCLUDE) { snap, err ->
+                if (activeUser?.uid != uid || _chat.value.groupId != groupId) return@addSnapshotListener
+                if (err != null) {
+                    Log.w("Flowstate", "Group chat listener failed for $groupId", err)
+                    _chat.update { it.copy(error = chatError(err), loaded = true) }
+                    return@addSnapshotListener
+                }
+                if (snap == null) return@addSnapshotListener
+                val docs = snap.documents
+                val windowOldest = docs.mapNotNull { decodeMessage(it)?.sentAt }.minOrNull() ?: Long.MIN_VALUE
+                snap.documentChanges.forEach { change ->
+                    val msg = decodeMessage(change.document) ?: return@forEach
+                    when (change.type) {
+                        // A message that slides out of the newest-50 window is not deleted; keep it.
+                        // One removed from inside the window really was deleted.
+                        DocumentChange.Type.REMOVED -> if (docs.size < CHAT_PAGE || msg.sentAt >= windowOldest) chatById.remove(msg.id)
+                        else -> chatById[msg.id] = msg
+                    }
+                }
+                docs.forEach { d -> decodeMessage(d)?.let { chatById[it.id] = it } }
+                if (chatCursor == null) chatCursor = docs.lastOrNull { !it.metadata.hasPendingWrites() }
+                val fromServer = !snap.metadata.isFromCache
+                _chat.update { it.copy(loaded = true, error = null, reachedStart = it.reachedStart || (fromServer && docs.size < CHAT_PAGE)) }
+                publishChat()
+                markChatSeen(groupId)
+            }
+    }
+
+    /** Stops listening. Call when the chat screen closes. */
+    fun closeChat() {
+        chatListener?.remove(); chatListener = null
+        chatById.clear(); chatCursor = null
+        _chat.update { ChatState(unreadGroups = it.unreadGroups, lastMessages = it.lastMessages) }
+    }
+
+    /** Fetches the next page of older messages, once per scroll to the top. */
+    fun loadOlderChat() {
+        val groupId = _chat.value.groupId ?: return
+        val cursor = chatCursor ?: return
+        if (_chat.value.loadingOlder || _chat.value.reachedStart) return
+        _chat.update { it.copy(loadingOlder = true) }
+        scope.launch {
+            try {
+                val snap = messagesRef(groupId).orderBy("sentAt", Query.Direction.DESCENDING).startAfter(cursor).limit(CHAT_PAGE).get().await()
+                withContext(Dispatchers.Main) {
+                    if (_chat.value.groupId != groupId) return@withContext
+                    snap.documents.forEach { d -> decodeMessage(d)?.let { chatById[it.id] = it } }
+                    snap.documents.lastOrNull()?.let { chatCursor = it }
+                    _chat.update { it.copy(reachedStart = snap.size() < CHAT_PAGE) }
+                    publishChat()
+                }
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { _chat.update { it.copy(error = chatError(e)) } }
+            finally { _chat.update { it.copy(loadingOlder = false) } }
+        }
+    }
+
+    /** Sends [text] to [groupId]. It shows at once and is marked sent when the server accepts it. */
+    fun sendChat(groupId: String, text: String): Boolean {
+        val clean = text.trim()
+        if (clean.isEmpty() || clean.length > CHAT_MAX_CHARS) return false
+        val me = activeUser ?: return false
+        val ref = messagesRef(groupId).document()
+        ref.set(mapOf("uid" to me.uid, "name" to me.name, "avatarId" to me.avatarId, "text" to clean, "sentAt" to FieldValue.serverTimestamp()))
+            .addOnFailureListener { e ->
+                Log.w("Flowstate", "Group chat send failed", e)
+                chatById.remove(ref.id); publishChat()
+                _chat.update { it.copy(error = chatError(e)) }
+            }
+        return true
+    }
+
+    /** Deletes one of your own messages for everyone. */
+    fun deleteChat(groupId: String, messageId: String) {
+        val removed = chatById.remove(messageId); publishChat()
+        messagesRef(groupId).document(messageId).delete().addOnFailureListener { e ->
+            if (removed != null && _chat.value.groupId == groupId) { chatById[messageId] = removed; publishChat() }
+            _chat.update { it.copy(error = chatError(e)) }
+        }
+    }
+    fun clearChatError() { _chat.update { it.copy(error = null) } }
+
+    private fun messagesRef(groupId: String) = dbRequired().collection("groups").document(groupId).collection("messages")
+    private fun decodeMessage(d: DocumentSnapshot): ChatMessage? {
+        val text = d.getString("text")?.takeIf { it.isNotBlank() } ?: return null
+        // A just-sent message has no server time yet; estimate it so it sorts at the bottom.
+        val sent = d.getTimestamp("sentAt", DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.toDate()?.time ?: System.currentTimeMillis()
+        return ChatMessage(d.id, d.getString("uid").orEmpty(), d.getString("name").orEmpty().ifBlank { "Focus member" },
+            PresetAvatars.fallback(d.getString("avatarId")), text, sent, d.metadata.hasPendingWrites())
+    }
+    private fun publishChat() {
+        _chat.update { it.copy(messages = chatById.values.sortedWith(compareByDescending<ChatMessage> { m -> m.sentAt }.thenByDescending { m -> m.id })) }
+    }
+    private fun markChatSeen(groupId: String) {
+        val newest = chatById.values.maxOfOrNull { it.sentAt } ?: return
+        if (newest > chatSeen.getLong(groupId, 0L)) chatSeen.edit().putLong(groupId, newest).apply()
+        _chat.update { it.copy(unreadGroups = it.unreadGroups - groupId) }
+    }
+    /** Watches only the newest message of [group] to light the unread dot (one read per message). */
+    private fun attachChatBadge(group: FocusGroup, uid: String): ListenerRegistration =
+        messagesRef(group.id).orderBy("sentAt", Query.Direction.DESCENDING).limit(1).addSnapshotListener { snap, err ->
+            if (err != null || activeUser?.uid != uid) return@addSnapshotListener
+            val latest = snap?.documents?.firstOrNull()?.let(::decodeMessage)
+            val unread = latest != null && latest.uid != uid && _chat.value.groupId != group.id && latest.sentAt > chatSeen.getLong(group.id, 0L)
+            _chat.update { it.copy(
+                unreadGroups = if (unread) it.unreadGroups + group.id else it.unreadGroups - group.id,
+                lastMessages = if (latest != null) it.lastMessages + (group.id to latest) else it.lastMessages - group.id,
+            ) }
+        }
+    private fun chatError(t: Throwable): String =
+        if (t is FirebaseFirestoreException && t.code == FirebaseFirestoreException.Code.PERMISSION_DENIED)
+            "Chat isn't allowed yet. Publish the 1.4.5 Firestore rules in project ${readResource(R.string.flowstate_firebase_project_id)}."
+        else safeMessage(t)
+
     /** Marks a ping as seen: it is deleted so it never shows again. */
     fun dismissPing(ping: EmojiPing) {
         val uid = activeUser?.uid ?: return
@@ -286,6 +427,7 @@ class GroupsRepository @Inject constructor(
     private fun attachMembers(group: FocusGroup) {
         clearMemberListeners(); selectedMembers = emptyList()
         val u = activeUser ?: return
+        memberListeners += attachChatBadge(group, u.uid)
         memberListeners += dbRequired().collection("groups").document(group.id).collection("members").addSnapshotListener { snap, err ->
             if (authRequired().currentUser?.uid != u.uid || activeUser?.uid != u.uid) return@addSnapshotListener
             if (err != null) { setError(err); _state.update { it.copy(loading = false) }; return@addSnapshotListener }
@@ -341,7 +483,7 @@ class GroupsRepository @Inject constructor(
     }
     private fun encodeTimer(t: TimerState): Map<String, Any> = mapOf("mode" to t.mode.name, "phase" to t.phase.name, "status" to t.status.name, "phaseDurationMs" to t.phaseDurationMs, "phaseStartedAt" to t.phaseStartedAt, "pausedAt" to t.pausedAt, "subject" to t.subject.take(80))
     private fun decodeTimer(m: Map<*, *>): TimerState? = runCatching { TimerState(mode = TimerMode.fromName(m["mode"] as? String), phase = Phase.valueOf(m["phase"] as String), status = com.flowstate.focus.domain.Status.valueOf(m["status"] as String), phaseDurationMs = (m["phaseDurationMs"] as Number).toLong(), phaseStartedAt = (m["phaseStartedAt"] as Number).toLong(), pausedAt = (m["pausedAt"] as? Number)?.toLong() ?: 0, subject = m["subject"] as? String ?: "") }.getOrNull()
-    private fun cleanupListeners() { groupListener?.remove(); groupListener = null; clearMemberListeners(); clearPingListeners(); syncJob?.cancel(); syncJob = null }
+    private fun cleanupListeners() { groupListener?.remove(); groupListener = null; clearMemberListeners(); clearPingListeners(); closeChat(); _chat.value = ChatState(); syncJob?.cancel(); syncJob = null }
     private fun clearMemberListeners() { memberListeners.forEach { it.remove() }; memberListeners.clear() }
     private fun requireUser() = authRequired().currentUser ?: error("Sign in first.")
     private fun authRequired() = auth ?: error("Firebase is not configured.")
@@ -373,3 +515,5 @@ class GroupsRepository @Inject constructor(
 }
 
 private const val PING_RETRY_MS = 15_000L
+private const val CHAT_PAGE = 50L
+internal const val CHAT_MAX_CHARS = 500

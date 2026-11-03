@@ -18,6 +18,8 @@ data class AppSettings(
     val dynamicColor: Boolean = true,
     val accentIndex: Int = 0,
     val liquidUi: Boolean = true,
+    /** Frosted, see-through bars, cards and chat bubbles. Off: the earlier plain, solid surfaces. */
+    val glassUi: Boolean = true,
     /** Experimental: a compact navigation rail and daily-goal water bar on the left edge instead of the bottom bar. */
     val sideNav: Boolean = false,
     /** With side navigation: put the daily-goal water bar above the nav rail instead of below it. */

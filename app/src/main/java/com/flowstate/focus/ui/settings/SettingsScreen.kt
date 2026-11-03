@@ -154,6 +154,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                                 }
                             }
                         }
+                        ToggleRow("Glass UI", "Frosted, see-through bars, cards and chat bubbles tinted with your theme colour. Off: plain solid surfaces", s.glassUi) { v -> vm.update { it.copy(glassUi = v) } }
                         ToggleRow("Liquid UI", "Breathing cards, fluid navigation and a living progress ring", s.liquidUi) { v -> vm.update { it.copy(liquidUi = v) } }
                         ToggleRow("Side navigation", "Experimental: a compact rail and a daily-goal water bar on the left edge", s.sideNav) { v -> vm.update { it.copy(sideNav = v) } }
                         if (s.sideNav) {

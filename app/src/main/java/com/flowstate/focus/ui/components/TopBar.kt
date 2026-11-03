@@ -140,7 +140,7 @@ fun FrostedTopBar(state: TopBarState, onBack: () -> Unit, modifier: Modifier = M
         GlassCircleButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back") {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onBack()
         }
-        FrostedGlassSurface(CircleShape, Modifier.weight(1f).height(TopBarHeight)) {
+        FrostedGlassSurface(CircleShape, Modifier.weight(1f).height(TopBarHeight), tinted = true) {
             Row(
                 Modifier.fillMaxSize().padding(start = 12.dp, end = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -167,19 +167,24 @@ fun FrostedTopBar(state: TopBarState, onBack: () -> Unit, modifier: Modifier = M
     }
 }
 
+/** Round frosted button from the top bar; also used by the group chat's bars. */
 @Composable
-private fun GlassCircleButton(icon: ImageVector, label: String, onClick: () -> Unit) {
+internal fun GlassCircleButton(icon: ImageVector, label: String, size: Dp = TopBarHeight, enabled: Boolean = true, onClick: () -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (pressed) 0.9f else 1f, spring(0.4f, Spring.StiffnessMedium), label = "glassPress")
-    FrostedGlassSurface(CircleShape, Modifier.size(TopBarHeight).scale(scale)) {
+    val latestClick by rememberUpdatedState(onClick)
+    val latestEnabled by rememberUpdatedState(enabled)
+    FrostedGlassSurface(CircleShape, Modifier.size(size).scale(scale), tinted = true) {
         Box(
             Modifier.fillMaxSize()
+                .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
                 .pointerInput(Unit) {
                     awaitEachGesture {
-                        awaitFirstDown(); pressed = true
+                        awaitFirstDown(); if (!latestEnabled) return@awaitEachGesture
+                        pressed = true
                         val up = waitForUpOrCancellation()
                         pressed = false
-                        if (up != null) onClick()
+                        if (up != null) latestClick()
                     }
                 }
                 .semantics { contentDescription = label; role = Role.Button },

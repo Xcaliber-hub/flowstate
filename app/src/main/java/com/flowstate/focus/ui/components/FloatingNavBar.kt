@@ -64,6 +64,7 @@ fun FloatingNavBar(
     FrostedGlassSurface(
         shape = CircleShape,
         modifier = modifier.widthIn(max = 600.dp).navigationBarsPadding().padding(bottom = 16.dp).offset(y = offsetY),
+        tinted = true,
     ) {
         Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             tabs.forEach { tab ->
