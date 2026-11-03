@@ -1,6 +1,38 @@
 package com.flowstate.focus.ui.groups
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import android.widget.Toast
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.automirrored.rounded.Reply
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.IntOffset
+import androidx.lifecycle.compose.LifecycleStartEffect
+import com.flowstate.focus.data.groups.ChatReply
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -104,7 +136,7 @@ private val STARTERS = listOf("Who's focusing tonight?", "Starting a 50 min bloc
  * The "Group chat" pill under the group name: members' avatars, the newest message and an unread dot.
  */
 @Composable
-internal fun ChatPill(avatars: List<GroupMember>, unread: Boolean, preview: String?, onClick: () -> Unit) {
+internal fun ChatPill(avatars: List<GroupMember>, unread: Boolean, unreadCount: Int, preview: String?, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val glass = LocalGlassUi.current
     val shape = CircleShape
@@ -119,14 +151,32 @@ internal fun ChatPill(avatars: List<GroupMember>, unread: Boolean, preview: Stri
         ) {
             if (avatars.isNotEmpty()) { AvatarStack(avatars.map { it.name to it.avatarId }, 36.dp); Spacer(Modifier.width(12.dp)) }
             Column(Modifier.weight(1f)) {
-                Text("Group chat", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(if (unread && unreadCount > 0) "Group chat · $unreadCount new" else "Group chat",
+                    style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 Text(preview ?: "Say hi to the group", style = MaterialTheme.typography.bodySmall, maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, color = content.copy(alpha = 0.75f))
+                    overflow = TextOverflow.Ellipsis, color = content.copy(alpha = 0.75f),
+                    fontWeight = if (unread) FontWeight.SemiBold else null)
             }
-            if (unread) Box(Modifier.size(10.dp).clip(CircleShape).background(cs.primary).semantics { contentDescription = "Unread messages" })
+            when {
+                unread && unreadCount > 0 -> UnreadBadge(unreadCount)
+                unread -> Box(Modifier.size(10.dp).clip(CircleShape).background(cs.primary).semantics { contentDescription = "Unread messages" })
+            }
             Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, modifier = Modifier.padding(start = 4.dp))
         }
     }
+}
+
+/** The count of new messages in a pill, like a notification badge. 100 or more shows as "99+". */
+@Composable
+private fun UnreadBadge(count: Int) {
+    val cs = MaterialTheme.colorScheme
+    val label = if (count > 99) "99+" else "$count"
+    Box(
+        Modifier.heightIn(min = 22.dp).widthIn(min = 22.dp).clip(CircleShape).background(cs.primary)
+            .padding(horizontal = 7.dp)
+            .semantics { contentDescription = "$count new messages" },
+        contentAlignment = Alignment.Center,
+    ) { Text(label, color = cs.onPrimary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1) }
 }
 
 /** Overlapping avatar illustrations, each with a thin ring so they read as separate coins. */
@@ -146,7 +196,9 @@ private fun AvatarStack(people: List<Pair<String, String>>, size: Dp) {
 /**
  * Full-screen group chat. The messages scroll under a frosted top bar (back button and a pill with the
  * group) and a frosted message bar, both shaped like the app's top bar and tinted with the theme colour.
+ * Swipe a message right (or long-press it) to reply; your newest message says who has seen it.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -154,22 +206,51 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     val group = state.selectedGroup
     if (group == null || state.user == null) { LaunchedEffect(Unit) { onBack() }; return }
     DisposableEffect(group.id) { vm.openChat(group.id); onDispose { vm.closeChat() } }
+    // Only count messages as seen while the chat is actually on screen.
+    LifecycleStartEffect(group.id) { vm.setChatVisible(true); onStopOrDispose { vm.setChatVisible(false) } }
 
     val me = state.user?.uid
     val haptics = LocalHapticFeedback.current
     val density = LocalDensity.current
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
     val chatLayer = rememberGraphicsLayer()
     val listState = rememberLazyListState()
     var draft by rememberSaveable { mutableStateOf("") }
+    var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
+    var actionsFor by remember { mutableStateOf<ChatMessage?>(null) }
+    var seenSheetFor by remember { mutableStateOf<ChatMessage?>(null) }
     var deleting by remember { mutableStateOf<ChatMessage?>(null) }
+    var highlighted by remember { mutableStateOf<String?>(null) }
     var composerHeight by remember { mutableStateOf(TopBarHeight + 24.dp) }
+    val focus = remember { FocusRequester() }
     val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val bottomInset = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
     val others = state.members.filter { it.uid != me }
     val faces = (others.ifEmpty { state.members }).take(3).map { it.name to it.avatarId }
     val send: (String) -> Unit = { text ->
-        if (vm.sendChat(group.id, text)) { draft = ""; haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+        if (vm.sendChat(group.id, text, replyingTo)) {
+            draft = ""; replyingTo = null
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
     }
+    val startReply: (ChatMessage) -> Unit = { m ->
+        replyingTo = m
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        runCatching { focus.requestFocus() }
+    }
+    val jumpTo: (ChatReply) -> Unit = { q ->
+        val index = chat.messages.indexOfFirst { it.id == q.id }
+        if (index < 0) Toast.makeText(context, "That message is further back. Scroll up to load it.", Toast.LENGTH_SHORT).show()
+        else scope.launch {
+            listState.animateScrollToItem(index)
+            highlighted = q.id; delay(1400); if (highlighted == q.id) highlighted = null
+        }
+    }
+    // "Seen by" goes under your newest message only, like Instagram.
+    val myNewest = chat.messages.firstOrNull { it.uid == me && !it.pending }
+    val seenByMyNewest = myNewest?.let { m -> others.filter { (chat.seenBy[it.uid] ?: 0L) >= m.sentAt } }.orEmpty()
 
     // Scrolling up to the oldest loaded messages fetches the page before them.
     val messages by rememberUpdatedState(chat.messages)
@@ -200,8 +281,17 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
                         itemsIndexed(chat.messages, key = { _, m -> m.id }) { i, m ->
-                            MessageRow(m, mine = m.uid == me, older = chat.messages.getOrNull(i + 1), newer = chat.messages.getOrNull(i - 1),
-                                onLongPress = { if (m.uid == me && !m.pending) { haptics.performHapticFeedback(HapticFeedbackType.LongPress); deleting = m } })
+                            MessageRow(
+                                m = m, mine = m.uid == me, me = me,
+                                older = chat.messages.getOrNull(i + 1), newer = chat.messages.getOrNull(i - 1),
+                                highlighted = highlighted == m.id,
+                                seen = if (m.id == myNewest?.id) seenByMyNewest else null,
+                                othersCount = others.size,
+                                onReply = { startReply(m) },
+                                onQuoteClick = jumpTo,
+                                onLongPress = { haptics.performHapticFeedback(HapticFeedbackType.LongPress); actionsFor = m },
+                                onSeenClick = { seenSheetFor = m },
+                            )
                         }
                         if (chat.loadingOlder) item(key = "older") {
                             Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(Modifier.size(24.dp)) }
@@ -252,22 +342,35 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
                     FrostedGlassSurface(RoundedCornerShape(TopBarHeight / 2), Modifier.weight(1f).heightIn(min = TopBarHeight), tinted = true) {
                         val ink = LocalContentColor.current
-                        BasicTextField(
-                            value = draft,
-                            onValueChange = { if (it.length <= CHAT_MAX_CHARS) draft = it },
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)
-                                .semantics { contentDescription = "Message ${group.name}" },
-                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = ink),
-                            cursorBrush = SolidColor(ink),
-                            maxLines = 5,
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
-                            decorationBox = { inner ->
-                                Box {
-                                    if (draft.isEmpty()) Text("Message", style = MaterialTheme.typography.bodyLarge, color = ink.copy(alpha = 0.55f))
-                                    inner()
+                        Column(Modifier.animateContentSize()) {
+                            // Replying: the quoted message rides on top of the text field until you send or cancel.
+                            replyingTo?.let { r ->
+                                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    QuoteBlock(
+                                        name = if (r.uid == me) "yourself" else r.name, text = r.text, prefix = "Replying to ",
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    IconButton(onClick = { replyingTo = null }) { Icon(Icons.Rounded.Close, contentDescription = "Cancel reply") }
                                 }
-                            },
-                        )
+                            }
+                            BasicTextField(
+                                value = draft,
+                                onValueChange = { if (it.length <= CHAT_MAX_CHARS) draft = it },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)
+                                    .focusRequester(focus)
+                                    .semantics { contentDescription = "Message ${group.name}" },
+                                textStyle = MaterialTheme.typography.bodyLarge.copy(color = ink),
+                                cursorBrush = SolidColor(ink),
+                                maxLines = 5,
+                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
+                                decorationBox = { inner ->
+                                    Box {
+                                        if (draft.isEmpty()) Text(if (replyingTo != null) "Reply" else "Message", style = MaterialTheme.typography.bodyLarge, color = ink.copy(alpha = 0.55f))
+                                        inner()
+                                    }
+                                },
+                            )
+                        }
                     }
                     GlassCircleButton(Icons.AutoMirrored.Rounded.Send, "Send", enabled = draft.isNotBlank()) { send(draft) }
                 }
@@ -278,36 +381,144 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
         }
     }
 
+    // Long-press actions.
+    actionsFor?.let { m ->
+        ModalBottomSheet(onDismissRequest = { actionsFor = null }) {
+            Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
+                Text(m.text, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp))
+                SheetAction(Icons.AutoMirrored.Rounded.Reply, "Reply") { actionsFor = null; startReply(m) }
+                SheetAction(Icons.Rounded.ContentCopy, "Copy text") { clipboard.setText(AnnotatedString(m.text)); actionsFor = null }
+                if (m.uid == me && !m.pending) {
+                    SheetAction(Icons.Rounded.Visibility, "Seen by") { actionsFor = null; seenSheetFor = m }
+                    SheetAction(Icons.Rounded.DeleteOutline, "Delete for everyone", danger = true) { actionsFor = null; deleting = m }
+                }
+            }
+        }
+    }
+
+    // Who has seen one of your messages, and who hasn't yet.
+    seenSheetFor?.let { m ->
+        val seen = others.filter { (chat.seenBy[it.uid] ?: 0L) >= m.sentAt }.sortedBy { chat.seenBy[it.uid] }
+        val notYet = others.filter { it !in seen }
+        ModalBottomSheet(onDismissRequest = { seenSheetFor = null }) {
+            LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 32.dp)) {
+                item { Text("Seen by", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(bottom = 12.dp)) }
+                if (seen.isEmpty()) item { Text("Nobody yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp)) }
+                items(seen.size) { i -> val p = seen[i]; ReaderRow(p, chat.seenBy[p.uid]?.let { "Seen ${timeLabel(it)}" }, faded = false) }
+                if (notYet.isNotEmpty()) {
+                    item { Text("Not seen yet", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)) }
+                    items(notYet.size) { i -> ReaderRow(notYet[i], null, faded = true) }
+                }
+            }
+        }
+    }
+
     deleting?.let { m ->
         AlertDialog(
             onDismissRequest = { deleting = null },
             title = { Text("Delete message?") },
             text = { Text("It will be removed for everyone in ${group.name}.") },
-            confirmButton = { TextButton(onClick = { vm.deleteChat(group.id, m.id); deleting = null }) { Text("Delete") } },
+            confirmButton = { TextButton(onClick = { vm.deleteChat(group.id, m.id); if (replyingTo?.id == m.id) replyingTo = null; deleting = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MessageRow(m: ChatMessage, mine: Boolean, older: ChatMessage?, newer: ChatMessage?, onLongPress: () -> Unit) {
+private fun SheetAction(icon: ImageVector, label: String, danger: Boolean = false, onClick: () -> Unit) {
+    val color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 24.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = color)
+        Spacer(Modifier.width(16.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = color)
+    }
+}
+
+@Composable
+private fun ReaderRow(member: GroupMember, detail: String?, faded: Boolean) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp).graphicsLayer { alpha = if (faded) 0.5f else 1f }, verticalAlignment = Alignment.CenterVertically) {
+        ProfileAvatar(member.name, member.avatarId, 40)
+        Spacer(Modifier.width(12.dp))
+        Text(member.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        detail?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+/** "Seen by Shreyansh", "Seen by A and B", "Seen by A, B and 3 others", or "Seen by everyone". */
+private fun seenLabel(seen: List<GroupMember>, othersCount: Int): String {
+    val names = seen.map { it.name.trim().substringBefore(' ').ifBlank { it.name } }
+    return when {
+        names.isEmpty() -> ""
+        othersCount > 1 && names.size >= othersCount -> "Seen by everyone"
+        names.size == 1 -> "Seen by ${names[0]}"
+        names.size == 2 -> "Seen by ${names[0]} and ${names[1]}"
+        names.size == 3 -> "Seen by ${names[0]}, ${names[1]} and ${names[2]}"
+        else -> "Seen by ${names[0]}, ${names[1]} and ${names.size - 2} others"
+    }
+}
+
+@Composable
+private fun MessageRow(
+    m: ChatMessage, mine: Boolean, me: String?, older: ChatMessage?, newer: ChatMessage?, highlighted: Boolean,
+    seen: List<GroupMember>?, othersCount: Int,
+    onReply: () -> Unit, onQuoteClick: (ChatReply) -> Unit, onLongPress: () -> Unit, onSeenClick: () -> Unit,
+) {
     val newDay = older == null || !sameDay(older.sentAt, m.sentAt)
-    val firstOfRun = newDay || older == null || older.uid != m.uid || m.sentAt - older.sentAt > RUN_GAP_MS
-    val lastOfRun = newer == null || newer.uid != m.uid || newer.sentAt - m.sentAt > RUN_GAP_MS || !sameDay(m.sentAt, newer.sentAt)
+    val firstOfRun = newDay || older == null || older.uid != m.uid || m.sentAt - older.sentAt > RUN_GAP_MS || m.replyTo != null
+    val lastOfRun = newer == null || newer.uid != m.uid || newer.sentAt - m.sentAt > RUN_GAP_MS || !sameDay(m.sentAt, newer.sentAt) || newer.replyTo != null
     val cs = MaterialTheme.colorScheme
     val avatarSize = 34.dp
+    val haptics = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current
+    val trigger = with(density) { 64.dp.toPx() }
+    val drag = remember { Animatable(0f) }
+    var armed by remember { mutableStateOf(false) }
+    val latestReply by rememberUpdatedState(onReply)
+    val flash by animateFloatAsState(if (highlighted) 0.18f else 0f, label = "replyJumpFlash")
+
     Column(Modifier.fillMaxWidth().padding(top = if (firstOfRun) 10.dp else 0.dp)) {
         if (newDay) DayChip(m.sentAt)
         if (!mine && firstOfRun) Text(m.name, style = MaterialTheme.typography.labelMedium, color = cs.primary, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = avatarSize + 14.dp, bottom = 3.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.Bottom) {
-            if (!mine) {
-                // The illustration sits beside the last bubble of each run, like most chat apps.
-                Box(Modifier.size(avatarSize)) { if (lastOfRun) ProfileAvatar(m.name, m.avatarId, avatarSize.value.toInt()) }
-                Spacer(Modifier.width(8.dp))
+        Box(
+            Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp)).background(cs.primary.copy(alpha = flash))
+                // Swipe right to reply. A tick at the threshold, and the reply arrow fades in behind.
+                .pointerInput(m.id) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { armed = false },
+                        onDragEnd = { if (armed) latestReply(); armed = false; scope.launch { drag.animateTo(0f, spring(0.6f, 500f)) } },
+                        onDragCancel = { armed = false; scope.launch { drag.animateTo(0f, spring(0.6f, 500f)) } },
+                    ) { change, dx ->
+                        val next = (drag.value + dx * 0.7f).coerceIn(0f, trigger * 1.5f)
+                        if (next > 0f) change.consume()
+                        scope.launch { drag.snapTo(next) }
+                        if (!armed && next >= trigger) { armed = true; haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+                        else if (armed && next < trigger) armed = false
+                    }
+                },
+        ) {
+            Icon(
+                Icons.AutoMirrored.Rounded.Reply, contentDescription = null, tint = cs.onSurfaceVariant,
+                modifier = Modifier.align(Alignment.CenterStart).padding(start = 8.dp).size(22.dp)
+                    .graphicsLayer { alpha = (drag.value / trigger).coerceIn(0f, 1f); val sc = 0.6f + 0.4f * alpha; scaleX = sc; scaleY = sc },
+            )
+            Row(
+                Modifier.fillMaxWidth().offset { IntOffset(drag.value.roundToInt(), 0) },
+                horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start, verticalAlignment = Alignment.Bottom,
+            ) {
+                if (!mine) {
+                    // The illustration sits beside the last bubble of each run, like most chat apps.
+                    Box(Modifier.size(avatarSize)) { if (lastOfRun) ProfileAvatar(m.name, m.avatarId, avatarSize.value.toInt()) }
+                    Spacer(Modifier.width(8.dp))
+                }
+                Bubble(m, mine, me, lastOfRun, onLongPress, onQuoteClick, Modifier.widthIn(max = 290.dp))
             }
-            Bubble(m.text, mine, lastOfRun, onLongPress, Modifier.widthIn(max = 290.dp))
         }
         if (lastOfRun) Text(
             timeLabel(m.sentAt) + if (m.pending) " · Sending" else "",
@@ -315,12 +526,47 @@ private fun MessageRow(m: ChatMessage, mine: Boolean, older: ChatMessage?, newer
             textAlign = if (mine) TextAlign.End else TextAlign.Start,
             modifier = Modifier.fillMaxWidth().padding(start = if (mine) 0.dp else avatarSize + 14.dp, end = if (mine) 6.dp else 0.dp, top = 3.dp),
         )
+        if (!seen.isNullOrEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp, end = 6.dp),
+                horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    Modifier.clip(CircleShape).clickable(onClickLabel = "See who has seen this", onClick = onSeenClick)
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AvatarStack(seen.take(3).map { it.name to it.avatarId }, 18.dp)
+                    Spacer(Modifier.width(6.dp))
+                    Text(seenLabel(seen, othersCount), style = MaterialTheme.typography.labelMedium, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+    }
+}
+
+/** The quoted message inside a reply: an accent bar, who said it, and the first lines of what they said. */
+@Composable
+private fun QuoteBlock(name: String, text: String, modifier: Modifier = Modifier, prefix: String = "", onClick: (() -> Unit)? = null) {
+    val cs = MaterialTheme.colorScheme
+    val ink = LocalContentColor.current
+    val shape = RoundedCornerShape(12.dp)
+    Row(
+        modifier.clip(shape).background(ink.copy(alpha = 0.08f))
+            .then(if (onClick != null) Modifier.clickable(onClickLabel = "Go to the original message", onClick = onClick) else Modifier)
+            .height(IntrinsicSize.Min),
+    ) {
+        Box(Modifier.width(3.dp).fillMaxHeight().background(cs.primary))
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+            Text(prefix + name, style = MaterialTheme.typography.labelMedium, color = cs.primary, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(text, style = MaterialTheme.typography.bodySmall, color = ink.copy(alpha = 0.75f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Bubble(text: String, mine: Boolean, tail: Boolean, onLongPress: () -> Unit, modifier: Modifier) {
+private fun Bubble(m: ChatMessage, mine: Boolean, me: String?, tail: Boolean, onLongPress: () -> Unit, onQuoteClick: (ChatReply) -> Unit, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
     val r = 20.dp; val t = if (tail) 6.dp else r
     val shape = if (mine) RoundedCornerShape(r, r, t, r) else RoundedCornerShape(r, r, r, t)
@@ -332,8 +578,19 @@ private fun Bubble(text: String, mine: Boolean, tail: Boolean, onLongPress: () -
     }
     val ink = when { glass -> cs.onSurface; mine -> cs.onPrimaryContainer; else -> cs.onSurface }
     // Clickable after the fill, so the press ripple stays inside the bubble's shape.
-    Box(modifier.then(fill).combinedClickable(onClick = {}, onLongClickLabel = "Delete message", onLongClick = onLongPress).padding(horizontal = 14.dp, vertical = 9.dp)) {
-        Text(text, style = MaterialTheme.typography.bodyLarge, color = ink)
+    Box(modifier.then(fill).combinedClickable(onClick = {}, onLongClickLabel = "Message options", onLongClick = onLongPress)
+        .padding(horizontal = 12.dp, vertical = 8.dp)) {
+        CompositionLocalProvider(LocalContentColor provides ink) {
+            Column(Modifier.width(IntrinsicSize.Max)) {
+                m.replyTo?.let { q ->
+                    QuoteBlock(
+                        name = if (q.uid == me) "You" else q.name, text = q.text,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp), onClick = { onQuoteClick(q) },
+                    )
+                }
+                Text(m.text, style = MaterialTheme.typography.bodyLarge, color = ink, modifier = Modifier.padding(horizontal = 2.dp, vertical = 1.dp))
+            }
+        }
     }
 }
 

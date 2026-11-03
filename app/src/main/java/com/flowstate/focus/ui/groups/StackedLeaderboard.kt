@@ -177,15 +177,20 @@ private fun StackPill(member: GroupMember, rank: Int, color: Color, self: Boolea
                 Modifier.fillMaxSize().padding(start = if (compact) 12.dp else 18.dp, end = if (compact) 14.dp else 22.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "$rank",
-                    modifier = Modifier.width(if (compact) 20.dp else 26.dp).semantics { contentDescription = "Rank $rank" },
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = muted,
-                    maxLines = 1,
-                    softWrap = false,
-                )
+                // Top three with time on the board wear a gold, silver or bronze shield; everyone else shows a number.
+                val slot = if (compact) 28.dp else 34.dp
+                Box(Modifier.width(slot), contentAlignment = Alignment.CenterStart) {
+                    if (rank <= 3 && member.weeklyFocusMs > 0) RankShield(rank, size = if (compact) 24.dp else 28.dp)
+                    else Text(
+                        "$rank",
+                        modifier = Modifier.semantics { contentDescription = "Rank $rank" },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = muted,
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
                 ProfileAvatar(member.name, member.avatarId, if (compact) 32 else 38, ring = when (rank) { 1 -> 0xFFFFC107; 2 -> 0xFFB0BEC5; 3 -> 0xFFB87333; else -> null })
                 Column(Modifier.weight(1f).padding(start = if (compact) 8.dp else 12.dp, end = 6.dp)) {
                     Text(

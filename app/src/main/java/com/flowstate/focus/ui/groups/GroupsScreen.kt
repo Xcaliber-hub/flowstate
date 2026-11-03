@@ -143,7 +143,7 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, onOpenChat: () 
                 state.selectedGroup?.let { group ->
                     item { GroupHeader(group.name, group.memberIds.size, settings.liquidUi,
                         chatAvatars = state.members.filter { it.uid != state.user?.uid }.ifEmpty { state.members }.take(4),
-                        unread = group.id in chat.unreadGroups,
+                        unread = group.id in chat.unreadGroups, unreadCount = chat.unreadCounts[group.id] ?: 0,
                         preview = chat.lastMessages[group.id]?.let { m -> (if (m.uid == state.user?.uid) "You" else m.name) + ": " + m.text },
                         onChat = onOpenChat) {
                         val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "Join ${group.name} on Flowstate with code: ${group.id}")
@@ -223,14 +223,14 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, onOpenChat: () 
 }
 
 @Composable
-private fun GroupHeader(name: String, members: Int, liquid: Boolean, chatAvatars: List<GroupMember>, unread: Boolean, preview: String?, onChat: () -> Unit, invite: () -> Unit) {
+private fun GroupHeader(name: String, members: Int, liquid: Boolean, chatAvatars: List<GroupMember>, unread: Boolean, unreadCount: Int, preview: String?, onChat: () -> Unit, invite: () -> Unit) {
     GlassCard(Modifier.fillMaxWidth(), liquid) {
         OutlinedButton(onClick = invite) { AutoSizeText("Invite friends") }
         Spacer(Modifier.height(8.dp))
         Text(name, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text("$members members · Private", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(14.dp))
-        ChatPill(chatAvatars, unread, preview, onChat)
+        ChatPill(chatAvatars, unread, unreadCount, preview, onChat)
     }
 }
 

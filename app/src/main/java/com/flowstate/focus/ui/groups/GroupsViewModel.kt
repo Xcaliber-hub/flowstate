@@ -2,6 +2,7 @@ package com.flowstate.focus.ui.groups
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.flowstate.focus.data.groups.ChatMessage
 import com.flowstate.focus.data.groups.GroupsRepository
 import com.flowstate.focus.data.groups.EmojiPing
 import com.flowstate.focus.domain.TimerState
@@ -36,8 +37,9 @@ class GroupsViewModel @Inject constructor(
     fun dismissPing(ping: EmojiPing) = repository.dismissPing(ping)
     fun openChat(groupId: String) = repository.openChat(groupId)
     fun closeChat() = repository.closeChat()
+    fun setChatVisible(visible: Boolean) = repository.setChatVisible(visible)
     fun loadOlderChat() = repository.loadOlderChat()
-    fun sendChat(groupId: String, text: String): Boolean = repository.sendChat(groupId, text)
+    fun sendChat(groupId: String, text: String, replyTo: ChatMessage? = null): Boolean = repository.sendChat(groupId, text, replyTo)
     fun deleteChat(groupId: String, messageId: String) = repository.deleteChat(groupId, messageId)
     fun clearChatError() = repository.clearChatError()
 }

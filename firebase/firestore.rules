@@ -1,5 +1,5 @@
 rules_version = '2';
-// Flowstate 1.4.5 — all 24 avatars, member session/daily stats, emoji pings, group chat. Publish to flowstate-241f0 / (default).
+// Flowstate 1.4.6 — all 24 avatars, member session/daily stats, emoji pings, group chat with replies and read receipts. Publish to flowstate-241f0 / (default).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -64,8 +64,17 @@ service cloud.firestore {
     }
     // Group chat (1.4.5). Text only, kept until the sender deletes it. Members read and post;
     // nobody can edit a message, and only its sender can delete it.
+    // A reply carries a short copy of the message it answers (1.4.6).
+    function validReply(r) {
+      return r is map && r.keys().hasOnly(['id', 'uid', 'name', 'text'])
+        && r.id is string && r.id.size() >= 1 && r.id.size() <= 64
+        && r.uid is string && r.uid.size() <= 128
+        && r.name is string && r.name.size() >= 1 && r.name.size() <= 40
+        && r.text is string && r.text.size() <= 140;
+    }
     function validMessage(data) {
-      return data.keys().hasOnly(['uid', 'name', 'avatarId', 'text', 'sentAt'])
+      return data.keys().hasOnly(['uid', 'name', 'avatarId', 'text', 'sentAt', 'replyTo'])
+        && (!('replyTo' in data) || validReply(data.replyTo))
         && data.uid == request.auth.uid
         && validName(data) && validAvatar(data)
         && data.text is string && data.text.size() >= 1 && data.text.size() <= 500
@@ -111,6 +120,15 @@ service cloud.firestore {
         allow create: if member(gid) && validMessage(request.resource.data);
         allow update: if false;
         allow delete: if member(gid) && resource.data.uid == request.auth.uid;
+      }
+      // Read receipts (1.4.6): groups/{gid}/reads/{uid} = { seenAt }. Members see everyone's;
+      // you can only stamp your own, and only with the server's clock.
+      match /reads/{uid} {
+        allow read: if member(gid);
+        allow create, update: if member(gid) && uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['seenAt'])
+          && request.resource.data.seenAt == request.time;
+        allow delete: if signedIn() && uid == request.auth.uid;
       }
     }
     match /users/{uid} {

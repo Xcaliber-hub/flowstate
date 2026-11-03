@@ -72,6 +72,8 @@ import com.flowstate.focus.ui.components.screenContentPadding
 import com.flowstate.focus.ui.components.ScreenTopBar
 import com.flowstate.focus.ui.components.TopBarSpec
 import androidx.compose.material.icons.Icons
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Settings
 import com.flowstate.focus.ui.theme.AccentColors
 import com.flowstate.focus.ui.update.ManualCheck
@@ -286,9 +288,16 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
 
 @Composable
 private fun LinkRow(title: String, subtitle: String, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 4.dp)) {
-        AutoSizeText(title, style = MaterialTheme.typography.titleSmall)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+            AutoSizeText(title, style = MaterialTheme.typography.titleSmall)
+            // A web address has no spaces to wrap at, so it would split mid-word: keep it on one line and shrink it to fit.
+            AutoSizeText(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, minSize = 9.sp)
+        }
+        Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Opens in your browser", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
     }
 }
 
@@ -307,15 +316,19 @@ private fun UpdateRow() {
         is ManualCheck.UpToDate -> "You're on the latest version (${m.version})"
         ManualCheck.Failed -> "Couldn't reach GitHub. Check your connection and try again"
     }
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+    // Stacked, not side by side: next to the button the status text was squeezed so narrow that
+    // words broke in the middle ("Ver-sion", "lat-est").
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxWidth()) {
             AutoSizeText("App updates", style = MaterialTheme.typography.titleSmall)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (manual == ManualCheck.Checking) {
             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
         } else {
-            FilledTonalButton(onClick = updates::checkNow) { AutoSizeText("Check for updates") }
+            FilledTonalButton(onClick = updates::checkNow) {
+                Text("Check for updates", maxLines = 1, softWrap = false)
+            }
         }
     }
 }
