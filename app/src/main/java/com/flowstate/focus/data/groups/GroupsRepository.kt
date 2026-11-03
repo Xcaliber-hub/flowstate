@@ -67,13 +67,17 @@ import javax.inject.Singleton
  /** The message a chat message answers, copied in so it shows even when the original is not loaded. */
  data class ChatReply(val id: String, val uid: String, val name: String, val text: String)
  /** One group chat message. [pending] is true until the server has accepted it. */
- data class ChatMessage(val id: String, val uid: String, val name: String, val avatarId: String, val text: String, val sentAt: Long, val pending: Boolean = false, val replyTo: ChatReply? = null)
+ /** Someone else writing in the open chat right now. */
+ data class TypingMember(val uid: String, val name: String, val avatarId: String)
+ data class ChatMessage(val id: String, val uid: String, val name: String, val avatarId: String, val text: String, val sentAt: Long, val pending: Boolean = false, val replyTo: ChatReply? = null, val edited: Boolean = false)
  /** The open group chat, newest message first. [unreadGroups] drives the dot on the Chat button. */
  data class ChatState(val groupId: String? = null, val messages: List<ChatMessage> = emptyList(), val loaded: Boolean = false, val loadingOlder: Boolean = false, val reachedStart: Boolean = false, val error: String? = null, val unreadGroups: Set<String> = emptySet(), val lastMessages: Map<String, ChatMessage> = emptyMap(),
     /** Open chat only: when each member last read it (uid to server time in ms), for "Seen by". */
     val seenBy: Map<String, Long> = emptyMap(),
     /** New messages per group since you last had its chat open, for the count on the Chat button. */
-    val unreadCounts: Map<String, Int> = emptyMap())
+    val unreadCounts: Map<String, Int> = emptyMap(),
+    /** Open chat only: other members typing right now, for the typing bubble. */
+    val typing: List<TypingMember> = emptyList())
  data class GroupsState(val incomingPings: List<EmojiPing> = emptyList(), val configured: Boolean = false, val user: GroupUser? = null, val groups: List<FocusGroup> = emptyList(), val selectedGroup: FocusGroup? = null, val members: List<GroupMember> = emptyList(), val loading: Boolean = false, val busy: Boolean = false, val error: String? = null, val notice: String? = null, val profileSaving: Boolean = false, val profileSaveVersion: Long = 0L)
 
 @Singleton
@@ -90,6 +94,14 @@ class GroupsRepository @Inject constructor(
     // Snapshot callbacks run on the main thread; sign-out may clear these from IO, hence the concurrent map.
     private var chatListener: ListenerRegistration? = null
     private var readsListener: ListenerRegistration? = null
+    // Typing (1.4.7): groups/{gid}/typing/{uid} = { name, avatarId, at }. Each entry is kept alive by
+    // the typer rewriting it every few seconds; here it expires TYPING_STALE_MS after we last heard of it,
+    // timed on this phone's own clock so a wrong clock on either phone can't freeze or hide it.
+    private var typingListener: ListenerRegistration? = null
+    private val typingHeard = java.util.concurrent.ConcurrentHashMap<String, Pair<TypingMember, Long>>()
+    private var typingTicker: kotlinx.coroutines.Job? = null
+    @Volatile private var lastTypingWrite = 0L
+    @Volatile private var typingDocGroup: String? = null
     /** Newest message time already written to my reads doc, so reading never writes twice for one message. */
     private var readWrittenUpTo = 0L
     /** The chat screen is on screen (not just open behind another app); only then do I mark messages seen. */
@@ -98,7 +110,7 @@ class GroupsRepository @Inject constructor(
     /** Called by the chat screen as it starts and stops being visible. */
     fun setChatVisible(visible: Boolean) {
         chatVisible = visible
-        if (visible) _chat.value.groupId?.let { markChatSeen(it) }
+        if (visible) _chat.value.groupId?.let { markChatSeen(it) } else clearTyping()
     }
     private val chatById = java.util.concurrent.ConcurrentHashMap<String, ChatMessage>()
     private var chatCursor: DocumentSnapshot? = null
@@ -268,12 +280,70 @@ class GroupsRepository @Inject constructor(
             }.toMap()
             _chat.update { it.copy(seenBy = seen) }
         }
+        listenTyping(groupId, uid)
+    }
+
+    private fun listenTyping(groupId: String, uid: String) {
+        typingListener = typingRef(groupId).addSnapshotListener { snap, err ->
+            if (activeUser?.uid != uid || _chat.value.groupId != groupId) return@addSnapshotListener
+            if (err != null) { Log.w("Flowstate", "Typing listener failed for $groupId", err); return@addSnapshotListener }
+            val now = android.os.SystemClock.elapsedRealtime()
+            for (c in snap?.documentChanges.orEmpty()) {
+                val d = c.document
+                if (d.id == uid) continue
+                if (c.type == DocumentChange.Type.REMOVED) { typingHeard.remove(d.id); continue }
+                if (d.metadata.hasPendingWrites()) continue
+                // On first load, skip leftovers from someone whose app died mid-sentence.
+                val at = d.getTimestamp("at")?.toDate()?.time
+                if (c.type == DocumentChange.Type.ADDED && at != null && System.currentTimeMillis() - at > TYPING_LEFTOVER_MS) continue
+                val who = TypingMember(d.id, d.getString("name").orEmpty().ifBlank { "Someone" }, PresetAvatars.fallback(d.getString("avatarId")))
+                typingHeard[d.id] = who to now
+            }
+            publishTyping()
+        }
+        typingTicker = scope.launch {
+            while (isActive) { delay(1_000); if (typingHeard.isNotEmpty() || _chat.value.typing.isNotEmpty()) publishTyping() }
+        }
+    }
+
+    private fun publishTyping() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        typingHeard.entries.removeIf { now - it.value.second > TYPING_STALE_MS }
+        val list = typingHeard.values.sortedBy { it.second }.map { it.first }
+        if (list != _chat.value.typing) _chat.update { it.copy(typing = list) }
+    }
+
+    /**
+     * Called as the draft changes. A non-empty draft refreshes my typing entry at most every
+     * TYPING_REFRESH_MS; an empty draft (or sending, or leaving) clears it straight away.
+     */
+    fun setTyping(groupId: String, typing: Boolean) {
+        val me = activeUser ?: return
+        if (_chat.value.groupId != groupId) return
+        if (!typing) { clearTyping(); return }
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (typingDocGroup == groupId && now - lastTypingWrite < TYPING_REFRESH_MS) return
+        lastTypingWrite = now; typingDocGroup = groupId
+        typingRef(groupId).document(me.uid)
+            .set(mapOf("name" to me.name, "avatarId" to me.avatarId, "at" to FieldValue.serverTimestamp()))
+            .addOnFailureListener { e -> Log.w("Flowstate", "Typing update failed", e); if (typingDocGroup == groupId) typingDocGroup = null }
+    }
+
+    private fun clearTyping() {
+        val gid = typingDocGroup ?: return
+        val me = activeUser ?: return
+        typingDocGroup = null; lastTypingWrite = 0L
+        runCatching { typingRef(gid).document(me.uid).delete() }
     }
 
     /** Stops listening. Call when the chat screen closes. */
     fun closeChat() {
+        clearTyping()
         chatListener?.remove(); chatListener = null
         readsListener?.remove(); readsListener = null
+        typingListener?.remove(); typingListener = null
+        typingTicker?.cancel(); typingTicker = null
+        typingHeard.clear()
         chatById.clear(); chatCursor = null; readWrittenUpTo = 0L
         _chat.update { ChatState(unreadGroups = it.unreadGroups, lastMessages = it.lastMessages, unreadCounts = it.unreadCounts) }
     }
@@ -311,10 +381,29 @@ class GroupsRepository @Inject constructor(
             "id" to replyTo.id, "uid" to replyTo.uid, "name" to replyTo.name.take(40),
             "text" to replyTo.text.take(CHAT_REPLY_QUOTE_CHARS),
         )
+        clearTyping()
         ref.set(data)
             .addOnFailureListener { e ->
                 Log.w("Flowstate", "Group chat send failed", e)
                 chatById.remove(ref.id); publishChat()
+                _chat.update { it.copy(error = chatError(e)) }
+            }
+        return true
+    }
+
+    /** Changes the text of one of your own messages for everyone; it is marked "Edited". */
+    fun editChat(groupId: String, messageId: String, text: String): Boolean {
+        val clean = text.trim()
+        if (clean.isEmpty() || clean.length > CHAT_MAX_CHARS) return false
+        val me = activeUser ?: return false
+        val old = chatById[messageId] ?: return false
+        if (old.uid != me.uid) return false
+        chatById[messageId] = old.copy(text = clean, edited = true); publishChat()
+        messagesRef(groupId).document(messageId)
+            .update(mapOf("text" to clean, "editedAt" to FieldValue.serverTimestamp()))
+            .addOnFailureListener { e ->
+                Log.w("Flowstate", "Group chat edit failed", e)
+                if (_chat.value.groupId == groupId && chatById.containsKey(messageId)) { chatById[messageId] = old; publishChat() }
                 _chat.update { it.copy(error = chatError(e)) }
             }
         return true
@@ -332,6 +421,7 @@ class GroupsRepository @Inject constructor(
 
     private fun messagesRef(groupId: String) = dbRequired().collection("groups").document(groupId).collection("messages")
     private fun readsRef(groupId: String) = dbRequired().collection("groups").document(groupId).collection("reads")
+    private fun typingRef(groupId: String) = dbRequired().collection("groups").document(groupId).collection("typing")
     private fun decodeMessage(d: DocumentSnapshot): ChatMessage? {
         val text = d.getString("text")?.takeIf { it.isNotBlank() } ?: return null
         // A just-sent message has no server time yet; estimate it so it sorts at the bottom.
@@ -341,7 +431,7 @@ class GroupsRepository @Inject constructor(
             ChatReply(id, r["uid"] as? String ?: "", (r["name"] as? String)?.ifBlank { null } ?: "Focus member", r["text"] as? String ?: "")
         }
         return ChatMessage(d.id, d.getString("uid").orEmpty(), d.getString("name").orEmpty().ifBlank { "Focus member" },
-            PresetAvatars.fallback(d.getString("avatarId")), text, sent, d.metadata.hasPendingWrites(), reply)
+            PresetAvatars.fallback(d.getString("avatarId")), text, sent, d.metadata.hasPendingWrites(), reply, edited = d.contains("editedAt"))
     }
     private fun publishChat() {
         _chat.update { it.copy(messages = chatById.values.sortedWith(compareByDescending<ChatMessage> { m -> m.sentAt }.thenByDescending { m -> m.id })) }
@@ -391,7 +481,7 @@ class GroupsRepository @Inject constructor(
     }
     private fun chatError(t: Throwable): String =
         if (t is FirebaseFirestoreException && t.code == FirebaseFirestoreException.Code.PERMISSION_DENIED)
-            "Chat isn't allowed yet. Publish the 1.4.6 Firestore rules in project ${readResource(R.string.flowstate_firebase_project_id)}."
+            "Chat isn't allowed yet. Publish the 1.4.8 Firestore rules in project ${readResource(R.string.flowstate_firebase_project_id)}."
         else safeMessage(t)
 
     /** Marks a ping as seen: it is deleted so it never shows again. */
@@ -583,6 +673,11 @@ class GroupsRepository @Inject constructor(
 
 private const val PING_RETRY_MS = 15_000L
 private const val CHAT_PAGE = 50L
+/** How often a typer rewrites their typing entry, and how long others keep showing it after the last rewrite. */
+private const val TYPING_REFRESH_MS = 4_000L
+private const val TYPING_STALE_MS = 7_000L
+/** An entry older than this when the chat opens is a leftover, not someone typing. */
+private const val TYPING_LEFTOVER_MS = 15_000L
 internal const val CHAT_MAX_CHARS = 500
 /** How much of the original a reply quotes. */
 internal const val CHAT_REPLY_QUOTE_CHARS = 140

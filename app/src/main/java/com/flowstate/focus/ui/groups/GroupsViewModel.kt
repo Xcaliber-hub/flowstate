@@ -40,6 +40,8 @@ class GroupsViewModel @Inject constructor(
     fun setChatVisible(visible: Boolean) = repository.setChatVisible(visible)
     fun loadOlderChat() = repository.loadOlderChat()
     fun sendChat(groupId: String, text: String, replyTo: ChatMessage? = null): Boolean = repository.sendChat(groupId, text, replyTo)
+    fun editChat(groupId: String, messageId: String, text: String): Boolean = repository.editChat(groupId, messageId, text)
     fun deleteChat(groupId: String, messageId: String) = repository.deleteChat(groupId, messageId)
     fun clearChatError() = repository.clearChatError()
+    fun setTyping(groupId: String, typing: Boolean) = repository.setTyping(groupId, typing)
 }

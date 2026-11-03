@@ -1,5 +1,5 @@
 rules_version = '2';
-// Flowstate 1.4.6 — all 24 avatars, member session/daily stats, emoji pings, group chat with replies and read receipts. Publish to flowstate-241f0 / (default).
+// Flowstate 1.4.8 — all 24 avatars, member session/daily stats, emoji pings, group chat with replies, read receipts, typing and message editing. Publish to flowstate-241f0 / (default).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -63,7 +63,7 @@ service cloud.firestore {
         && data.sentAt == request.time;
     }
     // Group chat (1.4.5). Text only, kept until the sender deletes it. Members read and post;
-    // nobody can edit a message, and only its sender can delete it.
+    // only its sender can edit or delete it.
     // A reply carries a short copy of the message it answers (1.4.6).
     function validReply(r) {
       return r is map && r.keys().hasOnly(['id', 'uid', 'name', 'text'])
@@ -118,7 +118,12 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if member(gid);
         allow create: if member(gid) && validMessage(request.resource.data);
-        allow update: if false;
+        // Editing (1.4.8): only the sender, only the text, stamped with the server's clock.
+        allow update: if member(gid) && resource.data.uid == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 1 && request.resource.data.text.size() <= 500
+          && request.resource.data.editedAt == request.time;
         allow delete: if member(gid) && resource.data.uid == request.auth.uid;
       }
       // Read receipts (1.4.6): groups/{gid}/reads/{uid} = { seenAt }. Members see everyone's;
@@ -128,6 +133,16 @@ service cloud.firestore {
         allow create, update: if member(gid) && uid == request.auth.uid
           && request.resource.data.keys().hasOnly(['seenAt'])
           && request.resource.data.seenAt == request.time;
+        allow delete: if signedIn() && uid == request.auth.uid;
+      }
+      // Typing (1.4.7): groups/{gid}/typing/{uid} = { name, avatarId, at }, rewritten every few
+      // seconds while you type and deleted when you stop. Members see it; only you write yours.
+      match /typing/{uid} {
+        allow read: if member(gid);
+        allow create, update: if member(gid) && uid == request.auth.uid
+          && request.resource.data.keys().hasOnly(['name', 'avatarId', 'at'])
+          && validName(request.resource.data) && validAvatar(request.resource.data)
+          && request.resource.data.at == request.time;
         allow delete: if signedIn() && uid == request.auth.uid;
       }
     }

@@ -1,5 +1,13 @@
 package com.flowstate.focus.ui.groups
 
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Edit
+import com.flowstate.focus.data.groups.TypingMember
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.ExperimentalFoundationApi
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
@@ -219,6 +227,7 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     val listState = rememberLazyListState()
     var draft by rememberSaveable { mutableStateOf("") }
     var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
+    var editing by remember { mutableStateOf<ChatMessage?>(null) }
     var actionsFor by remember { mutableStateOf<ChatMessage?>(null) }
     var seenSheetFor by remember { mutableStateOf<ChatMessage?>(null) }
     var deleting by remember { mutableStateOf<ChatMessage?>(null) }
@@ -229,19 +238,32 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     val bottomInset = WindowInsets.ime.union(WindowInsets.navigationBars).asPaddingValues().calculateBottomPadding()
     val others = state.members.filter { it.uid != me }
     val faces = (others.ifEmpty { state.members }).take(3).map { it.name to it.avatarId }
+    // Tell the others I'm typing while the draft changes; the repository throttles the writes.
+    LaunchedEffect(draft.isNotBlank(), draft, editing) { vm.setTyping(group.id, draft.isNotBlank() && editing == null) }
+    val typingRow = chat.typing.isNotEmpty()
     val send: (String) -> Unit = { text ->
-        if (vm.sendChat(group.id, text, replyingTo)) {
+        val target = editing
+        if (target != null) {
+            // Editing: an unchanged text just closes the editor.
+            if (text.trim() == target.text || vm.editChat(group.id, target.id, text)) {
+                draft = ""; editing = null
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
+        } else if (vm.sendChat(group.id, text, replyingTo)) {
             draft = ""; replyingTo = null
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
     }
     val startReply: (ChatMessage) -> Unit = { m ->
+        if (editing != null) { editing = null; draft = "" }
         replyingTo = m
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         runCatching { focus.requestFocus() }
     }
     val jumpTo: (ChatReply) -> Unit = { q ->
-        val index = chat.messages.indexOfFirst { it.id == q.id }
+        val found = chat.messages.indexOfFirst { it.id == q.id }
+        // The typing bubble, when shown, is the list's first item.
+        val index = if (found < 0) -1 else found + if (typingRow) 1 else 0
         if (index < 0) Toast.makeText(context, "That message is further back. Scroll up to load it.", Toast.LENGTH_SHORT).show()
         else scope.launch {
             listState.animateScrollToItem(index)
@@ -271,8 +293,11 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                 val bottomPad = bottomInset + composerHeight + 8.dp
                 when {
                     !chat.loaded -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                    chat.messages.isEmpty() -> EmptyChat(group.name, faces, onStarter = send,
-                        modifier = Modifier.fillMaxSize().padding(top = topPad, bottom = bottomPad))
+                    chat.messages.isEmpty() -> {
+                        EmptyChat(group.name, faces, onStarter = send,
+                            modifier = Modifier.fillMaxSize().padding(top = topPad, bottom = bottomPad))
+                        if (typingRow) TypingRow(chat.typing, Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 12.dp, bottom = bottomPad))
+                    }
                     else -> LazyColumn(
                         state = listState,
                         reverseLayout = true,
@@ -280,6 +305,9 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = topPad, bottom = bottomPad),
                         verticalArrangement = Arrangement.spacedBy(3.dp),
                     ) {
+                        if (typingRow) item(key = "typing") {
+                            TypingRow(chat.typing, Modifier.animateItem())
+                        }
                         itemsIndexed(chat.messages, key = { _, m -> m.id }) { i, m ->
                             MessageRow(
                                 m = m, mine = m.uid == me, me = me,
@@ -344,6 +372,13 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                         val ink = LocalContentColor.current
                         Column(Modifier.animateContentSize()) {
                             // Replying: the quoted message rides on top of the text field until you send or cancel.
+                            // Editing: a bar naming what you are changing, with a cross that puts the draft back.
+                            editing?.let { e ->
+                                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    QuoteBlock(name = "Editing message", text = e.text, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = { editing = null; draft = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Cancel edit") }
+                                }
+                            }
                             replyingTo?.let { r ->
                                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                     QuoteBlock(
@@ -365,14 +400,14 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Default),
                                 decorationBox = { inner ->
                                     Box {
-                                        if (draft.isEmpty()) Text(if (replyingTo != null) "Reply" else "Message", style = MaterialTheme.typography.bodyLarge, color = ink.copy(alpha = 0.55f))
+                                        if (draft.isEmpty()) Text(if (editing != null) "Edit message" else if (replyingTo != null) "Reply" else "Message", style = MaterialTheme.typography.bodyLarge, color = ink.copy(alpha = 0.55f))
                                         inner()
                                     }
                                 },
                             )
                         }
                     }
-                    GlassCircleButton(Icons.AutoMirrored.Rounded.Send, "Send", enabled = draft.isNotBlank()) { send(draft) }
+                    GlassCircleButton(if (editing != null) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.Send, if (editing != null) "Save edit" else "Send", enabled = draft.isNotBlank()) { send(draft) }
                 }
                 if (draft.length > CHAT_MAX_CHARS - 80) Text("${draft.length}/$CHAT_MAX_CHARS",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -390,6 +425,10 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                 SheetAction(Icons.AutoMirrored.Rounded.Reply, "Reply") { actionsFor = null; startReply(m) }
                 SheetAction(Icons.Rounded.ContentCopy, "Copy text") { clipboard.setText(AnnotatedString(m.text)); actionsFor = null }
                 if (m.uid == me && !m.pending) {
+                    SheetAction(Icons.Rounded.Edit, "Edit") {
+                        actionsFor = null; replyingTo = null; editing = m; draft = m.text
+                        runCatching { focus.requestFocus() }
+                    }
                     SheetAction(Icons.Rounded.Visibility, "Seen by") { actionsFor = null; seenSheetFor = m }
                     SheetAction(Icons.Rounded.DeleteOutline, "Delete for everyone", danger = true) { actionsFor = null; deleting = m }
                 }
@@ -419,7 +458,7 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
             onDismissRequest = { deleting = null },
             title = { Text("Delete message?") },
             text = { Text("It will be removed for everyone in ${group.name}.") },
-            confirmButton = { TextButton(onClick = { vm.deleteChat(group.id, m.id); if (replyingTo?.id == m.id) replyingTo = null; deleting = null }) { Text("Delete") } },
+            confirmButton = { TextButton(onClick = { vm.deleteChat(group.id, m.id); if (replyingTo?.id == m.id) replyingTo = null; if (editing?.id == m.id) { editing = null; draft = "" }; deleting = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }
@@ -521,7 +560,7 @@ private fun MessageRow(
             }
         }
         if (lastOfRun) Text(
-            timeLabel(m.sentAt) + if (m.pending) " · Sending" else "",
+            timeLabel(m.sentAt) + (if (m.edited) " · Edited" else "") + if (m.pending) " · Sending" else "",
             style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant,
             textAlign = if (mine) TextAlign.End else TextAlign.Start,
             modifier = Modifier.fillMaxWidth().padding(start = if (mine) 0.dp else avatarSize + 14.dp, end = if (mine) 6.dp else 0.dp, top = 3.dp),
@@ -661,3 +700,55 @@ private fun dayLabel(at: Long): String {
 
 private fun timeLabel(at: Long): String =
     Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
+
+
+/**
+ * Who is typing: their avatars beside a bubble of three dots that rise and fall in turn, with
+ * "Riya is typing" under it. Shown at the bottom of the chat while anyone else has a draft going.
+ */
+@Composable
+private fun TypingRow(typing: List<TypingMember>, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    val glass = LocalGlassUi.current
+    val avatarSize = 34.dp
+    val shape = RoundedCornerShape(20.dp, 20.dp, 20.dp, 6.dp)
+    val fill = if (glass) Modifier.glassPanel(shape, null) else Modifier.clip(shape).background(cs.surfaceContainerHigh)
+    val label = when (typing.size) {
+        1 -> "${typing[0].name} is typing"
+        2 -> "${typing[0].name} and ${typing[1].name} are typing"
+        else -> "${typing[0].name} and ${typing.size - 1} others are typing"
+    }
+    Column(modifier.fillMaxWidth().padding(top = 10.dp).semantics(mergeDescendants = true) { contentDescription = label }) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Box(Modifier.width(avatarSize + if (typing.size > 1) 10.dp else 0.dp), contentAlignment = Alignment.BottomStart) {
+                if (typing.size == 1) ProfileAvatar(typing[0].name, typing[0].avatarId, avatarSize.value.toInt())
+                else AvatarStack(typing.take(2).map { it.name to it.avatarId }, 28.dp)
+            }
+            Spacer(Modifier.width(8.dp))
+            Box(fill.padding(horizontal = 16.dp, vertical = 14.dp)) { TypingDots(cs.onSurfaceVariant) }
+        }
+        Text(label, style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = avatarSize + 14.dp, top = 3.dp))
+    }
+}
+
+/** Three dots that each lift and brighten in turn, on one shared 1.2 s loop. */
+@Composable
+private fun TypingDots(color: Color) {
+    val loop = rememberInfiniteTransition(label = "typingDots")
+    val t by loop.animateFloat(0f, 1f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "typingPhase")
+    val lift = with(LocalDensity.current) { 4.dp.toPx() }
+    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+        repeat(3) { i ->
+            // Each dot gets a bump in its own third of the loop, so the wave runs left to right.
+            val local = ((t - i * 0.18f + 1f) % 1f)
+            val bump = if (local < 0.4f) kotlin.math.sin(local / 0.4f * Math.PI.toFloat()) else 0f
+            Box(
+                Modifier.size(8.dp)
+                    .graphicsLayer { translationY = -lift * bump }
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = 0.45f + 0.55f * bump)),
+            )
+        }
+    }
+}
