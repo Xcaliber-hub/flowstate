@@ -14,3 +14,5 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Flowstate"
 include(":app")
+// Windows desktop app (Compose Multiplatform for JVM). Configures on any OS; only packageMsi needs Windows.
+include(":desktop")

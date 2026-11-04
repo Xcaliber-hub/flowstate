@@ -12,6 +12,7 @@ interface SessionRepository {
     suspend fun insert(session: SessionEntity)
     suspend fun all(): List<SessionEntity>
     suspend fun delete(id: Long)
+    suspend fun byId(id: Long): SessionEntity?
 }
 
 class SessionRepositoryImpl @Inject constructor(private val dao: SessionDao) : SessionRepository {
@@ -19,6 +20,7 @@ class SessionRepositoryImpl @Inject constructor(private val dao: SessionDao) : S
     override suspend fun insert(session: SessionEntity) = dao.insert(session)
     override suspend fun all(): List<SessionEntity> = dao.all()
     override suspend fun delete(id: Long) = dao.deleteById(id)
+    override suspend fun byId(id: Long): SessionEntity? = dao.byId(id)
 }
 
 interface TaskRepository {

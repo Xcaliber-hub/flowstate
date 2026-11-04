@@ -14,6 +14,9 @@ import com.flowstate.focus.domain.Plan
 import com.flowstate.focus.domain.StatsCalculator
 import com.flowstate.focus.domain.TimerMode
 import com.flowstate.focus.domain.TimerState
+import com.flowstate.focus.data.sync.CloudSync
+import com.flowstate.focus.data.sync.RemoteTimer
+import com.flowstate.focus.data.sync.TimerLockState
 import com.flowstate.focus.service.TimerEngine
 import com.flowstate.focus.service.TimerService
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -42,6 +45,10 @@ data class FocusUiState(
     /** Focus time for the last seven days, oldest first. */
     val week: List<Long> = List(7) { 0L },
     val todaySessions: List<SessionEntity> = emptyList(),
+    /** 1.6.0: set while another device of this account runs the timer. */
+    val remote: RemoteTimer? = null,
+    /** A one-off message, e.g. "Your session moved to your PC." */
+    val notice: String? = null,
 )
 
 /** What the user has picked on the idle screen. Null means "use the default from settings". */
@@ -58,14 +65,17 @@ class FocusViewModel @Inject constructor(
     private val engine: TimerEngine,
     settingsRepo: SettingsRepository,
     private val sessionRepo: SessionRepository,
+    private val cloudSync: CloudSync,
+    private val timerLock: TimerLockState,
 ) : ViewModel() {
 
     private val selection = MutableStateFlow(Selection())
     private val since = LocalDate.now().minusDays(400).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
     val ui: StateFlow<FocusUiState> = combine(
-        engine.state, settingsRepo.settings, selection, sessionRepo.sessionsSince(since),
-    ) { timer, settings, sel, sessions ->
+        combine(engine.state, timerLock.remote, timerLock.notice) { timer, remote, notice -> Triple(timer, remote, notice) },
+        settingsRepo.settings, selection, sessionRepo.sessionsSince(since),
+    ) { (timer, remote, notice), settings, sel, sessions ->
         val today = LocalDate.now()
         val perDay = StatsCalculator.perDay(sessions)
         val mode = if (timer.isActive) timer.mode else sel.mode
@@ -80,6 +90,8 @@ class FocusViewModel @Inject constructor(
             streak = StatsCalculator.streak(perDay, today),
             week = (6 downTo 0).map { perDay[today.minusDays(it.toLong())] ?: 0L },
             todaySessions = sessions.filter { StatsCalculator.dateOf(it.startedAt) == today }.reversed(),
+            remote = remote,
+            notice = notice,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FocusUiState())
 
@@ -101,8 +113,8 @@ class FocusViewModel @Inject constructor(
      * rather than [ui], which may still show the break that was just ended.
      */
     fun start() {
-        // Never start a second session on top of one that is running or paused.
-        if (engine.state.value.isActive) return
+        // Never start a second session on top of one that is running or paused, here or on another device.
+        if (engine.state.value.isActive || timerLock.remote.value != null) return
         val st = ui.value.settings
         val sel = selection.value
         val mode = sel.mode
@@ -118,7 +130,7 @@ class FocusViewModel @Inject constructor(
 
     /** Starts a standalone break. A notification is posted when it ends, also in the background. */
     fun startBreak(minutes: Int) {
-        if (engine.state.value.isActive) return
+        if (engine.state.value.isActive || timerLock.remote.value != null) return
         engine.startBreak(minutes.coerceIn(1, MAX_BREAK_MIN) * 60_000L, selection.value.mode)
         startService()
     }
@@ -130,8 +142,20 @@ class FocusViewModel @Inject constructor(
 
     /** Hold-to-delete on a past session. Stats and streaks recompute from the Room flow. */
     fun deleteSession(id: Long) {
-        viewModelScope.launch { sessionRepo.delete(id) }
+        viewModelScope.launch {
+            val row = sessionRepo.byId(id)
+            sessionRepo.delete(id)
+            // A synced session is marked deleted in the cloud so the PC drops it too.
+            if (row != null) cloudSync.onSessionDeleted(row)
+        }
     }
+
+    /** "Take over here": moves the session running on the other device to this phone. */
+    fun takeOver() {
+        if (cloudSync.takeOver()) startService()
+    }
+
+    fun clearNotice() { timerLock.notice.value = null }
 
     fun pause() = engine.pause()
     fun resume() = engine.resume()

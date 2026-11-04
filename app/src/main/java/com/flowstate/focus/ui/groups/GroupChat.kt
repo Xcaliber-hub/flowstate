@@ -214,6 +214,19 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     val group = state.selectedGroup
     if (group == null || state.user == null) { LaunchedEffect(Unit) { onBack() }; return }
     DisposableEffect(group.id) { vm.openChat(group.id); onDispose { vm.closeChat() } }
+    // Chat pushes need notification permission on Android 13+; ask once, the first time a chat opens.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val askNotifications = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { }
+    LaunchedEffect(Unit) {
+        val prefs = ctx.getSharedPreferences("chat_push_topics", android.content.Context.MODE_PRIVATE)
+        if (android.os.Build.VERSION.SDK_INT >= 33 && !prefs.getBoolean("asked_permission", false) &&
+            ctx.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            prefs.edit().putBoolean("asked_permission", true).apply()
+            askNotifications.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     // Only count messages as seen while the chat is actually on screen.
     LifecycleStartEffect(group.id) { vm.setChatVisible(true); onStopOrDispose { vm.setChatVisible(false) } }
 

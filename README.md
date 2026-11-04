@@ -22,6 +22,16 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
   </tr>
 </table>
 
+## 1.6.0: Flowstate for Windows, one-device timer, synced stats
+
+- **Windows app** (`desktop/`, Compose Multiplatform for the JVM): Focus (Pomodoro, Countdown, Stopwatch, breaks, strict mode, "Still focusing?" check-ins), Stats, Tasks, Groups (leaderboard, live focus, group chat with replies and "Seen by") and Settings, in the same Slate glass look with a floating nav capsule and the daily-goal water bar. Sign in with the same email and password as on the phone. Phase ends show a Windows notification from the tray icon with a short chime; closing the window keeps Flowstate in the tray. App blocking stays phone-only: Windows has no equivalent of the Android focus guard.
+- **The timer runs on one device at a time.** `users/{uid}/state/activeTimer` names the device running it. Open the PC while the phone is mid-session and the PC shows "Focus is running on your phone" with **Take over here** / **Keep on phone**; the phone shows the same card in reverse ("Running on your PC"). Taking over moves the session (phase, time left, subject, Pomodoro round) and the other device stops without double-counting it.
+- **Stats sync** between phone and PC (`users/{uid}/sessions`). A session done on either device counts in both devices' history, daily goal, streak and group weekly/today totals. Existing local history is uploaded once on first sign-in. Deleting a session removes it everywhere. Signed out, everything stays local as before.
+- The Android updater still takes the `.apk` from a release that also carries `Flowstate-<version>.msi`; the Windows app checks the same releases for a newer `.msi`.
+- **Publish `firebase/firestore.rules` (1.6.0) to flowstate-241f0** before using the timer lock and sync; until then the Windows app shows a "publish the rules" message and the phone keeps working as in 1.5.0.
+
+Build the Windows installer on Windows with `gradle :desktop:packageMsi` (JDK 17), or let the "Build Windows app" workflow attach it to the release. Run it locally with `gradle :desktop:run`.
+
 ## New in 1.1
 
 - A Groups navigation tab, with email/password account creation, sign-in, password reset and sign-out.

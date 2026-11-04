@@ -1,0 +1,7 @@
+<resources>
+    <!-- Group chat pushes. Paste your Cloudflare Worker URL here (see push-worker/README.md),
+         for example https://flowstate-push.yourname.workers.dev. Blank keeps pushes off. -->
+    <string name="flowstate_push_url" translatable="false">https://flowstate-push.adityaawasthi971.workers.dev</string>
+    <!-- Firebase project number: the middle part of flowstate_firebase_application_id. FCM needs it. -->
+    <string name="flowstate_firebase_sender_id" translatable="false">26900370850</string>
+</resources>

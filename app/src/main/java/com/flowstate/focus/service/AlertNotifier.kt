@@ -15,6 +15,7 @@ import javax.inject.Singleton
 object Notifications {
     const val CHANNEL_TIMER = "timer"
     const val CHANNEL_ALERTS = "alerts"
+    const val CHANNEL_CHAT = "group_chat"
     const val ID_TIMER = 1
     const val ID_ALERT = 2
     const val ID_NUDGE = 3

@@ -239,4 +239,44 @@ describe('Flowstate Firestore authorization', () => {
     await assertFails(deleteDoc(ping(alice(), 'alice_bob')));
     await assertSucceeds(deleteDoc(ping(bob(), 'alice_bob')));
   });
+  // 1.6.0: one-device timer lock and synced sessions.
+  const lockDoc = (db, uid = 'alice') => doc(db, 'users', uid, 'state', 'activeTimer');
+  const lockBody = (extra = {}) => ({
+    deviceId: 'win-1', deviceName: 'DESKTOP-1', platform: 'windows', status: 'RUNNING', phase: 'FOCUS', mode: 'POMODORO',
+    subject: 'Physics', phaseDurationMs: 1500000, phaseStartedAt: 1793000000000, pausedAt: 0, endsAt: 1793001500000,
+    remainingMs: 900000, round: 1, focusMs: 1500000, shortBreakMs: 300000, longBreakMs: 900000, rounds: 4,
+    strict: false, standaloneBreak: false, updatedAt: serverTimestamp(), ...extra,
+  });
+  it('lets only the owner read and write the timer lock, with valid fields and server time', async () => {
+    await assertSucceeds(setDoc(lockDoc(alice()), lockBody()));
+    await assertSucceeds(setDoc(lockDoc(alice()), lockBody({ deviceId: 'android-1', platform: 'android', status: 'IDLE', phase: 'IDLE' })));
+    await assertSucceeds(getDoc(lockDoc(alice())));
+    await assertFails(getDoc(lockDoc(bob(), 'alice')));
+    await assertFails(setDoc(lockDoc(bob(), 'alice'), lockBody()));
+    await assertFails(setDoc(lockDoc(alice()), lockBody({ platform: 'ios' })));
+    await assertFails(setDoc(lockDoc(alice()), lockBody({ status: 'DONE' })));
+    await assertFails(setDoc(lockDoc(alice()), lockBody({ updatedAt: new Date() })));
+    await assertFails(setDoc(lockDoc(alice()), lockBody({ extra: 1 })));
+    await assertFails(setDoc(doc(alice(), 'users', 'alice', 'state', 'other'), lockBody()));
+  });
+  const sessionDoc = (db, id = 'win-1_1793000000000', uid = 'alice') => doc(db, 'users', uid, 'sessions', id);
+  const sessionBody = (extra = {}) => ({
+    startedAt: 1793000000000, durationMs: 1500000, mode: 'POMODORO', subject: 'Maths', completed: true,
+    deviceId: 'win-1', platform: 'windows', deleted: false, updatedAt: serverTimestamp(), ...extra,
+  });
+  it('lets only the owner sync sessions, and mark them deleted', async () => {
+    await assertSucceeds(setDoc(sessionDoc(alice()), sessionBody()));
+    await assertSucceeds(getDocs(query(collection(alice(), 'users', 'alice', 'sessions'), where('updatedAt', '>', new Date(0)))));
+    await assertSucceeds(setDoc(sessionDoc(alice()), { deleted: true, updatedAt: serverTimestamp() }, { merge: true }));
+    await assertFails(getDocs(collection(bob(), 'users', 'alice', 'sessions')));
+    await assertFails(setDoc(sessionDoc(bob(), 'x_1', 'alice'), sessionBody()));
+    await assertFails(setDoc(sessionDoc(alice(), 'x_2'), sessionBody({ durationMs: 90000000 })));
+    await assertFails(setDoc(sessionDoc(alice(), 'x_3'), sessionBody({ platform: 'mac' })));
+    await assertFails(setDoc(sessionDoc(alice(), 'x_4'), sessionBody({ updatedAt: new Date() })));
+    await assertFails(setDoc(sessionDoc(alice(), 'x_5'), sessionBody({ owner: 'bob' })));
+  });
+  it('still accepts a member snapshot whose live map says which device runs the timer', async () => {
+    await assertSucceeds(setDoc(member(alice(), 'alice'), { ...payload('cat'), ...stats,
+      live: { mode: 'POMODORO', phase: 'FOCUS', status: 'RUNNING', phaseDurationMs: 1500000, phaseStartedAt: 1793000000000, pausedAt: 0, subject: 'x', platform: 'windows' } }));
+  });
 });

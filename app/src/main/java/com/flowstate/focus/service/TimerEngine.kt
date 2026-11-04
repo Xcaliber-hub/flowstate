@@ -43,6 +43,7 @@ class TimerEngine @Inject constructor(
     private val sessions: SessionRepository,
     private val alerts: AlertNotifier,
     settings: SettingsRepository,
+    private val account: com.flowstate.focus.data.sync.AccountHolder,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val prefs = context.getSharedPreferences("timer_state", Context.MODE_PRIVATE)
@@ -186,6 +187,30 @@ class TimerEngine @Inject constructor(
         }
     }
 
+    /**
+     * 1.6.0 "Take over here": continues a session that was running on another device of this account,
+     * with the same phase, absolute start (so the remaining time carries over), subject and cycle.
+     * Nothing is recorded for the time already spent; the whole block is recorded once, by whichever
+     * device finishes it.
+     */
+    fun adopt(remote: TimerState) {
+        synchronized(lock) {
+            if (remote.status == Status.IDLE) return@synchronized
+            completionJob?.cancel()
+            publish(remote.copy(checkInAt = 0L, autoPaused = false))
+            scheduleCompletion()
+        }
+    }
+
+    /** Another device took this session over: stop here without recording it; it continues there. */
+    fun releaseForHandoff() {
+        synchronized(lock) {
+            if (_state.value.status == Status.IDLE) return@synchronized
+            completionJob?.cancel()
+            finish()
+        }
+    }
+
     private fun scheduleCompletion() {
         completionJob?.cancel()
         val s = _state.value
@@ -305,6 +330,8 @@ class TimerEngine @Inject constructor(
             mode = s.mode.name,
             subject = s.subject,
             completed = completed,
+            // The account signed in when it was recorded (null when signed out); CloudSync uploads it.
+            ownerUid = account.uid,
         )
         scope.launch { sessions.insert(entity) }
     }

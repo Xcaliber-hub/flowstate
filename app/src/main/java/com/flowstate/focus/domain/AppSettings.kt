@@ -38,6 +38,8 @@ data class AppSettings(
     /** How much running focus time passes between check-ins. One of [CHECK_IN_CHOICES]. */
     val checkInMinutes: Int = 60,
     val blockedPackages: Set<String> = emptySet(),
+    /** Push notifications for new group chat messages. Off: this phone unsubscribes from every group's pushes. */
+    val chatNotifications: Boolean = true,
 )
 
 /** The check-in intervals offered in Settings, in minutes. */

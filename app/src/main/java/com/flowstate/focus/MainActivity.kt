@@ -9,6 +9,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -35,11 +36,19 @@ class MainViewModel @Inject constructor(repo: SettingsRepository) : ViewModel() 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
+    /** Group whose chat a tapped notification asked to open. */
+    private var openChatGroup by androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra(com.flowstate.focus.push.ChatNotifications.EXTRA_OPEN_CHAT)?.let { openChatGroup = it }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
         splash.setKeepOnScreenCondition { vm.settings.value == null }
+        if (savedInstanceState == null) openChatGroup = intent?.getStringExtra(com.flowstate.focus.push.ChatNotifications.EXTRA_OPEN_CHAT)
         setContent {
             val settings by vm.settings.collectAsStateWithLifecycle()
             settings?.let { s ->
@@ -53,7 +62,7 @@ class MainActivity : ComponentActivity() {
                     onDispose { }
                 }
                 FlowstateTheme(s, dark) {
-                    FlowstateAppUi(s)
+                    FlowstateAppUi(s, openChatGroup) { openChatGroup = null }
                     CheckInPrompt()
                     UpdatePrompt()
                 }

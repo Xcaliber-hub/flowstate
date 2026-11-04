@@ -85,6 +85,8 @@ class GroupsRepository @Inject constructor(
     @ApplicationContext private val context: Context,
     private val timer: TimerEngine,
     private val sessions: SessionRepository,
+    private val account: com.flowstate.focus.data.sync.AccountHolder,
+    private val timerLock: com.flowstate.focus.data.sync.TimerLockState,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(GroupsState())
@@ -106,6 +108,16 @@ class GroupsRepository @Inject constructor(
     private var readWrittenUpTo = 0L
     /** The chat screen is on screen (not just open behind another app); only then do I mark messages seen. */
     @Volatile private var chatVisible = false
+
+    /** The signed-in user's id, or null when signed out. */
+    val currentUid: String? get() = activeUser?.uid
+    /** The Firestore instance of the named Firebase app, for CloudSync (1.6.0). Null when unconfigured. */
+    val firestore: FirebaseFirestore? get() = db
+    // Run before Firebase signs out, while writes are still authorized (CloudSync releases the timer lock).
+    private val signOutHooks = java.util.concurrent.CopyOnWriteArrayList<suspend (String) -> Unit>()
+    fun addSignOutHook(hook: suspend (String) -> Unit) { signOutHooks += hook }
+    /** True while [groupId]'s chat is the screen in front of the user, so its pushes stay quiet. */
+    fun isChatOnScreen(groupId: String): Boolean = chatVisible && _chat.value.groupId == groupId
 
     /** Called by the chat screen as it starts and stops being visible. */
     fun setChatVisible(visible: Boolean) {
@@ -133,6 +145,8 @@ class GroupsRepository @Inject constructor(
     // Until the 1.1.4 rules are published, Firestore rejects the new member fields. Fall back to the
     // 1.1.3 payload so presence and weekly totals keep syncing, and retry the full one later.
     @Volatile private var legacyMemberPayloadUntil = 0L
+    /** Where the published live timer runs ("android" or "windows"); an extra key the validLive rule allows. */
+    @Volatile private var livePlatform: String = com.flowstate.focus.data.sync.PLATFORM_ANDROID
 
     init {
         val appId = readResource(R.string.flowstate_firebase_application_id)
@@ -156,7 +170,10 @@ class GroupsRepository @Inject constructor(
         if (authRequired().currentUser?.uid == user.uid) acceptAuth(user.uid, clean)
     }
     fun resetPassword(email: String) = launchBusy { require(emailOk(email)) { "Enter a valid email address." }; authRequired().sendPasswordResetEmail(email.trim()).await(); _state.update { it.copy(notice = "If an account matches this email, password reset instructions have been requested. Check your inbox and spam folder.") } }
-    fun signOut() { scope.launch { authGeneration.incrementAndGet(); cleanupListeners(); activeUser = null; groupList = emptyList(); auth?.signOut(); _state.value = GroupsState(configured = _state.value.configured) } }
+    fun signOut() { scope.launch {
+        activeUser?.uid?.let { old -> signOutHooks.forEach { hook -> runCatching { hook(old) } } }
+        authGeneration.incrementAndGet(); cleanupListeners(); activeUser = null; account.uid = null; groupList = emptyList(); auth?.signOut(); _state.value = GroupsState(configured = _state.value.configured)
+    } }
     fun updateProfile(name: String, avatarId: String) = launchBusy {
         _state.update { it.copy(profileSaving = true) }
         try {
@@ -243,6 +260,7 @@ class GroupsRepository @Inject constructor(
         val uid = activeUser?.uid ?: return
         if (_chat.value.groupId == groupId && chatListener != null) return
         closeChat()
+        com.flowstate.focus.push.ChatNotifications.clear(context, groupId)
         _chat.update { it.copy(groupId = groupId, messages = emptyList(), loaded = false, reachedStart = false, error = null, unreadGroups = it.unreadGroups - groupId, unreadCounts = it.unreadCounts - groupId) }
         chatListener = messagesRef(groupId).orderBy("sentAt", Query.Direction.DESCENDING).limit(CHAT_PAGE)
             .addSnapshotListener(MetadataChanges.INCLUDE) { snap, err ->
@@ -383,6 +401,7 @@ class GroupsRepository @Inject constructor(
         )
         clearTyping()
         ref.set(data)
+            .addOnSuccessListener { requestPush(groupId, ref.id) }
             .addOnFailureListener { e ->
                 Log.w("Flowstate", "Group chat send failed", e)
                 chatById.remove(ref.id); publishChat()
@@ -418,6 +437,31 @@ class GroupsRepository @Inject constructor(
         }
     }
     fun clearChatError() { _chat.update { it.copy(error = null) } }
+
+    /**
+     * Asks the push relay (a free Cloudflare Worker, see push-worker/) to notify the rest of the group.
+     * The relay checks my Firebase ID token and reads the message itself, so nobody can push as someone else.
+     * A blank flowstate_push_url leaves pushes off; chat itself works the same either way.
+     */
+    private fun requestPush(groupId: String, messageId: String) {
+        val url = readResource(R.string.flowstate_push_url)
+        if (url.isBlank()) return
+        scope.launch {
+            runCatching {
+                val token = authRequired().currentUser?.getIdToken(false)?.await()?.token ?: return@runCatching
+                val conn = (java.net.URL(url.trimEnd('/') + "/notify").openConnection() as java.net.HttpURLConnection).apply {
+                    requestMethod = "POST"; connectTimeout = 8_000; readTimeout = 8_000; doOutput = true
+                    setRequestProperty("Content-Type", "application/json")
+                    setRequestProperty("Authorization", "Bearer $token")
+                }
+                val body = org.json.JSONObject().put("groupId", groupId).put("messageId", messageId).toString()
+                conn.outputStream.use { it.write(body.toByteArray()) }
+                val code = conn.responseCode
+                if (code !in 200..299) Log.w("Flowstate", "Push relay answered $code")
+                conn.disconnect()
+            }.onFailure { Log.w("Flowstate", "Push relay failed", it) }
+        }
+    }
 
     private fun messagesRef(groupId: String) = dbRequired().collection("groups").document(groupId).collection("messages")
     private fun readsRef(groupId: String) = dbRequired().collection("groups").document(groupId).collection("reads")
@@ -500,7 +544,8 @@ class GroupsRepository @Inject constructor(
     private suspend fun acceptAuth(uid: String?, name: String?) {
         val generation = authGeneration.incrementAndGet()
         cleanupListeners()
-        if (uid == null || authRequired().currentUser?.uid != uid) { activeUser = null; groupList = emptyList(); _state.value = GroupsState(configured = _state.value.configured); return }
+        if (uid == null || authRequired().currentUser?.uid != uid) { activeUser = null; account.uid = null; groupList = emptyList(); _state.value = GroupsState(configured = _state.value.configured); return }
+        account.uid = uid
         val profileDoc = runCatching { dbRequired().collection("users").document(uid).get().await() }.getOrNull()
         val user = GroupUser(uid, (profileDoc?.getString("name") ?: name).orEmpty().ifBlank { "Focus member" }, PresetAvatars.fallback(profileDoc?.get("avatarId") as? String))
         if (generation != authGeneration.get() || authRequired().currentUser?.uid != uid) return
@@ -510,7 +555,8 @@ class GroupsRepository @Inject constructor(
             var initial = true
             val heartbeat = launch { while (isActive) { delay(30_000L); publishCurrent() } }
             val rollover = launch { while (isActive) { delay(60_000L); publishCurrent() } }
-            try { combine(timer.state, sessions.sessionsSince(0L)) { ts, ss -> ts to ss }.collect { (ts, ss) ->
+            // The other device's timer (1.6.0) is part of the key, so presence follows a take-over at once.
+            try { combine(timer.state, sessions.sessionsSince(0L), timerLock.remote) { ts, ss, _ -> ts to ss }.collect { (ts, ss) ->
                 if (generation != authGeneration.get() || authRequired().currentUser?.uid != uid) return@collect
                 val known = ownership.all.keys.filter { it.startsWith("owner_") }.mapNotNull { it.removePrefix("owner_").toLongOrNull() }.toSet()
                 if (initial) { ss.forEach { if (it.id !in known) ownership.edit().putString("owner_${it.id}", "unassigned").apply() }; initial = false }
@@ -628,7 +674,8 @@ class GroupsRepository @Inject constructor(
         val uid = authRequired().currentUser?.uid ?: return
         val user = activeUser?.takeIf { it.uid == uid } ?: return
         val allRows = rows ?: runCatching { sessions.all() }.getOrDefault(emptyList())
-        val owned = allRows.filter { ownership.getString("owner_${it.id}", null) == uid }
+        // Merged history (1.6.0): this phone's sessions plus those synced from the account's other devices.
+        val owned = allRows.filter { it.ownerUid == uid || (it.ownerUid == null && ownership.getString("owner_${it.id}", null) == uid) }
         val week = weeklyWeekStartIst(System.currentTimeMillis())
         val now = System.currentTimeMillis()
         val intervals = owned.map { it.startedAt to it.durationMs }
@@ -636,9 +683,13 @@ class GroupsRepository @Inject constructor(
         val count = weeklySessionCount(owned.map { it.startedAt }, now)
         val today = dailyTotalIst(intervals, now)
         val dayKey = dayKeyIst(now)
-        groupList.forEach { g -> if (uid == authRequired().currentUser?.uid) writeMember(g.id, user, total, week, ts, count, today, dayKey) }
+        // While another device runs the timer, publish its live state so this phone never overwrites it with "idle".
+        val remote = timerLock.remote.value
+        val live = if (!ts.isActive && remote != null) remote.state else ts
+        livePlatform = if (!ts.isActive && remote != null) remote.platform else com.flowstate.focus.data.sync.PLATFORM_ANDROID
+        groupList.forEach { g -> if (uid == authRequired().currentUser?.uid) writeMember(g.id, user, total, week, live, count, today, dayKey) }
     }
-    private fun encodeTimer(t: TimerState): Map<String, Any> = mapOf("mode" to t.mode.name, "phase" to t.phase.name, "status" to t.status.name, "phaseDurationMs" to t.phaseDurationMs, "phaseStartedAt" to t.phaseStartedAt, "pausedAt" to t.pausedAt, "subject" to t.subject.take(80))
+    private fun encodeTimer(t: TimerState): Map<String, Any> = mapOf("mode" to t.mode.name, "phase" to t.phase.name, "status" to t.status.name, "phaseDurationMs" to t.phaseDurationMs, "phaseStartedAt" to t.phaseStartedAt, "pausedAt" to t.pausedAt, "subject" to t.subject.take(80), "platform" to livePlatform)
     private fun decodeTimer(m: Map<*, *>): TimerState? = runCatching { TimerState(mode = TimerMode.fromName(m["mode"] as? String), phase = Phase.valueOf(m["phase"] as String), status = com.flowstate.focus.domain.Status.valueOf(m["status"] as String), phaseDurationMs = (m["phaseDurationMs"] as Number).toLong(), phaseStartedAt = (m["phaseStartedAt"] as Number).toLong(), pausedAt = (m["pausedAt"] as? Number)?.toLong() ?: 0, subject = m["subject"] as? String ?: "") }.getOrNull()
     private fun cleanupListeners() { groupListener?.remove(); groupListener = null; clearMemberListeners(); clearPingListeners(); closeChat(); _chat.value = ChatState(); syncJob?.cancel(); syncJob = null }
     private fun clearMemberListeners() { memberListeners.forEach { it.remove() }; memberListeners.clear() }

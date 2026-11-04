@@ -1,0 +1,62 @@
+name: Build Windows app
+
+# Builds the Windows installer (Flowstate-<version>.msi) and attaches it to the same GitHub Release
+# (tag v<versionName>) that "Build APK" publishes. It runs after "Build APK" has finished on main, so the
+# release already exists and the APK workflow is never raced or changed. Run it by hand from the Actions
+# tab to rebuild the installer for the current main.
+on:
+  workflow_run:
+    workflows: [Build APK]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: windows-latest
+    permissions:
+      contents: write   # attach the MSI to the release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commit the APK was built from (workflow_run otherwise checks out the latest main).
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      # jpackage + WiX (downloaded by the Compose plugin) build the per-user MSI.
+      - name: Build MSI
+        run: gradle :desktop:packageMsi --stacktrace
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
+      - name: Rename MSI
+        shell: bash
+        run: cp desktop/build/compose/binaries/main/msi/Flowstate-*.msi "Flowstate-${{ steps.version.outputs.name }}.msi"
+
+      - name: Upload MSI
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowstate-windows-msi
+          path: Flowstate-${{ steps.version.outputs.name }}.msi
+
+      # Adds the MSI to the existing release v<versionName>; the APK, notes and "latest" flag stay as they are.
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.name }}
+          files: Flowstate-${{ steps.version.outputs.name }}.msi
+          fail_on_unmatched_files: true

@@ -44,6 +44,7 @@ private object Keys {
     val INACTIVITY = booleanPreferencesKey("inactivity_check")
     val CHECK_IN_MINUTES = intPreferencesKey("check_in_minutes")
     val BLOCKED = stringSetPreferencesKey("blocked")
+    val CHAT_NOTIFS = booleanPreferencesKey("chat_notifications")
 }
 
 private fun Preferences.toSettings(): AppSettings {
@@ -68,6 +69,7 @@ private fun Preferences.toSettings(): AppSettings {
         inactivityCheck = this[Keys.INACTIVITY] ?: d.inactivityCheck,
         checkInMinutes = normalizeCheckInMinutes(this[Keys.CHECK_IN_MINUTES] ?: d.checkInMinutes),
         blockedPackages = this[Keys.BLOCKED] ?: d.blockedPackages,
+        chatNotifications = this[Keys.CHAT_NOTIFS] ?: d.chatNotifications,
     )
 }
 
@@ -91,6 +93,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[Keys.INACTIVITY] = s.inactivityCheck
     this[Keys.CHECK_IN_MINUTES] = normalizeCheckInMinutes(s.checkInMinutes)
     this[Keys.BLOCKED] = s.blockedPackages
+    this[Keys.CHAT_NOTIFS] = s.chatNotifications
 }
 
 /** DataStore-backed settings. Every change goes through [update] so reads and writes stay atomic. */

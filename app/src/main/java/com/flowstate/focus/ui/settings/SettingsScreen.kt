@@ -102,6 +102,10 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
     var blockerOn by remember { mutableStateOf(isBlockerEnabled(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { blockerOn = isBlockerEnabled(context) }
     var showDisclosure by rememberSaveable { mutableStateOf(false) }
+    // Android 13+ needs permission before any chat push can show.
+    val chatPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) vm.update { it.copy(chatNotifications = true) }
+    }
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) vm.export(uri)
     }
@@ -217,6 +221,23 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
 
             item {
                 Entrance(4) {
+                    Group("Notifications", liquid) {
+                        ToggleRow(
+                            "Chat notifications",
+                            "Pop up new group chat messages, even when Flowstate is closed",
+                            s.chatNotifications,
+                        ) { v ->
+                            val needsPermission = v && Build.VERSION.SDK_INT >= 33 &&
+                                context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                            if (needsPermission) chatPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            else vm.update { it.copy(chatNotifications = v) }
+                        }
+                    }
+                }
+            }
+
+            item {
+                Entrance(5) {
                     Group("Data", liquid) {
                         LinkRow("Export sessions", "Save your history as a CSV file") { exporter.launch("flowstate-sessions.csv") }
                         Text(
@@ -229,7 +250,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
             }
 
             item {
-                Entrance(5) {
+                Entrance(6) {
                     Group("About", liquid) {
                         UpdateRow()
                         LinkRow("Source code", "github.com/${UpdateChecker.OWNER}/${UpdateChecker.REPO}") {

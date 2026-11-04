@@ -188,9 +188,15 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
             contentPadding = screenContentPadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            ui.notice?.let { notice ->
+                item(key = "notice") { FocusNoticeCard(notice, ui.settings.liquidUi, onDismiss = vm::clearNotice) }
+            }
             item(key = "timer") {
                 Entrance(1) {
-                    TimerCard(
+                    // 1.6.0: the timer runs on one device at a time. While the PC has it, show it here instead.
+                    val remote = ui.remote
+                    if (remote != null && !ui.timer.isActive) RemoteTimerCard(remote, ui.settings.liquidUi, onTakeOver = vm::takeOver)
+                    else TimerCard(
                         ui = ui,
                         onStart = ::requestStart,
                         onTakeBreak = { showBreakSheet = true },

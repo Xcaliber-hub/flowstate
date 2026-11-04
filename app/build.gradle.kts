@@ -26,8 +26,8 @@ android {
         applicationId = "com.flowstate.focus"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "1.4.8"
+        versionCode = 30
+        versionName = "1.6.0"
     }
 
     signingConfigs {
@@ -85,6 +85,7 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-messaging")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     testImplementation("junit:junit:4.13.2")
     debugImplementation(libs.androidx.compose.ui.tooling)

@@ -3,6 +3,7 @@ package com.flowstate.focus.data.db
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
@@ -20,6 +21,37 @@ interface SessionDao {
 
     @Query("DELETE FROM sessions WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    // ---- Session sync (1.6.0) ----
+
+    @Query("SELECT * FROM sessions WHERE id = :id")
+    suspend fun byId(id: Long): SessionEntity?
+
+    /** Sessions pulled from the account's other devices; one already stored (same cloudId) is skipped. */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAllIgnoring(rows: List<SessionEntity>): List<Long>
+
+    @Query("SELECT * FROM sessions WHERE cloudId IS NULL")
+    suspend fun unsynced(): List<SessionEntity>
+
+    @Query("UPDATE sessions SET cloudId = :cloudId, ownerUid = :ownerUid, origin = :origin WHERE id = :id")
+    suspend fun markSynced(id: Long, cloudId: String, ownerUid: String, origin: String)
+
+    @Query("UPDATE sessions SET cloudId = NULL WHERE id IN (:ids)")
+    suspend fun unmarkSynced(ids: List<Long>)
+
+    @Query("UPDATE sessions SET ownerUid = :uid WHERE ownerUid IS NULL AND id IN (:ids)")
+    suspend fun claim(ids: List<Long>, uid: String)
+
+    @Query("SELECT DISTINCT ownerUid FROM sessions WHERE ownerUid IS NOT NULL")
+    suspend fun owners(): List<String>
+
+    @Query("DELETE FROM sessions WHERE cloudId = :cloudId")
+    suspend fun deleteByCloudId(cloudId: String)
+
+    /** On sign-out: forget the sessions that were only pulled from the account's other devices. */
+    @Query("DELETE FROM sessions WHERE origin IS NOT NULL AND origin != :deviceId")
+    suspend fun deletePulled(deviceId: String)
 }
 
 @Dao

@@ -1,5 +1,6 @@
 rules_version = '2';
-// Flowstate 1.4.8 — all 24 avatars, member session/daily stats, emoji pings, group chat with replies, read receipts, typing and message editing. Publish to flowstate-241f0 / (default).
+// Flowstate 1.6.0 — all 24 avatars, member session/daily stats, emoji pings, group chat with replies, read receipts, typing and message editing,
+// plus (new in 1.6.0) the one-device timer lock users/{uid}/state/activeTimer and synced sessions users/{uid}/sessions/{id}. Publish to flowstate-241f0 / (default).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -146,6 +147,48 @@ service cloud.firestore {
         allow delete: if signedIn() && uid == request.auth.uid;
       }
     }
+    // One-device timer lock (1.6.0): which of the account's devices runs the timer, and its session.
+    // A device claims it on start/resume and releases it (status IDLE) on stop; another device
+    // taking over overwrites it. Owner only, server-stamped.
+    function validActiveTimer(data) {
+      return data.keys().hasOnly(['deviceId', 'deviceName', 'platform', 'status', 'phase', 'mode', 'subject',
+          'phaseDurationMs', 'phaseStartedAt', 'pausedAt', 'endsAt', 'remainingMs', 'round',
+          'focusMs', 'shortBreakMs', 'longBreakMs', 'rounds', 'strict', 'standaloneBreak', 'updatedAt'])
+        && data.deviceId is string && data.deviceId.size() >= 1 && data.deviceId.size() <= 64
+        && data.deviceName is string && data.deviceName.size() <= 60
+        && data.platform in ['android', 'windows']
+        && data.status in ['IDLE', 'RUNNING', 'PAUSED']
+        && data.phase in ['IDLE', 'FOCUS', 'SHORT_BREAK', 'LONG_BREAK']
+        && data.mode is string && data.mode.size() <= 20
+        && data.subject is string && data.subject.size() <= 80
+        && data.phaseDurationMs is int && data.phaseDurationMs >= 0
+        && data.phaseStartedAt is int && data.phaseStartedAt >= 0
+        && data.pausedAt is int && data.pausedAt >= 0
+        && data.endsAt is int && data.endsAt >= 0
+        && data.remainingMs is int && data.remainingMs >= 0
+        && data.round is int && data.round >= 0
+        && data.focusMs is int && data.focusMs >= 0
+        && data.shortBreakMs is int && data.shortBreakMs >= 0
+        && data.longBreakMs is int && data.longBreakMs >= 0
+        && data.rounds is int && data.rounds >= 1 && data.rounds <= 100
+        && data.strict is bool && data.standaloneBreak is bool
+        && data.updatedAt == request.time;
+    }
+    // Synced focus sessions (1.6.0): one doc per finished block, id "<deviceId>_<startedAt>".
+    // Deleting on one device sets deleted = true so every device drops it.
+    function validSession(sid, data) {
+      return sid.size() <= 128
+        && data.keys().hasOnly(['startedAt', 'durationMs', 'mode', 'subject', 'completed', 'deviceId', 'platform', 'deleted', 'updatedAt'])
+        && data.startedAt is int && data.startedAt > 0
+        && data.durationMs is int && data.durationMs >= 0 && data.durationMs <= 86400000
+        && data.mode is string && data.mode.size() <= 20
+        && data.subject is string && data.subject.size() <= 80
+        && data.completed is bool
+        && data.deviceId is string && data.deviceId.size() >= 1 && data.deviceId.size() <= 64
+        && data.platform in ['android', 'windows']
+        && (!('deleted' in data) || data.deleted is bool)
+        && data.updatedAt == request.time;
+    }
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       // Preserve optional legacy profile fields; validate the name when present.
@@ -153,6 +196,14 @@ service cloud.firestore {
         && validAvatar(request.resource.data)
         && (!('name' in request.resource.data) || validName(request.resource.data));
       allow delete: if signedIn() && request.auth.uid == uid;
+      match /state/activeTimer {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid && validActiveTimer(request.resource.data);
+      }
+      match /sessions/{sid} {
+        allow read, delete: if signedIn() && request.auth.uid == uid;
+        allow create, update: if signedIn() && request.auth.uid == uid && validSession(sid, request.resource.data);
+      }
     }
   }
 }

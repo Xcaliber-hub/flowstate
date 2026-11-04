@@ -53,6 +53,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.flowstate.focus.domain.AppSettings
+import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.CompositionLocalProvider
 import com.flowstate.focus.ui.components.FloatingNavBar
 import com.flowstate.focus.ui.components.LocalNavLayout
@@ -84,8 +85,23 @@ private val Tabs = listOf(
 )
 
 @Composable
-fun FlowstateAppUi(settings: AppSettings) {
+fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatGroupHandled: () -> Unit = {}) {
     val nav = rememberNavController()
+    // Tapping a chat notification: wait for the group to load, select it and open its chat.
+    if (openChatGroup != null) {
+        val groupsVm: com.flowstate.focus.ui.groups.GroupsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+        androidx.compose.runtime.LaunchedEffect(openChatGroup) {
+            val found = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                groupsVm.state.first { st -> st.groups.any { it.id == openChatGroup } }
+            }
+            if (found != null) {
+                groupsVm.selectGroup(openChatGroup)
+                nav.navigate(Routes.GROUPS) { popUpTo(nav.graph.findStartDestination().id) { saveState = true }; launchSingleTop = true }
+                nav.navigate(Routes.GROUP_CHAT) { launchSingleTop = true }
+            }
+            onChatGroupHandled()
+        }
+    }
     val contentLayer = rememberGraphicsLayer()
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
     var navVisible by remember { mutableStateOf(true) }
