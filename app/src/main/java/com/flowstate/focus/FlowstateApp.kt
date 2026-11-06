@@ -15,6 +15,8 @@ class FlowstateApp : Application() {
     @Inject lateinit var chatPush: com.flowstate.focus.push.ChatPushSync
     // 1.6.0: one-device timer lock and synced sessions (only active while signed in).
     @Inject lateinit var cloudSync: com.flowstate.focus.data.sync.CloudSync
+    // 1.7.0: ambient sounds follow the focus timer even while the Focus screen is closed.
+    @Inject lateinit var ambient: com.flowstate.focus.service.ambient.AmbientController
     override fun onCreate() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
@@ -31,6 +33,7 @@ class FlowstateApp : Application() {
         initPushApp()
         chatPush.start()
         cloudSync.start()
+        ambient.start()
     }
 
     /**

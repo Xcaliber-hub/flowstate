@@ -20,6 +20,7 @@ object Notifications {
     const val ID_ALERT = 2
     const val ID_NUDGE = 3
     const val ID_CHECK_IN = 4
+    const val ID_AMBIENT = 5
 }
 
 /**

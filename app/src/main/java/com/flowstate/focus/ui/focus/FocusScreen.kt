@@ -129,8 +129,18 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 
 @Composable
-fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
+fun FocusScreen(
+    settings: AppSettings,
+    onOpenExams: () -> Unit = {},
+    vm: FocusViewModel = hiltViewModel(),
+    examsVm: com.flowstate.focus.ui.exams.ExamsViewModel = hiltViewModel(),
+    ambientVm: com.flowstate.focus.ui.ambient.AmbientViewModel = hiltViewModel(),
+) {
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val examsUi by examsVm.ui.collectAsStateWithLifecycle()
+    val today = remember { LocalDate.now() }
+    val examSheets = remember { com.flowstate.focus.ui.exams.ExamSheets() }
+    var showMixer by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val view = LocalView.current
 
@@ -211,6 +221,22 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
                     )
                 }
             }
+            // 1.7.0: ambient player bar right under the timer, then the exam countdown.
+            item(key = "ambient") {
+                Entrance(2) { com.flowstate.focus.ui.ambient.AmbientBar(ambientVm, onExpand = { showMixer = true }) }
+            }
+            if (examsUi.loaded) {
+                item(key = "dday") {
+                    Entrance(2) {
+                        com.flowstate.focus.ui.exams.DDayCard(
+                            exams = examsUi.exams,
+                            today = today,
+                            onOpenPicker = { examSheets.picker = true },
+                            onAdd = { examSheets.adding = true },
+                        )
+                    }
+                }
+            }
             item(key = "tiles") {
                 Entrance(2) {
                     Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -224,6 +250,9 @@ fun FocusScreen(settings: AppSettings, vm: FocusViewModel = hiltViewModel()) {
             item(key = "sessions") { Entrance(5) { SessionsCard(ui.todaySessions, ui.settings.liquidUi, onHold = { pendingDelete = it }) } }
         }
     }
+
+    if (showMixer) com.flowstate.focus.ui.ambient.AmbientMixerSheet(ambientVm, onDismiss = { showMixer = false })
+    com.flowstate.focus.ui.exams.ExamSheetsHost(examSheets, examsUi.exams, today, examsVm, onManage = onOpenExams)
 
     if (showBreakSheet) {
         BreakSheet(

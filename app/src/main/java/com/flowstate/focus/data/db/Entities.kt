@@ -36,3 +36,21 @@ data class TaskEntity(
     val done: Boolean = false,
     val createdAt: Long,
 )
+
+/**
+ * 1.7.0 (database version 3): an exam (or any dated goal) to count down to. Local only, never synced.
+ *
+ * [tag] indexes [com.flowstate.focus.domain.ExamTags]; [showOnFocus] puts it in the Focus countdown
+ * card; at most one exam is [pinned], and the pinned one is shown first instead of the nearest.
+ */
+@Entity(tableName = "exams")
+data class ExamEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val date: java.time.LocalDate,
+    val emoji: String,
+    val tag: Int,
+    val showOnFocus: Boolean = true,
+    val pinned: Boolean = false,
+    val createdAt: Long,
+)

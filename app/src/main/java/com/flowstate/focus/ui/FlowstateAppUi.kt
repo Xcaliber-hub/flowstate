@@ -74,6 +74,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val BLOCKED = "blocked"
     const val GROUP_CHAT = "group_chat"
+    const val EXAMS = "exams"
 }
 
 private val Tabs = listOf(
@@ -140,7 +141,8 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
                 popEnterTransition = { enter },
                 popExitTransition = { exit },
             ) {
-                composable(Routes.FOCUS) { FocusScreen(settings) }
+                composable(Routes.FOCUS) { FocusScreen(settings, onOpenExams = { nav.navigate(Routes.EXAMS) { launchSingleTop = true } }) }
+                composable(Routes.EXAMS) { com.flowstate.focus.ui.exams.ExamsScreen() }
                 composable(Routes.GROUPS) { GroupsScreen(settings, onOpenFocus = { nav.navigate(Routes.FOCUS) { launchSingleTop = true } }, onOpenChat = { nav.navigate(Routes.GROUP_CHAT) { launchSingleTop = true } }) }
                 composable(Routes.GROUP_CHAT) { GroupChatScreen(onBack = { nav.popBackStack() }) }
                 composable(Routes.TASKS) { TasksScreen(settings) }
@@ -154,7 +156,9 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
                 TopBlur(contentLayer, Modifier.align(Alignment.TopCenter))
                 if (navLayout == NavLayout.BOTTOM) BottomBlur(contentLayer, Modifier.align(Alignment.BottomCenter))
             }
-            if (Tabs.any { it.route == route }) {
+            // The Exams screen (1.7.0) keeps the frosted bar and the nav, with Focus highlighted.
+            if (Tabs.any { it.route == route } || route == Routes.EXAMS) {
+                val selectedRoute = if (route == Routes.EXAMS) Routes.FOCUS else route
                 // Frosted top bar: back, the screen's title pill and, where it has options, the three-line menu.
                 val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                 val barStart = if (navLayout == NavLayout.SIDE) 8.dp + SideDockWidth + 10.dp else 16.dp
@@ -178,7 +182,7 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
                 when (navLayout) {
                     NavLayout.BOTTOM -> FloatingNavBar(
                         tabs = Tabs,
-                        selectedRoute = route,
+                        selectedRoute = selectedRoute,
                         visible = navVisible,
                         liquid = settings.liquidUi,
                         onSelect = onSelect,
@@ -188,7 +192,7 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
                     // Fixed in place: the side dock never hides on scroll.
                     NavLayout.SIDE -> SideDock(
                         tabs = Tabs,
-                        selectedRoute = route,
+                        selectedRoute = selectedRoute,
                         liquid = settings.liquidUi,
                         swapped = settings.sideNavSwapped,
                         onSelect = onSelect,

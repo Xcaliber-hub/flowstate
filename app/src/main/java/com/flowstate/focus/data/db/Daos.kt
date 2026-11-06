@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -73,4 +74,42 @@ interface TaskDao {
 
     @Query("DELETE FROM tasks WHERE done = 1")
     suspend fun clearDone()
+}
+
+@Dao
+interface ExamDao {
+    @Query("SELECT * FROM exams ORDER BY date ASC, id ASC")
+    fun all(): Flow<List<ExamEntity>>
+
+    @Insert
+    suspend fun insert(exam: ExamEntity): Long
+
+    @Update
+    suspend fun update(exam: ExamEntity)
+
+    @Query("DELETE FROM exams WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("UPDATE exams SET showOnFocus = :shown WHERE id = :id")
+    suspend fun setShown(id: Long, shown: Boolean)
+
+    @Query("UPDATE exams SET pinned = 0 WHERE pinned = 1")
+    suspend fun clearPins()
+
+    @Query("UPDATE exams SET pinned = 1, showOnFocus = 1 WHERE id = :id")
+    suspend fun markPinned(id: Long)
+
+    /** Only one exam is ever pinned. Pinning also shows it on Focus. */
+    @Transaction
+    suspend fun pin(id: Long) {
+        clearPins()
+        markPinned(id)
+    }
+
+    /** Insert or update; a pinned exam unpins every other one. */
+    @Transaction
+    suspend fun save(exam: ExamEntity): Long {
+        if (exam.pinned) clearPins()
+        return if (exam.id == 0L) insert(exam) else { update(exam); exam.id }
+    }
 }
