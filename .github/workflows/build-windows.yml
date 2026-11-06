@@ -13,9 +13,7 @@ on:
 
 jobs:
   build:
-    # Paused for the 1.7.1 APK-only build at Aditya's request: there is no v1.7.1 release to attach
-    # an MSI to, and creating one would break the no-release instruction. Restored in the follow-up commit.
-    if: false
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: windows-latest
     permissions:
       contents: write   # attach the MSI to the release
