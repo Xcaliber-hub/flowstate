@@ -30,6 +30,7 @@ import androidx.compose.material.icons.rounded.Fireplace
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LocalCafe
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Timer
@@ -87,6 +88,7 @@ val AmbientSound.icon: ImageVector get() = when (this) {
     AmbientSound.CAFE -> Icons.Rounded.LocalCafe
     AmbientSound.FIRE -> Icons.Rounded.Fireplace
     AmbientSound.WAVES -> Icons.Rounded.Waves
+    AmbientSound.CRICKETS -> Icons.Rounded.NightsStay
 }
 
 /** Ticks every 15 s, only while a countdown line is on screen. */

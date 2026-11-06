@@ -1,6 +1,8 @@
 package com.flowstate.focus.service.ambient
 
 import com.flowstate.focus.domain.AmbientSound
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -11,10 +13,11 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /*
- * 1.7.0 ambient sounds, synthesised in real time. No recordings ship with the app, so there is
- * nothing to license and the APK does not grow. Every voice is filtered or modulated noise plus a
- * few randomly timed events (drops, crackles, clinks, page turns). Nothing allocates while
- * rendering, and a voice whose gain is zero is skipped entirely.
+ * Ambient sounds. Since 1.7.1 Rain, Waves, Café and Crickets are short recorded loops
+ * (res/raw/ambient_*.ogg, see NOTICE.md) played by [SampleVoice]; Library, Brown noise and Fireplace
+ * are still synthesised in real time: filtered or modulated noise plus a few randomly timed events
+ * (crackles, page turns, footsteps). Nothing allocates while rendering (apart from handing a
+ * recording's first decode to a background thread), and a voice whose gain is zero is skipped.
  */
 
 /** xorshift32: fast white noise in -1..1. */
@@ -107,6 +110,104 @@ internal abstract class Voice(protected val sr: Float, seed: Int) {
     }
 }
 
+/** Decoded 16-bit PCM, interleaved L/R when [channels] is 2. */
+class SamplePcm(val data: ShortArray, val channels: Int, val sampleRate: Int) {
+    init { require(channels == 1 || channels == 2) { "1 or 2 channels, not $channels" } }
+    val frames: Int get() = data.size / channels
+}
+
+/**
+ * Supplies the recording behind a sound, or null when it has none. [load] may block (it decodes);
+ * it is only called from a background thread, once per voice.
+ */
+fun interface SampleLoader {
+    fun load(sound: AmbientSound): SamplePcm?
+}
+
+/**
+ * Plays a recorded loop. The loop files are already seamless (the tail is crossfaded into the head
+ * when they are made), so playback just wraps the read position; reads interpolate across the wrap,
+ * so a buffer at another sample rate also loops without a click. The recording is requested the
+ * first time the voice is asked to sound; until it arrives the voice is silent, and it then fades
+ * in over a quarter second so a late arrival under a raised slider does not pop. A mono recording
+ * plays at full level on both channels.
+ */
+internal class SampleVoice private constructor(
+    sr: Float,
+    private val sound: AmbientSound?,
+    private val loader: SampleLoader?,
+    ready: SamplePcm?,
+) : Voice(sr, 0) {
+    /** Loads [sound] through [loader] on first use. */
+    constructor(sr: Float, sound: AmbientSound, loader: SampleLoader?) : this(sr, sound, loader, null)
+    /** Plays [pcm] straight away (tests, previews). */
+    constructor(sr: Float, pcm: SamplePcm) : this(sr, null, null, pcm)
+
+    @Volatile private var pcm: SamplePcm? = ready?.takeIf { it.frames > 1 }
+    @Volatile private var requested = ready != null
+    private var pos = 0.0
+    private var onset = if (pcm != null) 1f else 0f
+    private val onsetStep = 1f / (0.25f * sr)
+
+    val isReady: Boolean get() = pcm != null
+
+    override fun render(l: FloatArray, r: FloatArray, n: Int, g0: Float, g1: Float) {
+        val p = pcm
+        if (p == null) {
+            if (!requested && g1 > 0f) request()
+            return
+        }
+        val d = p.data
+        val frames = p.frames
+        val step = p.sampleRate / sr.toDouble()
+        val stereo = p.channels == 2
+        val dg = (g1 - g0) / n
+        var g = g0
+        var x = pos
+        for (i in 0 until n) {
+            val i0 = x.toInt()
+            val f = (x - i0).toFloat()
+            val i1 = if (i0 + 1 >= frames) 0 else i0 + 1
+            val a: Float
+            val b: Float
+            if (stereo) {
+                val a0 = d[i0 * 2].toFloat(); val b0 = d[i0 * 2 + 1].toFloat()
+                a = a0 + (d[i1 * 2] - a0) * f
+                b = b0 + (d[i1 * 2 + 1] - b0) * f
+            } else {
+                val a0 = d[i0].toFloat()
+                a = a0 + (d[i1] - a0) * f
+                b = a
+            }
+            if (onset < 1f) onset = min(1f, onset + onsetStep)
+            val k = g * onset * PCM_SCALE
+            l[i] += a * k; r[i] += b * k
+            g += dg
+            x += step
+            if (x >= frames) x -= frames
+        }
+        pos = x
+    }
+
+    private fun request() {
+        requested = true
+        val s = sound ?: return
+        val ld = loader ?: return
+        DECODER.execute {
+            val got = runCatching { ld.load(s) }.getOrNull()
+            if (got != null && got.frames > 1) pcm = got
+        }
+    }
+
+    companion object {
+        private const val PCM_SCALE = 1f / 32768f
+        /** One low-priority daemon thread for every first decode. */
+        private val DECODER: ExecutorService = Executors.newSingleThreadExecutor { job ->
+            Thread(job, "flowstate-ambient-decode").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 
 internal class BrownVoice(sr: Float) : Voice(sr, 11) {
@@ -118,102 +219,6 @@ internal class BrownVoice(sr: Float) : Voice(sr, 11) {
         for (i in 0 until n) {
             l[i] += lpL.lp(bl.next()) * g * 0.9f
             r[i] += lpR.lp(br.next()) * g * 0.9f
-            g += dg
-        }
-    }
-}
-
-internal class RainVoice(sr: Float) : Voice(sr, 23) {
-    private val pinkL = Pink(Rng(303)); private val pinkR = Pink(Rng(404))
-    private val far = Brown(Rng(505))
-    private val hpL = OnePole(onePoleCoef(450f, sr)); private val hpR = OnePole(onePoleCoef(450f, sr))
-    private val lpL = OnePole(onePoleCoef(7000f, sr)); private val lpR = OnePole(onePoleCoef(7000f, sr))
-    private val farLp = OnePole(onePoleCoef(700f, sr))
-    private val drops = 24
-    private val dOsc = Array(drops) { Osc() }
-    private val dEnv = FloatArray(drops); private val dDecay = FloatArray(drops)
-    private val dPanL = FloatArray(drops); private val dPanR = FloatArray(drops)
-    private val dClick = IntArray(drops)
-    private var nextDrop = 1
-    private var lfo = 0.0
-    private val lfoStep = 2.0 * PI * 0.07 / sr
-
-    override fun render(l: FloatArray, r: FloatArray, n: Int, g0: Float, g1: Float) {
-        val dg = (g1 - g0) / n
-        var g = g0
-        for (i in 0 until n) {
-            lfo += lfoStep
-            val swell = 0.9f + 0.1f * sin(lfo).toFloat()
-            val f = farLp.lp(far.next()) * 0.35f
-            var sl = lpL.lp(hpL.hp(pinkL.next())) * 0.8f * swell + f
-            var sr2 = lpR.lp(hpR.hp(pinkR.next())) * 0.8f * swell + f
-            if (--nextDrop <= 0) {
-                nextDrop = wait(70f)
-                spawnDrop()
-            }
-            for (k in 0 until drops) {
-                val e = dEnv[k]
-                if (e < 1e-4f) continue
-                var v = dOsc[k].next() * e
-                if (dClick[k] > 0) { v += rng.next() * e * 0.6f; dClick[k]-- }
-                sl += v * dPanL[k]; sr2 += v * dPanR[k]
-                dEnv[k] = e * dDecay[k]
-            }
-            l[i] += sl * g; r[i] += sr2 * g
-            g += dg
-        }
-    }
-
-    private fun spawnDrop() {
-        for (k in 0 until drops) {
-            if (dEnv[k] < 1e-4f) {
-                val u = rng.unit()
-                dEnv[k] = 0.04f + 0.30f * u * u * u
-                dOsc[k].start(rng.range(1800f, 5200f), sr)
-                val tau = rng.range(0.002f, 0.007f)
-                dDecay[k] = exp(-1f / (tau * sr))
-                val p = rng.unit()
-                dPanL[k] = sqrt(1f - p); dPanR[k] = sqrt(p)
-                dClick[k] = (sr * 0.0007f).toInt()
-                return
-            }
-        }
-    }
-}
-
-internal class WavesVoice(sr: Float) : Voice(sr, 37) {
-    private val pink = Pink(Rng(606)); private val brown = Brown(Rng(707))
-    private val pink2 = Pink(Rng(808)); private val brown2 = Brown(Rng(909))
-    private val surf = Brown(Rng(1001))
-    private val surfLp = OnePole(onePoleCoef(260f, sr))
-    private val lpA = OnePole(0.1f); private val lpB = OnePole(0.1f)
-    private val envA = OnePole(onePoleCoef(2.5f, sr)); private val envB = OnePole(onePoleCoef(2.5f, sr))
-    private var tA = 0f; private var tB = 0.45f
-    private var stepA = 1f / (10f * sr); private var stepB = 1f / (12f * sr)
-    private var count = 0
-    private var eA = 0f; private var eB = 0f
-
-    private fun shape(t: Float): Float = if (t < 0.6f) {
-        val x = t / 0.6f; x * x * (0.6f + 0.4f * x)
-    } else exp(-(t - 0.6f) * 6f)
-
-    override fun render(l: FloatArray, r: FloatArray, n: Int, g0: Float, g1: Float) {
-        val dg = (g1 - g0) / n
-        var g = g0
-        for (i in 0 until n) {
-            tA += stepA; if (tA >= 1f) { tA -= 1f; stepA = 1f / (rng.range(8f, 13f) * sr) }
-            tB += stepB; if (tB >= 1f) { tB -= 1f; stepB = 1f / (rng.range(9f, 14f) * sr) }
-            eA = envA.lp(shape(tA)); eB = envB.lp(shape(tB))
-            if (count-- <= 0) {
-                count = 32
-                lpA.a = onePoleCoef(220f + 3000f * eA * eA, sr)
-                lpB.a = onePoleCoef(220f + 3000f * eB * eB, sr)
-            }
-            val a = lpA.lp(pink.next() * 0.7f + brown.next() * 0.5f) * (0.10f + 1.1f * eA)
-            val b = lpB.lp(pink2.next() * 0.7f + brown2.next() * 0.5f) * (0.10f + 1.1f * eB)
-            val s = surfLp.lp(surf.next()) * 0.35f
-            l[i] += (a * 0.8f + b * 0.35f + s) * g
-            r[i] += (a * 0.35f + b * 0.8f + s) * g
             g += dg
         }
     }
@@ -269,118 +274,6 @@ internal class FireVoice(sr: Float) : Voice(sr, 41) {
                 cTone[k] = if (pop) 0.9f else 0.2f
                 val p = rng.range(0.2f, 0.8f)
                 cPanL[k] = sqrt(1f - p); cPanR[k] = sqrt(p)
-                return
-            }
-        }
-    }
-}
-
-/**
- * Café: a murmur of distant voices (pulse-excited vowel formants with syllable rhythm and pauses),
- * room tone, and the odd cup clink or burst of milk steam.
- */
-internal class CafeVoice(sr: Float) : Voice(sr, 53) {
-    private val talkers = 6
-    private val pitch = FloatArray(talkers); private val phase = FloatArray(talkers)
-    private val f1 = Array(talkers) { BandPass(sr) }; private val f2 = Array(talkers) { BandPass(sr) }
-    private val amp = FloatArray(talkers); private val target = FloatArray(talkers)
-    private val syllable = IntArray(talkers); private val phrase = IntArray(talkers)
-    private val talking = BooleanArray(talkers)
-    private val panL = FloatArray(talkers); private val panR = FloatArray(talkers); private val dist = FloatArray(talkers)
-    private val vib = FloatArray(talkers)
-    private val ampCoef = onePoleCoef(22f, sr)
-    private val distL = OnePole(onePoleCoef(2600f, sr)); private val distR = OnePole(onePoleCoef(2600f, sr))
-    private val room = Pink(Rng(1301)); private val roomLp = OnePole(onePoleCoef(1800f, sr))
-    private val roomB = Brown(Rng(1402))
-    // Clinks: three inharmonic partials each.
-    private val clinkOsc = Array(9) { Osc() }; private val clinkEnv = FloatArray(3); private val clinkDecay = FloatArray(3)
-    private val clinkPan = FloatArray(3)
-    private var nextClink = 0
-    private var steamLeft = 0; private var steamLen = 1; private var nextSteam = 0
-    private val steam = Pink(Rng(1503)); private val steamHp = OnePole(onePoleCoef(2500f, sr))
-    private var formantCount = 0
-
-    init {
-        for (t in 0 until talkers) newSpeaker(t)
-        nextClink = wait(0.12f); nextSteam = wait(1f / 70f)
-    }
-
-    private fun newSpeaker(t: Int) {
-        pitch[t] = if (rng.chance(0.5f)) rng.range(95f, 140f) else rng.range(170f, 240f)
-        val p = rng.unit(); panL[t] = sqrt(1f - p); panR[t] = sqrt(p)
-        dist[t] = rng.range(0.35f, 1f)
-        talking[t] = rng.chance(0.6f)
-        phrase[t] = (sr * rng.range(0.5f, 3f)).toInt()
-        vowel(t)
-    }
-
-    private fun vowel(t: Int) {
-        f1[t].set(rng.range(300f, 850f), 4f)
-        f2[t].set(rng.range(900f, 2300f), 5f)
-    }
-
-    override fun render(l: FloatArray, r: FloatArray, n: Int, g0: Float, g1: Float) {
-        val dg = (g1 - g0) / n
-        var g = g0
-        for (i in 0 until n) {
-            var ml = 0f; var mr = 0f
-            for (t in 0 until talkers) {
-                if (--phrase[t] <= 0) {
-                    talking[t] = !talking[t]
-                    phrase[t] = (sr * if (talking[t]) rng.range(1.2f, 5f) else rng.range(0.4f, 2.5f)).toInt()
-                    if (!talking[t] && rng.chance(0.15f)) newSpeaker(t)
-                }
-                if (--syllable[t] <= 0) {
-                    syllable[t] = (sr * rng.range(0.08f, 0.24f)).toInt()
-                    target[t] = if (talking[t] && !rng.chance(0.18f)) rng.range(0.4f, 1f) else 0f
-                    vowel(t)
-                }
-                amp[t] += ampCoef * (target[t] - amp[t])
-                if (amp[t] < 0.002f) continue
-                vib[t] += 1f / sr
-                val f0 = pitch[t] * (1f + 0.04f * sin(vib[t] * 5.1f + t))
-                phase[t] += f0 / sr
-                var ex = rng.next() * 2f
-                if (phase[t] >= 1f) { phase[t] -= 1f; ex += 36f }
-                val v = (f1[t].run(ex) + f2[t].run(ex) * 0.6f) * amp[t] * dist[t]
-                ml += v * panL[t]; mr += v * panR[t]
-            }
-            val roomTone = roomLp.lp(room.next()) * 0.16f + roomB.next() * 0.10f
-            var sl = distL.lp(ml) * 0.55f + roomTone
-            var sr2 = distR.lp(mr) * 0.55f + roomTone
-
-            if (--nextClink <= 0) { nextClink = wait(0.12f); clink() }
-            for (c in 0 until 3) {
-                val e = clinkEnv[c]
-                if (e < 1e-4f) continue
-                val v = (clinkOsc[c * 3].next() + clinkOsc[c * 3 + 1].next() * 0.5f + clinkOsc[c * 3 + 2].next() * 0.25f) * e
-                sl += v * (1f - clinkPan[c]); sr2 += v * clinkPan[c]
-                clinkEnv[c] = e * clinkDecay[c]
-            }
-            if (steamLeft > 0) {
-                val x = 1f - steamLeft.toFloat() / steamLen
-                val env = min(1f, x * 8f) * min(1f, (1f - x) * 4f) * 0.07f
-                val v = steamHp.hp(steam.next()) * env
-                sl += v * 0.7f; sr2 += v * 0.4f
-                steamLeft--
-            } else if (--nextSteam <= 0) {
-                nextSteam = wait(1f / 70f)
-                steamLen = (sr * rng.range(2.5f, 4f)).toInt(); steamLeft = steamLen
-            }
-            l[i] += sl * g; r[i] += sr2 * g
-            g += dg
-        }
-    }
-
-    private fun clink() {
-        for (c in 0 until 3) {
-            if (clinkEnv[c] < 1e-4f) {
-                val f = rng.range(2000f, 3200f)
-                clinkOsc[c * 3].start(f, sr); clinkOsc[c * 3 + 1].start(f * 2.32f, sr); clinkOsc[c * 3 + 2].start(f * 4.25f, sr)
-                clinkEnv[c] = rng.range(0.05f, 0.14f)
-                clinkDecay[c] = exp(-1f / (rng.range(0.06f, 0.18f) * sr))
-                clinkPan[c] = rng.range(0.15f, 0.85f)
-                if (rng.chance(0.3f)) nextClink = (sr * rng.range(0.12f, 0.3f)).toInt()
                 return
             }
         }
@@ -465,19 +358,18 @@ internal class LibraryVoice(sr: Float) : Voice(sr, 67) {
 }
 
 /**
- * The mixer: six voices, each with its own smoothed gain, summed and soft-limited.
- * [render] is called from the audio thread only.
+ * The mixer: one voice per [AmbientSound], each with its own smoothed gain, summed and soft-limited.
+ * Recorded sounds come from [samples]; without a loader they stay silent. [render] is called from
+ * the audio thread only.
  */
-class AmbientSynth(sampleRate: Int) {
+class AmbientSynth(sampleRate: Int, samples: SampleLoader? = null) {
     private val sr = sampleRate.toFloat()
     private val voices: Array<Voice> = AmbientSound.entries.map { s ->
         when (s) {
-            AmbientSound.RAIN -> RainVoice(sr)
+            AmbientSound.RAIN, AmbientSound.CAFE, AmbientSound.WAVES, AmbientSound.CRICKETS -> SampleVoice(sr, s, samples)
             AmbientSound.LIBRARY -> LibraryVoice(sr)
             AmbientSound.BROWN -> BrownVoice(sr)
-            AmbientSound.CAFE -> CafeVoice(sr)
             AmbientSound.FIRE -> FireVoice(sr)
-            AmbientSound.WAVES -> WavesVoice(sr)
         }
     }.toTypedArray()
     private val current = FloatArray(voices.size)
@@ -504,6 +396,9 @@ class AmbientSynth(sampleRate: Int) {
             out[j++] = soft(r[i] * master)
         }
     }
+
+    /** True when [sound] is synthesised, or its recording has been decoded and is playing. */
+    internal fun isReady(sound: AmbientSound): Boolean = (voices[sound.ordinal] as? SampleVoice)?.isReady ?: true
 
     /** True once every voice has glided to silence. */
     fun isSilent(): Boolean = current.all { it <= 0f }

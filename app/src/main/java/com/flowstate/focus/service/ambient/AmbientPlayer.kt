@@ -15,7 +15,8 @@ import kotlin.math.max
 import kotlin.math.min
 
 /**
- * Streams [AmbientSynth] into an [AudioTrack] on its own audio-priority thread.
+ * Streams [AmbientSynth] (synthesised voices plus the recorded loops from [RawSampleLoader]) into an
+ * [AudioTrack] on its own audio-priority thread.
  *
  * The thread only runs while something is audible: once a fade-out reaches silence the track is
  * paused and the thread parks until the next play, so a paused mix costs no CPU or battery.
@@ -38,6 +39,8 @@ class AmbientPlayer @Inject constructor(@ApplicationContext private val context:
     private var track: AudioTrack? = null
     private var focusRequest: AudioFocusRequest? = null
     private val audio by lazy { context.getSystemService(AudioManager::class.java) }
+    /** Decodes the recorded loops on first use and keeps them for the life of the process. */
+    private val samples = RawSampleLoader(context)
 
     private val attributes = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -87,7 +90,7 @@ class AmbientPlayer @Inject constructor(@ApplicationContext private val context:
                 .build()
         }.getOrNull() ?: return
         track = t
-        val synth = AmbientSynth(rate)
+        val synth = AmbientSynth(rate, samples)
         val out = FloatArray(frames * 2)
         val local = FloatArray(targets.size)
         val zero = FloatArray(targets.size)

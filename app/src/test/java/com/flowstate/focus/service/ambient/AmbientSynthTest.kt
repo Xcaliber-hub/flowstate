@@ -10,12 +10,25 @@ import kotlin.math.sqrt
 class AmbientSynthTest {
     private val sr = 48_000
 
+    /**
+     * Stands in for the recorded loops (MediaCodec is not available on the JVM): 4 s of stereo
+     * noise at about the level of the real files (rms ~0.1; the shipped loops measure 0.05 to 0.1).
+     */
+    private val fakeRecordings = SampleLoader { s ->
+        val rng = Rng(s.ordinal + 7)
+        SamplePcm(ShortArray(sr * 4 * 2) { (rng.next() * 5600f).toInt().toShort() }, 2, sr)
+    }
+
     private fun renderOne(sound: AmbientSound?, seconds: Int, gain: Float = 1f): FloatArray {
-        val synth = AmbientSynth(sr)
+        val synth = AmbientSynth(sr, fakeRecordings)
         val targets = FloatArray(AmbientSound.entries.size)
         if (sound == null) targets.fill(gain) else targets[sound.ordinal] = gain
         val block = 1024
         val out = FloatArray(block * 2)
+        // First block asks for the recordings; wait for the background decode so timing never matters.
+        synth.render(out, block, targets, 1f)
+        val deadline = System.currentTimeMillis() + 5_000
+        while (AmbientSound.entries.any { !synth.isReady(it) && targets[it.ordinal] > 0f } && System.currentTimeMillis() < deadline) Thread.sleep(5)
         val all = FloatArray(sr * seconds * 2)
         var pos = 0
         while (pos + block * 2 <= all.size) {
@@ -51,11 +64,31 @@ class AmbientSynthTest {
 
     @Test
     fun silentWhenAllGainsZero() {
-        val synth = AmbientSynth(sr)
+        var loads = 0
+        val synth = AmbientSynth(sr) { loads++; null }
         val out = FloatArray(2048)
-        synth.render(out, 1024, FloatArray(6), 1f)
+        synth.render(out, 1024, FloatArray(AmbientSound.entries.size), 1f)
         assertEquals(0f, out.maxOf { abs(it) }, 0f)
         assertTrue(synth.isSilent())
+        Thread.sleep(50)
+        assertEquals("nothing is decoded while every gain is zero", 0, loads)
+    }
+
+    @Test
+    fun recordedSoundsAreSilentWithoutALoader() {
+        val synth = AmbientSynth(sr)
+        val targets = FloatArray(AmbientSound.entries.size).also { it[AmbientSound.CRICKETS.ordinal] = 1f }
+        val out = FloatArray(2048)
+        repeat(20) { synth.render(out, 1024, targets, 1f) }
+        assertEquals(0f, out.maxOf { abs(it) }, 0f)
+    }
+
+    @Test
+    fun soundsAreAppendedSoSavedMixesKeepTheirNames() {
+        assertEquals(
+            listOf("RAIN", "LIBRARY", "BROWN", "CAFE", "FIRE", "WAVES", "CRICKETS"),
+            AmbientSound.entries.map { it.name },
+        )
     }
 
     /** Set FLOWSTATE_WAV_DIR to write 15 s previews of every sound (for listening, not part of CI). */

@@ -2,7 +2,11 @@ package com.flowstate.focus.domain
 
 import androidx.compose.runtime.Immutable
 
-/** 1.7.0 ambient sounds. Every one is synthesised on the phone; no audio files ship with the app. */
+/**
+ * Ambient sounds. Rain, Café, Waves and Crickets are recorded loops (1.7.1, see NOTICE.md); Library,
+ * Brown noise and Fireplace are synthesised on the phone. The mix is saved by [name], so new sounds
+ * are only ever appended.
+ */
 enum class AmbientSound(val label: String) {
     RAIN("Rain"),
     LIBRARY("Library"),
@@ -10,6 +14,7 @@ enum class AmbientSound(val label: String) {
     CAFE("Café"),
     FIRE("Fireplace"),
     WAVES("Waves"),
+    CRICKETS("Crickets"),
 }
 
 /** "Follow the timer": play freely, play only through focus blocks, or stop after 30 minutes. */

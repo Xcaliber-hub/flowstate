@@ -22,11 +22,19 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
   </tr>
 </table>
 
+## 1.7.1: recorded rain, waves and café, plus crickets
+
+- **Rain, Waves and Café are now real recordings**, and there is a new **Crickets** sound (night field), so the player has seven chips: Rain, Library, Brown noise, Café, Fireplace, Waves, Crickets. Library, Brown noise and Fireplace stay synthesised.
+- The recordings are seamless loops in `app/src/main/res/raw/ambient_{rain,waves,cafe,crickets}.ogg` (48 kHz Ogg Vorbis, about 1.5 MB together): Waves 51.5 s stereo, Café 12.0 s stereo (cut on a whole number of beats of the music), Rain 12.5 s stereo, Crickets 50.7 s mono. Each loop's end is crossfaded into its start (equal-power, 2 to 3 s) and all are matched in loudness to the synthesised sounds.
+- `SampleVoice` (in `service/ambient/AmbientSynth.kt`) plays them inside the same mixer as the synthesised voices, with the same per-block volume glide. A recording is decoded once (MediaExtractor + MediaCodec, `RawSampleLoader`) on a background thread the first time its sound is turned up, then kept in memory; it is silent for that moment and fades in.
+- The saved mix is stored by sound name, so existing mixes keep working; Crickets starts off.
+- Credits and licences for the recordings are in `NOTICE.md` (Pixabay Content License and Mixkit Sound Effects Free License). No Firestore rules change.
+
 ## 1.7.0: exam countdowns and ambient sounds
 
 - **Exam countdowns.** A D-Day card on Focus (under the ambient player, above the Today/Streak tiles) shows "D-76 · Name" and the date. Swipe or tap it to step through the exams you chose; the pinned exam comes first, otherwise the nearest. Past exams drop off the card and show as **Done** on the Exams screen. The chevron opens a picker: tick which exams show on Focus, set each date with the Material date picker, pin one as main, rename or delete, add one, or open **All exams** (hero countdown with wavy progress, upcoming list, done list). The app starts with no exams. Stored in Room (database version 3, `MIGRATION_2_3` adds an `exams` table; earlier migrations unchanged). Local only, so there is **no Firestore rules change**.
 - **Ambient sounds.** A player bar right under the timer card: play/pause, the mix name, sound chips (Rain, Library, Brown noise, Café, Fireplace, Waves) and a mixer sheet with per-sound and master volume, **Auto-pause on breaks** and **Follow the timer** (Off / With focus / 30 min). The mix is saved (DataStore `ambient`). Sound keeps playing with the screen off through a media-playback foreground service (`AmbientService`, with a "Stop sounds" action); during a session the timer's own service keeps the app alive too.
-- **No audio files.** Every sound is synthesised on the phone in real time (`service/ambient/AmbientSynth.kt`): filtered and modulated noise plus randomly timed events (rain drops, fire crackles and pops, cup clinks, a murmur of voices, page turns, pencil strokes, distant footsteps). Nothing to license, and the APK does not grow. See `NOTICE.md`.
+- **No audio files** (until 1.7.1, which replaced Rain, Waves and Café with recordings). Every sound was synthesised on the phone in real time (`service/ambient/AmbientSynth.kt`): filtered and modulated noise plus randomly timed events (fire crackles and pops, page turns, pencil strokes, distant footsteps). See `NOTICE.md`.
 
 ## 1.6.0: Flowstate for Windows, one-device timer, synced stats
 
