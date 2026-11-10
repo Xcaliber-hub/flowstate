@@ -54,10 +54,7 @@ jobs:
           path: Flowstate-${{ steps.version.outputs.name }}.msi
 
       # Adds the MSI to the existing release v<versionName>; the APK, notes and "latest" flag stay as they are.
-      # Attach step paused for the 1.8.0 build at Aditya's request: the MSI is built and uploaded
-      # as an artifact, and the v1.8.0 release (MSI only) is created manually. Restored afterwards.
       - name: Attach to GitHub Release
-        if: false
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.name }}
