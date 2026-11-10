@@ -103,7 +103,7 @@ compose.desktop {
         mainClass = "com.flowstate.desktop.MainKt"
         jvmArgs += listOf("-Dfile.encoding=UTF-8")
         nativeDistributions {
-            targetFormats(TargetFormat.Msi)
+            targetFormats(TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Flowstate"
             packageVersion = appVersion
             description = "Flowstate focus timer"
@@ -121,6 +121,10 @@ compose.desktop {
                 // Fixed forever: lets a newer MSI upgrade the installed app in place.
                 upgradeUuid = "c542406e-4042-4518-976c-b91ae9567872"
                 iconFile.set(project.file("icons/flowstate.ico"))
+            }
+            linux {
+                // The same desktop app packaged for Linux (e.g. a Chromebook's Linux container).
+                iconFile.set(project.file("src/main/resources/flowstate_icon.png"))
             }
         }
     }

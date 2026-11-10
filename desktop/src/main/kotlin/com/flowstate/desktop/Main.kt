@@ -216,7 +216,7 @@ fun App(model: AppModel) {
                     settings, model.settingsStore::update, cloud, account, AppDirs.root.absolutePath,
                     onOpenFolder = { runCatching { Desktop.getDesktop().open(AppDirs.root) } },
                     update = update,
-                    onDownloadUpdate = { update?.let { u -> runCatching { Desktop.getDesktop().browse(java.net.URI(u.msiUrl)) } } },
+                    onDownloadUpdate = { update?.let { u -> runCatching { Desktop.getDesktop().browse(java.net.URI(u.installerUrl)) } } },
                 )
             }
         }

@@ -1,0 +1,43 @@
+name: Build Linux app
+
+# Builds the Linux installer (Flowstate-<version>.deb) for the same Compose desktop app as the
+# Windows build — e.g. for installing in a Chromebook's Linux container. Manual only
+# (workflow_dispatch): it never fires on a push or alongside the APK/Windows workflows, and it does
+# not touch any GitHub Release; the .deb is uploaded as a run artifact and attached by hand.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      # jpackage builds the .deb (with its bundled runtime) on the Ubuntu runner.
+      - name: Build DEB
+        run: gradle :desktop:packageDeb --stacktrace
+
+      - name: Read version
+        id: version
+        run: echo "name=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
+      - name: Rename DEB
+        run: cp desktop/build/compose/binaries/main/deb/*.deb "Flowstate-${{ steps.version.outputs.name }}.deb"
+
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: flowstate-linux-deb
+          path: Flowstate-${{ steps.version.outputs.name }}.deb
+          if-no-files-found: error

@@ -9,13 +9,13 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-/** A newer Windows installer on the GitHub release page (the same releases the Android updater reads). */
-data class DesktopUpdate(val version: String, val msiUrl: String, val pageUrl: String)
+/** A newer desktop installer on the GitHub release page (the same releases the Android updater reads). */
+data class DesktopUpdate(val version: String, val installerUrl: String, val pageUrl: String)
 
 object UpdateCheck {
     private const val LATEST = "https://api.github.com/repos/Xcaliber-hub/flowstate/releases/latest"
 
-    /** Null when up to date, offline, or the latest release has no .msi yet. */
+    /** Null when up to date, offline, or the latest release has no installer for this OS yet. */
     fun latest(current: String = FlowstateConfig.VERSION): DesktopUpdate? = runCatching {
         val root = RestJson.parseToJsonElement(
             Http.send("GET", LATEST, headers = mapOf("Accept" to "application/vnd.github+json", "User-Agent" to "Flowstate-Windows"))
@@ -27,9 +27,10 @@ object UpdateCheck {
         if (root["draft"]?.jsonPrimitive?.booleanOrNull == true || root["prerelease"]?.jsonPrimitive?.booleanOrNull == true) return null
         val version = root["tag_name"]?.jsonPrimitive?.contentOrNull?.trimStart('v', 'V') ?: return null
         if (!isNewer(version, current)) return null
-        val msi = (root["assets"] as? JsonArray)?.map { it.jsonObject }
-            ?.firstOrNull { it["name"]?.jsonPrimitive?.contentOrNull?.endsWith(".msi", ignoreCase = true) == true } ?: return null
-        return DesktopUpdate(version, msi["browser_download_url"]?.jsonPrimitive?.contentOrNull ?: return null, root["html_url"]?.jsonPrimitive?.contentOrNull.orEmpty())
+        val ext = if (System.getProperty("os.name").orEmpty().startsWith("Windows")) ".msi" else ".deb"
+        val installer = (root["assets"] as? JsonArray)?.map { it.jsonObject }
+            ?.firstOrNull { it["name"]?.jsonPrimitive?.contentOrNull?.endsWith(ext, ignoreCase = true) == true } ?: return null
+        return DesktopUpdate(version, installer["browser_download_url"]?.jsonPrimitive?.contentOrNull ?: return null, root["html_url"]?.jsonPrimitive?.contentOrNull.orEmpty())
     }
 
     /** Same comparison as the Android UpdateChecker: numeric parts, suffixes ignored. */
