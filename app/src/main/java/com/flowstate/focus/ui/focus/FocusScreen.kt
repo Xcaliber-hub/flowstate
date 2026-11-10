@@ -138,7 +138,8 @@ fun FocusScreen(
 ) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val examsUi by examsVm.ui.collectAsStateWithLifecycle()
-    val today = remember { LocalDate.now() }
+    // 1.7.2: follows the date, so the D-Day card rolls over at midnight without reopening Focus.
+    val today by com.flowstate.focus.data.time.rememberToday()
     val examSheets = remember { com.flowstate.focus.ui.exams.ExamSheets() }
     var showMixer by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
@@ -183,7 +184,7 @@ fun FocusScreen(
         TopBarSpec(
             key = "focus",
             title = "Focus",
-            subtitle = LocalDate.now().format(DateTimeFormatter.ofPattern("EEE, d MMM")) + " · " + ui.mode.label,
+            subtitle = today.format(DateTimeFormatter.ofPattern("EEE, d MMM")) + " · " + ui.mode.label,
             progress = if (goalMs > 0) ui.todayMs / goalMs.toFloat() else null,
             menuTitle = if (ui.timer.isActive) "Timer mode · stop the timer to change" else "Timer mode",
             menu = TimerMode.entries.map { mode ->
@@ -266,23 +267,7 @@ fun FocusScreen(
     }
 
     pendingDelete?.let { session ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("Delete this session?") },
-            text = {
-                Text(
-                    "${formatDuration(session.durationMs)} of ${sessionLabel(session)} at ${sessionTime(session)} will be removed " +
-                        "from your history, stats and streak. This can't be undone."
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.deleteSession(session.id)
-                    pendingDelete = null
-                }) { AutoSizeText("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { AutoSizeText("Cancel") } },
-        )
+        com.flowstate.focus.ui.sessions.SessionDeleteDialog(session, onDismiss = { pendingDelete = null }, onDelete = { vm.deleteSession(it.id) })
     }
 }
 
@@ -728,18 +713,8 @@ private fun QuoteCard(liquid: Boolean) {
     }
 }
 
-private val SessionTimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-
-private fun sessionTime(s: SessionEntity): String =
-    Instant.ofEpochMilli(s.startedAt).atZone(ZoneId.systemDefault()).format(SessionTimeFormat)
-
-/** Subject if one was given, else the mode. Old sessions recorded in the retired Flow mode still read "Flow". */
-private fun sessionLabel(s: SessionEntity): String = s.subject.ifBlank { TimerMode.labelFor(s.mode) }
-
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SessionsCard(sessions: List<SessionEntity>, liquid: Boolean, onHold: (SessionEntity) -> Unit) {
-    val haptics = LocalHapticFeedback.current
     GlassCard(Modifier.fillMaxWidth(), liquid) {
         AutoSizeText("Today's sessions", style = MaterialTheme.typography.titleMedium)
         if (sessions.isNotEmpty()) {
@@ -757,37 +732,7 @@ private fun SessionsCard(sessions: List<SessionEntity>, liquid: Boolean, onHold:
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            sessions.take(8).forEach { s ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .combinedClickable(
-                            onClick = {},
-                            onLongClick = {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                onHold(s)
-                            },
-                            onLongClickLabel = "Delete session",
-                        )
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AutoSizeText(
-                        sessionTime(s),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(56.dp),
-                    )
-                    Text(
-                        sessionLabel(s),
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                    )
-                    Text(formatDuration(s.durationMs), style = MaterialTheme.typography.bodyLarge)
-                }
-            }
+            sessions.take(8).forEach { s -> com.flowstate.focus.ui.sessions.SessionRow(s, onHold) }
         }
     }
 }

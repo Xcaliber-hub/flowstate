@@ -63,7 +63,7 @@ fun FloatingNavBar(
     // Frosted glass: the screen blurs behind the bar as it scrolls.
     FrostedGlassSurface(
         shape = CircleShape,
-        modifier = modifier.widthIn(max = 600.dp).navigationBarsPadding().padding(bottom = 16.dp).offset(y = offsetY),
+        modifier = modifier.widthIn(max = 600.dp).navigationBarsPadding().padding(bottom = 16.dp).offset { androidx.compose.ui.unit.IntOffset(0, offsetY.roundToPx()) },
         tinted = true,
     ) {
         Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

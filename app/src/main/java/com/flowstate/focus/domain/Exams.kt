@@ -81,12 +81,13 @@ object ExamCountdown {
         }
     }
 
-    private val ShortFmt = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
-    private val LongFmt = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.getDefault())
+    // Built per call so a locale change while the app runs is picked up (lint ConstantLocale).
+    private fun shortFmt() = DateTimeFormatter.ofPattern("EEE, d MMM", Locale.getDefault())
+    private fun longFmt() = DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.getDefault())
 
     /** "Thu, 21 Jan" this year or next, "Thu, 21 Jan 2027" when the year matters. */
     fun shortDate(date: LocalDate, today: LocalDate): String =
-        if (date.year == today.year || (date.isAfter(today) && ChronoUnit.DAYS.between(today, date) < 300)) date.format(ShortFmt) else date.format(LongFmt)
+        if (date.year == today.year || (date.isAfter(today) && ChronoUnit.DAYS.between(today, date) < 300)) date.format(shortFmt()) else date.format(longFmt())
 
-    fun longDate(date: LocalDate): String = date.format(LongFmt)
+    fun longDate(date: LocalDate): String = date.format(longFmt())
 }

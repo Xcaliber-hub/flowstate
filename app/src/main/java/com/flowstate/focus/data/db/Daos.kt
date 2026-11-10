@@ -113,3 +113,18 @@ interface ExamDao {
         return if (exam.id == 0L) insert(exam) else { update(exam); exam.id }
     }
 }
+
+@Dao
+interface SyllabusDao {
+    @Query("SELECT * FROM syllabus_progress")
+    fun observeAll(): Flow<List<SyllabusProgressEntity>>
+
+    @Query("SELECT * FROM syllabus_progress WHERE chapterKey = :key")
+    suspend fun get(key: String): SyllabusProgressEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(row: SyllabusProgressEntity)
+
+    @Query("DELETE FROM syllabus_progress WHERE chapterKey = :key")
+    suspend fun delete(key: String)
+}

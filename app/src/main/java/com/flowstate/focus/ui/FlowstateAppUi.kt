@@ -75,6 +75,11 @@ object Routes {
     const val BLOCKED = "blocked"
     const val GROUP_CHAT = "group_chat"
     const val EXAMS = "exams"
+    const val WEEK_SESSIONS = "week_sessions"
+    /** 1.8.0: one subject of one exam's syllabus, opened from the Syllabus tab of Tasks. */
+    const val SYLLABUS_SUBJECT = "syllabus/{exam}/{subject}"
+    fun syllabusSubject(examId: String, subject: String): String =
+        "syllabus/" + android.net.Uri.encode(examId) + "/" + android.net.Uri.encode(subject)
 }
 
 private val Tabs = listOf(
@@ -145,9 +150,33 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
                 composable(Routes.EXAMS) { com.flowstate.focus.ui.exams.ExamsScreen() }
                 composable(Routes.GROUPS) { GroupsScreen(settings, onOpenFocus = { nav.navigate(Routes.FOCUS) { launchSingleTop = true } }, onOpenChat = { nav.navigate(Routes.GROUP_CHAT) { launchSingleTop = true } }) }
                 composable(Routes.GROUP_CHAT) { GroupChatScreen(onBack = { nav.popBackStack() }) }
-                composable(Routes.TASKS) { TasksScreen(settings) }
+                composable(Routes.TASKS) {
+                    TasksScreen(settings, onOpenSubject = { exam, subject -> nav.navigate(Routes.syllabusSubject(exam, subject)) { launchSingleTop = true } })
+                }
+                composable(
+                    Routes.SYLLABUS_SUBJECT,
+                    arguments = listOf(
+                        androidx.navigation.navArgument("exam") { type = androidx.navigation.NavType.StringType },
+                        androidx.navigation.navArgument("subject") { type = androidx.navigation.NavType.StringType },
+                    ),
+                ) { entry ->
+                    com.flowstate.focus.ui.syllabus.SyllabusSubjectScreen(
+                        examId = entry.arguments?.getString("exam").orEmpty(),
+                        subjectName = entry.arguments?.getString("subject").orEmpty(),
+                        liquid = settings.liquidUi,
+                        // "Focus on this": switch to the Focus tab the same way the nav bar does.
+                        onOpenFocus = {
+                            nav.navigate(Routes.FOCUS) {
+                                popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                    )
+                }
                 composable(Routes.STATS) { StatsScreen(settings) }
-                composable(Routes.SETTINGS) { SettingsScreen(onOpenBlockedApps = { nav.navigate(Routes.BLOCKED) }) }
+                composable(Routes.SETTINGS) { SettingsScreen(onOpenBlockedApps = { nav.navigate(Routes.BLOCKED) }, onOpenWeekSessions = { nav.navigate(Routes.WEEK_SESSIONS) { launchSingleTop = true } }) }
+                composable(Routes.WEEK_SESSIONS) { com.flowstate.focus.ui.sessions.WeekSessionsScreen(settings.liquidUi) }
                 composable(Routes.BLOCKED) { BlockedAppsScreen(onBack = { nav.popBackStack() }) }
             }
             // Screen content scrolls under a soft blur at the top; the nav dock and bar stay crisp above it.
@@ -156,9 +185,15 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
                 TopBlur(contentLayer, Modifier.align(Alignment.TopCenter))
                 if (navLayout == NavLayout.BOTTOM) BottomBlur(contentLayer, Modifier.align(Alignment.BottomCenter))
             }
-            // The Exams screen (1.7.0) keeps the frosted bar and the nav, with Focus highlighted.
-            if (Tabs.any { it.route == route } || route == Routes.EXAMS) {
-                val selectedRoute = if (route == Routes.EXAMS) Routes.FOCUS else route
+            // The Exams screen (1.7.0) keeps the frosted bar and the nav, with Focus highlighted; This week's
+            // sessions (1.7.2) does the same with Settings highlighted.
+            if (Tabs.any { it.route == route } || route == Routes.EXAMS || route == Routes.WEEK_SESSIONS || route == Routes.SYLLABUS_SUBJECT) {
+                val selectedRoute = when (route) {
+                    Routes.EXAMS -> Routes.FOCUS
+                    Routes.WEEK_SESSIONS -> Routes.SETTINGS
+                    Routes.SYLLABUS_SUBJECT -> Routes.TASKS
+                    else -> route
+                }
                 // Frosted top bar: back, the screen's title pill and, where it has options, the three-line menu.
                 val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                 val barStart = if (navLayout == NavLayout.SIDE) 8.dp + SideDockWidth + 10.dp else 16.dp

@@ -9,6 +9,9 @@
     <!-- 1.7.0 ambient sounds keep playing with the screen off. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- 1.7.2: the phase-end alarm wakes the phone on time when a focus block or break ends. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- In-app updates: lets Flowstate open the system installer for a downloaded release APK. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
@@ -41,19 +44,19 @@
             </intent-filter>
         </activity>
 
+        <!-- 1.7.2: also hosts the ambient sounds (one service, one notification). -->
         <service
             android:name=".service.TimerService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|mediaPlayback">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="focus_timer" />
         </service>
 
-        <service
-            android:name=".service.ambient.AmbientService"
-            android:exported="false"
-            android:foregroundServiceType="mediaPlayback" />
+        <receiver
+            android:name=".service.PhaseAlarmReceiver"
+            android:exported="false" />
 
         <service
             android:name=".service.FocusBlockerService"

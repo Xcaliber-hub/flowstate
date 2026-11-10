@@ -6,6 +6,7 @@ import com.flowstate.focus.data.db.AppDatabase
 import com.flowstate.focus.data.db.SessionDao
 import com.flowstate.focus.data.db.TaskDao
 import com.flowstate.focus.data.db.ExamDao
+import com.flowstate.focus.data.db.SyllabusDao
 import com.flowstate.focus.data.repo.SessionRepository
 import com.flowstate.focus.data.repo.SessionRepositoryImpl
 import com.flowstate.focus.data.repo.TaskRepository
@@ -25,7 +26,7 @@ object DatabaseModule {
     @Singleton
     fun database(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "flowstate.db")
-            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3, AppDatabase.MIGRATION_3_4)
             .build()
 
     @Provides
@@ -36,6 +37,9 @@ object DatabaseModule {
 
     @Provides
     fun examDao(db: AppDatabase): ExamDao = db.examDao()
+
+    @Provides
+    fun syllabusDao(db: AppDatabase): SyllabusDao = db.syllabusDao()
 }
 
 @Module

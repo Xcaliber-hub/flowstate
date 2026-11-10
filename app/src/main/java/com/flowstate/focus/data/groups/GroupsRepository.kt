@@ -447,19 +447,39 @@ class GroupsRepository @Inject constructor(
         val url = readResource(R.string.flowstate_push_url)
         if (url.isBlank()) return
         scope.launch {
-            runCatching {
-                val token = authRequired().currentUser?.getIdToken(false)?.await()?.token ?: return@runCatching
-                val conn = (java.net.URL(url.trimEnd('/') + "/notify").openConnection() as java.net.HttpURLConnection).apply {
-                    requestMethod = "POST"; connectTimeout = 8_000; readTimeout = 8_000; doOutput = true
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("Authorization", "Bearer $token")
+            // 1.7.2: a dropped connection, a cold Worker (5xx) or an expired token used to lose the push
+            // for good. Retry twice with a short backoff; a 401 retries once with a fresh ID token.
+            var forceRefresh = false
+            for (attempt in 0 until PUSH_ATTEMPTS) {
+                val result = runCatching { postPush(url, groupId, messageId, forceRefresh) }
+                val code = result.getOrNull()
+                when {
+                    code == null && result.isSuccess -> return@launch // signed out: nothing to send
+                    code != null && code in 200..299 -> return@launch
+                    code == 401 && !forceRefresh -> forceRefresh = true
+                    code != null && code in 400..499 && code != 408 && code != 429 -> {
+                        Log.w("Flowstate", "Push relay answered $code"); return@launch
+                    }
+                    else -> Log.w("Flowstate", "Push relay attempt ${attempt + 1} failed (${code ?: result.exceptionOrNull()})")
                 }
-                val body = org.json.JSONObject().put("groupId", groupId).put("messageId", messageId).toString()
-                conn.outputStream.use { it.write(body.toByteArray()) }
-                val code = conn.responseCode
-                if (code !in 200..299) Log.w("Flowstate", "Push relay answered $code")
-                conn.disconnect()
-            }.onFailure { Log.w("Flowstate", "Push relay failed", it) }
+                if (attempt < PUSH_ATTEMPTS - 1) kotlinx.coroutines.delay(2_000L * (attempt + 1))
+            }
+        }
+    }
+
+    /** One POST to the relay: the HTTP status, or null when signed out. */
+    private suspend fun postPush(url: String, groupId: String, messageId: String, forceRefresh: Boolean): Int? {
+        val token = authRequired().currentUser?.getIdToken(forceRefresh)?.await()?.token ?: return null
+        val conn = (java.net.URL(url.trimEnd('/') + "/notify").openConnection() as java.net.HttpURLConnection)
+        try {
+            conn.requestMethod = "POST"; conn.connectTimeout = 8_000; conn.readTimeout = 8_000; conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("Authorization", "Bearer $token")
+            val body = org.json.JSONObject().put("groupId", groupId).put("messageId", messageId).toString()
+            conn.outputStream.use { it.write(body.toByteArray()) }
+            return conn.responseCode
+        } finally {
+            conn.disconnect()
         }
     }
 
@@ -719,7 +739,7 @@ class GroupsRepository @Inject constructor(
     private fun emailOk(s: String) = s.trim().length <= 254 && android.util.Patterns.EMAIL_ADDRESS.matcher(s.trim()).matches()
     private fun weekStartIst(now: Long): Long = weeklyWeekStartIst(now)
     private fun weekKey(ms: Long): String = weeklyWeekKeyIst(ms)
-    private companion object { const val APP_NAME="flowstate-groups"; const val MAX_GROUP_SIZE=20; const val WEEK_MS=7*24*60*60*1000L; const val ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const val LEGACY_RETRY_MS=15*60_000L }
+    private companion object { const val APP_NAME="flowstate-groups"; const val MAX_GROUP_SIZE=20; const val WEEK_MS=7*24*60*60*1000L; const val ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const val LEGACY_RETRY_MS=15*60_000L; const val PUSH_ATTEMPTS=3 }
 }
 
 private const val PING_RETRY_MS = 15_000L

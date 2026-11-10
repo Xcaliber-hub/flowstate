@@ -189,18 +189,36 @@ internal class SampleVoice private constructor(
         pos = x
     }
 
+    @Volatile private var failures = 0
+
+    /** Built once, so asking for the recording allocates nothing on the audio thread. */
+    private val loadJob = Runnable {
+        val s = sound ?: return@Runnable
+        val ld = loader ?: return@Runnable
+        val got = runCatching { ld.load(s) }.getOrNull()
+        if (got != null && got.frames > 1) pcm = got
+        // A failed decode is retried (twice) the next time the sound is turned up, instead of staying
+        // silent until the app restarts.
+        else if (++failures < MAX_ATTEMPTS) requested = false
+    }
+
     private fun request() {
         requested = true
-        val s = sound ?: return
-        val ld = loader ?: return
-        DECODER.execute {
-            val got = runCatching { ld.load(s) }.getOrNull()
-            if (got != null && got.frames > 1) pcm = got
-        }
+        if (sound == null || loader == null) return
+        runCatching { DECODER.execute(loadJob) }.onFailure { requested = false }
     }
 
     companion object {
         private const val PCM_SCALE = 1f / 32768f
+        private const val MAX_ATTEMPTS = 3
+
+        /**
+         * Starts decoding [sound] in the background ahead of its first render (1.7.2), so a sound that is
+         * switched on is usually ready by the time it is audible. Safe to call often: the loader caches.
+         */
+        fun prefetch(loader: SampleLoader, sound: AmbientSound) {
+            runCatching { DECODER.execute { runCatching { loader.load(sound) } } }
+        }
         /** One low-priority daemon thread for every first decode. */
         private val DECODER: ExecutorService = Executors.newSingleThreadExecutor { job ->
             Thread(job, "flowstate-ambient-decode").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }

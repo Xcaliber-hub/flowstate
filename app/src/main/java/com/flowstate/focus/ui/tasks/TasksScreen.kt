@@ -63,6 +63,10 @@ import com.flowstate.focus.ui.components.screenContentPadding
 import com.flowstate.focus.ui.components.ScreenTopBar
 import com.flowstate.focus.ui.components.TopBarMenuItem
 import com.flowstate.focus.ui.components.TopBarSpec
+import com.flowstate.focus.domain.SyllabusMath
+import com.flowstate.focus.ui.syllabus.SyllabusViewModel
+import com.flowstate.focus.ui.syllabus.TasksSyllabusToggle
+import com.flowstate.focus.ui.syllabus.syllabusOverviewItems
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -70,15 +74,42 @@ import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TasksScreen(settings: AppSettings, vm: TasksViewModel = hiltViewModel()) {
+fun TasksScreen(
+    settings: AppSettings,
+    onOpenSubject: (examId: String, subject: String) -> Unit = { _, _ -> },
+    vm: TasksViewModel = hiltViewModel(),
+    syllabusVm: SyllabusViewModel = hiltViewModel(),
+) {
     val tasks by vm.tasks.collectAsStateWithLifecycle()
+    // 1.8.0: Tasks | Syllabus. The last tab and exam are remembered on the device.
+    val tab by syllabusVm.tab.collectAsStateWithLifecycle()
+    val examId by syllabusVm.examId.collectAsStateWithLifecycle()
+    val syllabus by syllabusVm.ui.collectAsStateWithLifecycle()
+    val onSyllabus = tab == SyllabusViewModel.TAB_SYLLABUS
+    val exam = syllabus.syllabus.exam(examId) ?: syllabus.syllabus.exams.firstOrNull()
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
     var showSheet by rememberSaveable { mutableStateOf(false) }
 
     val visible = remember(tasks, filter) { tasks.filter { filter == null || it.category == filter } }
     val doneCount = visible.count { it.done }
 
-    ScreenTopBar(
+    if (onSyllabus) {
+        val overall = remember(exam, syllabus.progress) {
+            exam?.let { e -> SyllabusMath.stats(e.subjects.flatMap { s -> s.chapters.map { syllabus.progressOf(s.name, it) } }) }
+        }
+        ScreenTopBar(
+            TopBarSpec(
+                key = "tasks",
+                title = "Tasks",
+                subtitle = "Syllabus · " + (exam?.chip ?: "loading"),
+                progress = overall?.fraction ?: 0f,
+                menuTitle = "Exam",
+                menu = syllabus.syllabus.exams.map { e ->
+                    TopBarMenuItem(e.chip, e.title, selected = e.id == exam?.id) { syllabusVm.selectExam(e.id) }
+                },
+            ),
+        )
+    } else ScreenTopBar(
         TopBarSpec(
             key = "tasks",
             title = "Tasks",
@@ -98,6 +129,13 @@ fun TasksScreen(settings: AppSettings, vm: TasksViewModel = hiltViewModel()) {
                 contentPadding = screenContentPadding(),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                item(key = "tab-toggle") { TasksSyllabusToggle(tab, syllabusVm::setTab) }
+                if (onSyllabus) {
+                    syllabusOverviewItems(syllabus, exam, settings.liquidUi, onSelectExam = syllabusVm::selectExam) { subject ->
+                        exam?.let { onOpenSubject(it.id, subject) }
+                    }
+                    return@LazyColumn
+                }
                 item(key = "progress") {
                     Entrance(1) {
                         GlassCard(Modifier.fillMaxWidth(), settings.liquidUi) {
@@ -131,7 +169,7 @@ fun TasksScreen(settings: AppSettings, vm: TasksViewModel = hiltViewModel()) {
                 }
             }
         }
-        ExtendedFloatingActionButton(
+        if (!onSyllabus) ExtendedFloatingActionButton(
             onClick = { showSheet = true },
             icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
             text = { Text("New task") },

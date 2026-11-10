@@ -39,13 +39,13 @@ data class StatsUiState(
 class StatsViewModel @Inject constructor(
     settingsRepo: SettingsRepository,
     sessionRepo: SessionRepository,
+    todayProvider: com.flowstate.focus.data.time.TodayProvider,
 ) : ViewModel() {
 
     private val period = MutableStateFlow(StatsPeriod.WEEK)
     private val since = LocalDate.now().minusDays(400).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-    val ui: StateFlow<StatsUiState> = combine(period, settingsRepo.settings, sessionRepo.sessionsSince(since)) { p, settings, all ->
-        val today = LocalDate.now()
+    val ui: StateFlow<StatsUiState> = combine(period, settingsRepo.settings, sessionRepo.sessionsSince(since), todayProvider.today) { p, settings, all, today ->
         val perDay = StatsCalculator.perDay(all)
         val inPeriod = StatsCalculator.inPeriod(all, p, today)
         val completed = inPeriod.count { it.completed }

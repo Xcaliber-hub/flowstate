@@ -111,7 +111,7 @@ class AmbientController @Inject constructor(
         player.setTargets(gains)
         player.setAudible(audible, if (audible) 1200 else fadeOutMs)
         _state.value = AmbientState(m, isOn, audible, hold, if (m.follow == FollowTimer.MINUTES_30 && isOn) until else 0L)
-        if (isOn) AmbientService.ensureRunning(context)
+        if (isOn) com.flowstate.focus.service.TimerService.ensureRunning(context)
     }
 
     fun toggle() = if (on.value) pause() else play()

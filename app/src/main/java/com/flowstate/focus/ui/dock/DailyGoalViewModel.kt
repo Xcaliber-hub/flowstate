@@ -29,15 +29,16 @@ class DailyGoalViewModel @Inject constructor(
     engine: TimerEngine,
     settingsRepo: SettingsRepository,
     sessionRepo: SessionRepository,
+    todayProvider: com.flowstate.focus.data.time.TodayProvider,
 ) : ViewModel() {
     // Two days back covers a session that started before midnight; perDay files it by its start date.
     private val since = LocalDate.now().minusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
     val state: StateFlow<DailyGoalState> = combine(
-        engine.state, settingsRepo.settings, sessionRepo.sessionsSince(since),
-    ) { timer, settings, sessions ->
+        engine.state, settingsRepo.settings, sessionRepo.sessionsSince(since), todayProvider.today,
+    ) { timer, settings, sessions, today ->
         DailyGoalState(
-            recordedTodayMs = StatsCalculator.perDay(sessions)[LocalDate.now()] ?: 0L,
+            recordedTodayMs = StatsCalculator.perDay(sessions)[today] ?: 0L,
             goalMin = settings.dailyGoalMin,
             timer = timer,
         )

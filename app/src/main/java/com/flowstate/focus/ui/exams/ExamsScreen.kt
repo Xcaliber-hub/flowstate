@@ -110,7 +110,7 @@ private val AddedFormat = DateTimeFormatter.ofPattern("d MMM")
 @Composable
 fun ExamsScreen(vm: ExamsViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val today = remember { LocalDate.now() }
+    val today by com.flowstate.focus.data.time.rememberToday()
     val sheets = remember { ExamSheets() }
     var showDone by rememberSaveable { mutableStateOf(true) }
     val main = ExamCountdown.main(ui.exams, today)

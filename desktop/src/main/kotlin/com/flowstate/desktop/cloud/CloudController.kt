@@ -52,7 +52,7 @@ class CloudController(
     private val syncPrefs: SyncPrefsStore,
     val auth: AuthClient,
 ) {
-    private val db = Firestore { auth.idToken() }
+    private val db = Firestore { force -> auth.idToken(force) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _state = MutableStateFlow(CloudState(configured = auth.configured))
     val state: StateFlow<CloudState> = _state.asStateFlow()
@@ -61,6 +61,9 @@ class CloudController(
     private var loops: Job? = null
     private val lockMutex = Mutex()
     private val publishMutex = Mutex()
+    private val groupsMutex = Mutex()
+    /** Keeps one bad poll from emptying the Groups list (1.8.0 desktop fix). */
+    private val groupsGuard = EmptyListGuard()
     /** True while this PC is the holder written in the lock doc. */
     @Volatile private var holdingLock = false
     @Volatile var windowFocused: Boolean = true
@@ -112,6 +115,7 @@ class CloudController(
             holdingLock = false
             sessions.deletePulled(deviceId)
             if (old != null) syncPrefs.update { it.copy(lastPull = it.lastPull - old) }
+            groupsMutex.withLock { groupsGuard.reset() }
             _state.value = CloudState(configured = auth.configured)
         }
     }
@@ -147,7 +151,25 @@ class CloudController(
     private fun startLoops(uid: String) {
         loops?.cancel()
         loops = scope.launch {
-            launch { runCatching { refreshGroups() }.onFailure(::report) }
+            groupsMutex.withLock { groupsGuard.reset() }
+            // Groups: right away, then every 90 s (30 s while the Groups screen is open). A failure never
+            // stops the loop; it retries with backoff (5 s, 10 s, 20 s … 5 min) and keeps the last good list.
+            launch {
+                var failures = 0
+                while (isActive) {
+                    try {
+                        refreshGroups()
+                        failures = 0
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Throwable) {
+                        failures++
+                        groupsMutex.withLock { groupsGuard.onFailure() }
+                        onGroupsPollFailed(e, failures)
+                    }
+                    delay(if (failures > 0) pollBackoffMs(failures) else if (groupsVisible) 30_000L else 90_000L)
+                }
+            }
             // Timer lock: read first, so a session the phone took over while this PC was closed is not resumed here.
             launch {
                 runCatching { pollLock(initial = true) }
@@ -179,13 +201,7 @@ class CloudController(
             launch {
                 while (isActive) {
                     delay(if (groupsVisible) 15_000L else 60_000L)
-                    runCatching { if (groupsVisible) refreshMembers() }
-                }
-            }
-            launch {
-                while (isActive) {
-                    delay(90_000L)
-                    runCatching { refreshGroups() }
+                    try { if (groupsVisible) refreshMembers() } catch (e: CancellationException) { throw e } catch (_: Throwable) {}
                 }
             }
             launch {
@@ -339,16 +355,39 @@ class CloudController(
 
     // ---------------------------------------------------------------- groups
 
+    /**
+     * Reloads the groups this account is in. Throws on any failed or partial query, so the caller keeps the
+     * last good list. A doc without a name is still listed (by a fallback name), never dropped; an empty
+     * result replaces a non-empty list only as [EmptyListGuard] allows.
+     */
     private suspend fun refreshGroups() {
-        val u = uid ?: return
+        val u = uid?.takeIf { it.isNotBlank() } ?: return
         val docs = db.runQuery("", Q.query("groups", Q.filter("memberIds", "ARRAY_CONTAINS", u)))
-        val groups = docs.mapNotNull { d -> d.string("name")?.let { Group(d.id, it, d.strings("memberIds")) } }.sortedBy { it.name.lowercase(Locale.ROOT) }
-        val selected = _state.value.selectedGroupId?.takeIf { id -> groups.any { it.id == id } } ?: groups.firstOrNull()?.id
-        val changed = selected != _state.value.selectedGroupId
-        _state.update { it.copy(groups = groups, selectedGroupId = selected) }
-        if (changed) { resetChat(selected); refreshMembers() }
-        refreshLastMessages(groups, u)
+        if (uid != u) return // signed out or switched account while the query ran
+        val fresh = docs.map { d -> Group(d.id, d.string("name")?.trim()?.ifBlank { null } ?: "Unnamed group", d.strings("memberIds")) }
+            .sortedBy { it.name.lowercase(Locale.ROOT) }
+        val (groups, changed) = groupsMutex.withLock {
+            val shown = groupsGuard.accept(_state.value.groups, fresh) ?: _state.value.groups
+            val selected = _state.value.selectedGroupId?.takeIf { id -> shown.any { it.id == id } } ?: shown.firstOrNull()?.id
+            val changed = selected != _state.value.selectedGroupId
+            _state.update { it.copy(groups = shown, selectedGroupId = selected) }
+            shown to changed
+        }
+        if (changed) { resetChat(_state.value.selectedGroupId); runCatching { refreshMembers() } }
+        runCatching { refreshLastMessages(groups, u) }
         publishMembersQuietly()
+    }
+
+    private fun onGroupsPollFailed(e: Throwable, failures: Int) {
+        // The token refresh rejected this PC's sign-in (password changed, account disabled): say so instead of
+        // polling forever with a stale "signed in" screen.
+        if (auth.session == null && _state.value.user != null) {
+            loops?.cancel(); loops = null
+            _state.value = CloudState(configured = auth.configured, error = "Your sign-in expired. Sign in again.")
+            return
+        }
+        // Stay quiet on a single network blip while a list is shown; surface persistent or access problems.
+        if (_state.value.groups.isEmpty() || failures >= 3 || (e is CloudException && e.permissionDenied)) report(e)
     }
 
     private suspend fun refreshLastMessages(groups: List<Group>, u: String) {
@@ -417,11 +456,20 @@ class CloudController(
     fun leaveGroup() = busy {
         val u = uid ?: error("Sign in first.")
         val g = _state.value.selectedGroup ?: error("Select a group first.")
-        val doc = db.get("groups/${g.id}") ?: error("Group no longer exists.")
+        val doc = db.get("groups/${g.id}")
+        if (doc == null) {
+            // Deleted elsewhere: an empty list afterwards is real.
+            groupsMutex.withLock { groupsGuard.allowNextEmpty() }
+            _state.update { st -> st.copy(groups = st.groups.filter { it.id != g.id }, selectedGroupId = null, members = emptyList()) }
+            refreshGroups()
+            error("Group no longer exists.")
+        }
         val members = doc.strings("memberIds")
         if (members.contains(u)) db.commit(listOf(updateMembers(g.id, members - u, doc)))
         runCatching { db.commit(listOf(db.deleteWrite("groups/${g.id}/members/$u"))) }
-        _state.update { it.copy(selectedGroupId = null, members = emptyList()) }
+        // Confirmed leave: drop it now, and let an empty result through if it was the last group.
+        groupsMutex.withLock { groupsGuard.allowNextEmpty() }
+        _state.update { st -> st.copy(groups = st.groups.filter { it.id != g.id }, selectedGroupId = null, members = emptyList()) }
         refreshGroups()
     }
 

@@ -101,7 +101,7 @@ data class FsDoc(val name: String, val fields: Map<String, Any?>, val updateTime
 
     companion object {
         fun parse(o: JsonObject): FsDoc = FsDoc(
-            name = o["name"]?.jsonPrimitive?.content.orEmpty(),
+            name = (o["name"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
             fields = (o["fields"] as? JsonObject)?.mapValues { fromFs(it.value) } ?: emptyMap(),
             updateTime = o["updateTime"]?.jsonPrimitive?.contentOrNull?.let { runCatching { Instant.parse(it) }.getOrNull() },
         )
@@ -112,34 +112,50 @@ data class FsDoc(val name: String, val fields: Map<String, Any?>, val updateTime
  * Minimal Cloud Firestore REST client (get, runQuery, commit) authenticated with the user's Firebase
  * ID token, so the same security rules apply as on Android.
  */
-class Firestore(private val token: suspend () -> String) {
+class Firestore(private val token: suspend (forceRefresh: Boolean) -> String) {
     private val root = "projects/${FlowstateConfig.FIREBASE_PROJECT_ID}/databases/(default)/documents"
     private val base = "https://firestore.googleapis.com/v1/"
 
     fun docName(path: String) = "$root/$path"
 
-    private suspend fun headers() = mapOf("Authorization" to "Bearer ${token()}")
+    /**
+     * Runs [call] with a Bearer token. A blank token never goes out (it would be answered as an anonymous
+     * request). On 401/403 the call is retried once with a force-refreshed token, which covers an ID
+     * token that expired early or was revoked server-side; a real rules denial fails again and is thrown.
+     */
+    private suspend fun <T> authed(call: (Map<String, String>) -> T): T {
+        suspend fun headers(force: Boolean): Map<String, String> {
+            val t = token(force)
+            if (t.isBlank()) throw CloudException(401, "UNAUTHENTICATED", "Sign in first.")
+            return mapOf("Authorization" to "Bearer $t")
+        }
+        return try {
+            call(headers(false))
+        } catch (e: CloudException) {
+            if (e.status != 401 && e.status != 403) throw e
+            call(headers(true))
+        }
+    }
 
     /** Null when the document does not exist. */
     suspend fun get(path: String): FsDoc? = try {
-        FsDoc.parse(RestJson.parseToJsonElement(Http.send("GET", base + docName(path), headers = headers())).jsonObject)
+        authed { h -> FsDoc.parse(RestJson.parseToJsonElement(Http.send("GET", base + docName(path), headers = h)).jsonObject) }
     } catch (e: CloudException) {
         if (e.notFound) null else throw e
     }
 
-    /** Runs a structured query under [parentPath] ("" for the database root). */
+    /** Runs a structured query under [parentPath] ("" for the database root). Throws on any error entry; see [parseRunQuery]. */
     suspend fun runQuery(parentPath: String, structuredQuery: JsonObject): List<FsDoc> {
         val parent = if (parentPath.isEmpty()) root else "$root/$parentPath"
         val body = buildJsonObject { put("structuredQuery", structuredQuery) }.toString()
-        val res = RestJson.parseToJsonElement(Http.send("POST", "$base$parent:runQuery", body, headers())).jsonArray
-        return res.mapNotNull { (it.jsonObject["document"] as? JsonObject)?.let(FsDoc::parse) }
+        return authed { h -> parseRunQuery(Http.send("POST", "$base$parent:runQuery", body, h)) }
     }
 
     /** Applies [writes] atomically (at most 500). Returns the commit time. */
     suspend fun commit(writes: List<JsonObject>): Instant? {
         if (writes.isEmpty()) return null
         val body = buildJsonObject { put("writes", JsonArray(writes)) }.toString()
-        val res = RestJson.parseToJsonElement(Http.send("POST", "$base$root:commit", body, headers())).jsonObject
+        val res = authed { h -> RestJson.parseToJsonElement(Http.send("POST", "$base$root:commit", body, h)).jsonObject }
         return res["commitTime"]?.jsonPrimitive?.contentOrNull?.let { runCatching { Instant.parse(it) }.getOrNull() }
     }
 
@@ -158,6 +174,45 @@ class Firestore(private val token: suspend () -> String) {
     }
 
     fun deleteWrite(path: String): JsonObject = buildJsonObject { put("delete", docName(path)) }
+}
+
+/**
+ * Decodes a `:runQuery` response body. The REST API streams a JSON array and can answer HTTP 200 with an
+ * `{"error": …}` element (for example when the query fails after the response has started), so a 200 is
+ * not proof of success. Rules:
+ *  - an `error` element anywhere fails the whole query (a [CloudException] with the element's code and status);
+ *  - a body that is not a complete JSON array (cut off, HTML from a proxy) fails as MALFORMED_RESPONSE;
+ *  - a `document` without a decodable `name` fails as MALFORMED_RESPONSE rather than being silently dropped;
+ *  - entries with only `readTime` / `skippedResults` carry no document and are skipped (an empty result is
+ *    exactly one such entry).
+ * Callers therefore only ever see a list that the server really returned in full.
+ */
+fun parseRunQuery(body: String): List<FsDoc> {
+    fun malformed(why: String) = CloudException(200, "MALFORMED_RESPONSE", "Firestore returned an unreadable query result ($why).")
+    val root = try { RestJson.parseToJsonElement(body) } catch (e: Exception) { throw malformed("not JSON") }
+    val array = root as? JsonArray ?: run {
+        // A bare error object (some proxies and older endpoints answer this way).
+        (root as? JsonObject)?.get("error")?.let { throw queryError(it) }
+        throw malformed("not an array")
+    }
+    val docs = ArrayList<FsDoc>(array.size)
+    array.forEach { el ->
+        val o = el as? JsonObject ?: throw malformed("entry is not an object")
+        o["error"]?.let { throw queryError(it) }
+        val d = o["document"] ?: return@forEach
+        val doc = (d as? JsonObject)?.let { runCatching { FsDoc.parse(it) }.getOrNull() } ?: throw malformed("document is not an object")
+        if (doc.name.isBlank() || doc.id.isBlank()) throw malformed("document without a name")
+        docs += doc
+    }
+    return docs
+}
+
+private fun queryError(err: JsonElement): CloudException {
+    val o = err as? JsonObject
+    val code = (o?.get("code") as? JsonPrimitive)?.contentOrNull?.toIntOrNull()?.takeIf { it in 400..599 } ?: 500
+    val msg = (o?.get("message") as? JsonPrimitive)?.contentOrNull ?: (err as? JsonPrimitive)?.contentOrNull ?: "Query failed"
+    val status = (o?.get("status") as? JsonPrimitive)?.contentOrNull ?: "QUERY_ERROR"
+    return CloudException(code, status, msg)
 }
 
 // ---- Structured query helpers ----

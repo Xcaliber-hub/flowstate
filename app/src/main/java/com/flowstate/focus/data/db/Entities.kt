@@ -54,3 +54,27 @@ data class ExamEntity(
     val pinned: Boolean = false,
     val createdAt: Long,
 )
+
+/**
+ * 1.8.0 (database version 4): one syllabus chapter's progress. Local only, never synced.
+ *
+ * [key] is subject + normalised chapter name ([com.flowstate.focus.domain.SyllabusKeys.chapterKey]),
+ * so a chapter shared by JEE, NEET and IAT is a single row and is ticked once for all of them.
+ * Each `…At` column is when that step was ticked (epoch ms), null while unticked.
+ */
+@Entity(tableName = "syllabus_progress")
+data class SyllabusProgressEntity(
+    @PrimaryKey @androidx.room.ColumnInfo(name = "chapterKey") val key: String,
+    val doneAt: Long? = null,
+    val r1At: Long? = null,
+    val r2At: Long? = null,
+    val r3At: Long? = null,
+    val r4At: Long? = null,
+    val pyqAt: Long? = null,
+    val mockAt: Long? = null,
+    val pyqSets: Int = 0,
+    val pyqTarget: Int = 6,
+    val mocks: Int = 0,
+    val note: String = "",
+    val updatedAt: Long = 0,
+)

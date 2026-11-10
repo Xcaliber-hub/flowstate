@@ -26,8 +26,8 @@ android {
         applicationId = "com.flowstate.focus"
         minSdk = 26
         targetSdk = 35
-        versionCode = 32
-        versionName = "1.7.1"
+        versionCode = 34
+        versionName = "1.8.0"
     }
 
     signingConfigs {
@@ -57,6 +57,9 @@ android {
     buildFeatures { compose = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
+
+// 1.7.2: Room schemas are exported to app/schemas so migrations can be checked against them (MigrationSchemaTest).
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
 
 dependencies {
     implementation(libs.androidx.core.ktx)
@@ -88,5 +91,8 @@ dependencies {
     implementation("com.google.firebase:firebase-messaging")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.9.0")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.xerial:sqlite-jdbc:3.46.1.3")
+    // 1.8.0: the syllabus parser uses org.json, which android.jar only stubs on the JVM.
+    testImplementation("org.json:json:20240303")
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

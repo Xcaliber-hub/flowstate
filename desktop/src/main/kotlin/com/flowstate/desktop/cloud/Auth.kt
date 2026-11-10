@@ -62,10 +62,14 @@ class AuthClient {
         file.save(AuthSession())
     }
 
-    /** A valid ID token, refreshed when it has less than five minutes left. */
-    suspend fun idToken(): String = mutex.withLock {
+    /**
+     * A valid ID token, refreshed when it has less than five minutes left or when [forceRefresh] is set
+     * (a request was just answered 401/403 with the cached token).
+     */
+    suspend fun idToken(forceRefresh: Boolean = false): String = mutex.withLock {
         val s = session ?: throw CloudException(401, "UNAUTHENTICATED", "Sign in first.")
-        if (s.idToken.isNotBlank() && System.currentTimeMillis() < s.expiresAt - 5 * 60_000L) return@withLock s.idToken
+        if (s.uid.isBlank() || s.refreshToken.isBlank()) throw CloudException(401, "UNAUTHENTICATED", "Sign in first.")
+        if (!forceRefresh && s.idToken.isNotBlank() && System.currentTimeMillis() < s.expiresAt - 5 * 60_000L) return@withLock s.idToken
         withContext(Dispatchers.IO) {
             val res = try {
                 RestJson.parseToJsonElement(
@@ -73,12 +77,16 @@ class AuthClient {
                         Http.form("grant_type" to "refresh_token", "refresh_token" to s.refreshToken), contentType = "application/x-www-form-urlencoded")
                 ).jsonObject
             } catch (e: CloudException) {
-                // A revoked or expired refresh token (password changed, account disabled) signs this PC out.
-                if (e.status in 400..403) signOut()
+                // Only a refresh token the server has definitely rejected (password changed, account disabled
+                // or deleted) signs this PC out. Any other 4xx (a proxy, a quota hiccup, a captive portal) is
+                // treated like a network error: the session is kept and the next poll tries again.
+                if (isRevoked(e)) signOut()
                 throw e
             }
+            val fresh = res.str("id_token")?.takeIf { it.isNotBlank() }
+                ?: throw CloudException(502, "MALFORMED_RESPONSE", "Token refresh returned no ID token.")
             val next = s.copy(
-                idToken = res.str("id_token")!!, refreshToken = res.str("refresh_token") ?: s.refreshToken,
+                idToken = fresh, refreshToken = res.str("refresh_token")?.takeIf { it.isNotBlank() } ?: s.refreshToken,
                 expiresAt = System.currentTimeMillis() + (res.lng("expires_in") ?: 3600) * 1000,
             )
             session = next
@@ -103,6 +111,12 @@ class AuthClient {
         Http.send("POST", "https://identitytoolkit.googleapis.com/v1/$method?key=$key", body)
 
     companion object {
+        private val REVOKED = listOf("TOKEN_EXPIRED", "INVALID_REFRESH_TOKEN", "USER_DISABLED", "USER_NOT_FOUND")
+
+        /** True when the Secure Token API rejected the refresh token itself, so signing in again is the only fix. */
+        fun isRevoked(e: CloudException): Boolean =
+            e.status in 400..403 && REVOKED.any { e.message.orEmpty().startsWith(it) || e.reason.startsWith(it) }
+
         /** Identity Toolkit error codes to the messages Android shows. */
         fun friendly(e: Throwable): String {
             val reason = (e as? CloudException)?.message.orEmpty()

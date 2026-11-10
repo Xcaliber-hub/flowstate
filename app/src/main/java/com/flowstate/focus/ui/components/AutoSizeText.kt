@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 
@@ -26,6 +27,8 @@ fun AutoSizeText(
     style: TextStyle = LocalTextStyle.current,
     color: Color = Color.Unspecified,
     minSize: TextUnit = 11.sp,
+    /** What happens if the text still does not fit at [minSize]; 1.8.0 uses an ellipsis for long chapter names. */
+    overflow: TextOverflow = TextOverflow.Clip,
 ) {
     var size by remember(text, style) { mutableStateOf(style.fontSize) }
     var ready by remember(text, style) { mutableStateOf(false) }
@@ -36,6 +39,7 @@ fun AutoSizeText(
         color = color,
         maxLines = 1,
         softWrap = false,
+        overflow = overflow,
         onTextLayout = { r ->
             if (r.hasVisualOverflow && size.value > minSize.value) size = (size.value * 0.92f).sp else ready = true
         },

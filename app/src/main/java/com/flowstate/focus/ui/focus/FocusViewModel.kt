@@ -66,17 +66,19 @@ class FocusViewModel @Inject constructor(
     settingsRepo: SettingsRepository,
     private val sessionRepo: SessionRepository,
     private val cloudSync: CloudSync,
+    private val deleter: com.flowstate.focus.data.repo.SessionDeleter,
     private val timerLock: TimerLockState,
+    todayProvider: com.flowstate.focus.data.time.TodayProvider,
+    private val prefill: com.flowstate.focus.service.FocusPrefill,
 ) : ViewModel() {
 
     private val selection = MutableStateFlow(Selection())
     private val since = LocalDate.now().minusDays(400).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
     val ui: StateFlow<FocusUiState> = combine(
-        combine(engine.state, timerLock.remote, timerLock.notice) { timer, remote, notice -> Triple(timer, remote, notice) },
+        combine(engine.state, timerLock.remote, timerLock.notice, todayProvider.today) { timer, remote, notice, today -> Quad(timer, remote, notice, today) },
         settingsRepo.settings, selection, sessionRepo.sessionsSince(since),
-    ) { (timer, remote, notice), settings, sel, sessions ->
-        val today = LocalDate.now()
+    ) { (timer, remote, notice, today), settings, sel, sessions ->
         val perDay = StatsCalculator.perDay(sessions)
         val mode = if (timer.isActive) timer.mode else sel.mode
         FocusUiState(
@@ -95,9 +97,21 @@ class FocusViewModel @Inject constructor(
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FocusUiState())
 
+    private data class Quad(val timer: TimerState, val remote: RemoteTimer?, val notice: String?, val today: LocalDate)
+
     init {
         // The process may have been killed mid-session; make sure the notification service is back.
         if (engine.state.value.isActive) startService()
+        // 1.8.0 "Focus on this": a syllabus chapter becomes the next session's subject, taken once.
+        // Only the idle selection changes; a session that is already running keeps its own subject.
+        viewModelScope.launch {
+            prefill.subject.collect { chapter ->
+                if (chapter != null) {
+                    setSubject(chapter)
+                    prefill.subject.value = null
+                }
+            }
+        }
     }
 
     private fun defaultMinutes(mode: TimerMode, s: AppSettings) =
@@ -106,7 +120,7 @@ class FocusViewModel @Inject constructor(
     fun setMode(mode: TimerMode) = selection.update { it.copy(mode = mode, durationMin = null) }
     fun setDuration(minutes: Int) = selection.update { it.copy(durationMin = minutes) }
     fun setStrict(strict: Boolean) = selection.update { it.copy(strict = strict) }
-    fun setSubject(subject: String) = selection.update { it.copy(subject = subject.take(40)) }
+    fun setSubject(subject: String) = selection.update { it.copy(subject = subject.take(SUBJECT_MAX)) }
 
     /**
      * Starts a focus block from what the user picked on the idle screen. Reads the selection directly
@@ -142,12 +156,8 @@ class FocusViewModel @Inject constructor(
 
     /** Hold-to-delete on a past session. Stats and streaks recompute from the Room flow. */
     fun deleteSession(id: Long) {
-        viewModelScope.launch {
-            val row = sessionRepo.byId(id)
-            sessionRepo.delete(id)
-            // A synced session is marked deleted in the cloud so the PC drops it too.
-            if (row != null) cloudSync.onSessionDeleted(row)
-        }
+        // Shared with Settings › This week's sessions; a synced session is also marked deleted in the cloud.
+        viewModelScope.launch { deleter.delete(id) }
     }
 
     /** "Take over here": moves the session running on the other device to this phone. */
@@ -170,3 +180,6 @@ class FocusViewModel @Inject constructor(
     private fun startService() =
         ContextCompat.startForegroundService(context, Intent(context, TimerService::class.java))
 }
+
+/** Longest session subject; long enough for every syllabus chapter name (57), under the 80 the cloud allows. */
+const val SUBJECT_MAX = 60

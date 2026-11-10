@@ -21,7 +21,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,7 +33,11 @@ import com.flowstate.focus.domain.Status
 import com.flowstate.focus.ui.components.AutoSizeText
 import com.flowstate.focus.ui.components.GlassCard
 import com.flowstate.focus.ui.components.formatClock
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.LaunchedEffect
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 /**
  * 1.6.0: shown instead of the timer while another device of this account runs it. The timer runs on
@@ -43,8 +46,13 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun RemoteTimerCard(remote: RemoteTimer, liquid: Boolean, onTakeOver: () -> Unit) {
-    val now by produceState(System.currentTimeMillis(), remote) {
-        while (true) { value = System.currentTimeMillis(); delay(1_000) }
+    // Ticks once a second while shown (a plain effect: lint misreads produceState with a loop).
+    var now by remember(remote) { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(remote) {
+        while (isActive) {
+            now = System.currentTimeMillis()
+            delay(1_000)
+        }
     }
     var kept by rememberSaveable(remote.deviceId, remote.state.phaseStartedAt) { mutableStateOf(false) }
     val t = remote.state

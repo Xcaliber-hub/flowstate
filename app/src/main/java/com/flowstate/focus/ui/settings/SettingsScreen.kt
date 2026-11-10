@@ -73,6 +73,7 @@ import com.flowstate.focus.ui.components.ScreenTopBar
 import com.flowstate.focus.ui.components.TopBarSpec
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
+import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Settings
 import com.flowstate.focus.ui.theme.AccentColors
@@ -96,7 +97,7 @@ private fun isBlockerEnabled(context: Context): Boolean {
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
+fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit = {}, vm: SettingsViewModel = hiltViewModel()) {
     val s by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var blockerOn by remember { mutableStateOf(isBlockerEnabled(context)) }
@@ -207,7 +208,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
                                 }
                             }
                         }
-                        LinkRow("Blocked apps", "${s.blockedPackages.size} selected", onOpenBlockedApps)
+                        LinkRow("Blocked apps", "${s.blockedPackages.size} selected", external = false, onClick = onOpenBlockedApps)
                         LinkRow(
                             "App blocking service",
                             if (blockerOn) "On" else "Off. Tap to set up",
@@ -239,6 +240,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, vm: SettingsViewModel = hiltVi
             item {
                 Entrance(5) {
                     Group("Data", liquid) {
+                        LinkRow("This week's sessions", "Monday to Sunday, newest first. Hold one to delete it", external = false, onClick = onOpenWeekSessions)
                         LinkRow("Export sessions", "Save your history as a CSV file") { exporter.launch("flowstate-sessions.csv") }
                         Text(
                             "Your data stays on this device. Android's automatic backup restores your settings and history when you set up a new phone.",
@@ -308,7 +310,7 @@ private fun ToggleRow(title: String, subtitle: String, checked: Boolean, onChang
 }
 
 @Composable
-private fun LinkRow(title: String, subtitle: String, onClick: () -> Unit) {
+private fun LinkRow(title: String, subtitle: String, external: Boolean = true, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable(onClick = onClick).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -318,7 +320,9 @@ private fun LinkRow(title: String, subtitle: String, onClick: () -> Unit) {
             // A web address has no spaces to wrap at, so it would split mid-word: keep it on one line and shrink it to fit.
             AutoSizeText(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, minSize = 9.sp)
         }
-        Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Opens in your browser", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        // 1.7.2: screens inside the app get a chevron; "Opens in your browser" was read out for them too.
+        if (external) Icon(Icons.AutoMirrored.Rounded.OpenInNew, contentDescription = "Opens outside Flowstate", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+        else Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
     }
 }
 

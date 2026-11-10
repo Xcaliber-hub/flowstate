@@ -39,7 +39,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class TimerEngine @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
     private val sessions: SessionRepository,
     private val alerts: AlertNotifier,
     settings: SettingsRepository,
@@ -50,6 +50,7 @@ class TimerEngine @Inject constructor(
     private val lock = Any()
     private var completionJob: Job? = null
     private var checkInJob: Job? = null
+    private val phaseAlarm = PhaseAlarm(context)
     @Volatile private var checkInsEnabled = true
     @Volatile private var checkInIntervalMs = 60 * 60_000L
 
@@ -269,10 +270,19 @@ class TimerEngine @Inject constructor(
         }
     }
 
+    /** The phase-end alarm fired (see [PhaseAlarm]). */
+    fun onPhaseAlarm() = onPhaseFinished()
+
     private fun onPhaseFinished() {
         synchronized(lock) {
             val s = _state.value
             if (s.status != Status.RUNNING || s.countsUp) return@synchronized
+            // A stale alarm, an early wake-up or a clock change: the phase is not over yet.
+            if (System.currentTimeMillis() < s.endAt - EARLY_TOLERANCE_MS) {
+                scheduleCompletion()
+                syncAlarm(s)
+                return@synchronized
+            }
             // Chain from the real end time so a late wake-up does not shift the schedule.
             val endAt = s.endAt
             when (s.phase) {
@@ -320,6 +330,11 @@ class TimerEngine @Inject constructor(
         _state.value = s
         persist(s)
         scheduleCheckIn()
+        syncAlarm(s)
+    }
+
+    private fun syncAlarm(s: TimerState) {
+        if (s.status == Status.RUNNING && !s.countsUp) phaseAlarm.set(s.endAt) else phaseAlarm.cancel()
     }
 
     private fun record(s: TimerState, durationMs: Long, completed: Boolean) {
@@ -396,6 +411,7 @@ class TimerEngine @Inject constructor(
         }
         _state.value = restored
         scheduleCompletion()
+        syncAlarm(restored)
         // A check-in that expired while the process was dead pauses the timer right away.
         scheduleCheckIn()
     }
@@ -404,5 +420,6 @@ class TimerEngine @Inject constructor(
         const val MIN_RECORD_MS = 30_000L
         const val ABANDON_GRACE_MS = 10 * 60_000L
         const val CHECK_IN_TIMEOUT_MS = 2 * 60_000L
+        const val EARLY_TOLERANCE_MS = 1_000L
     }
 }

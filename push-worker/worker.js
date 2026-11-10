@@ -112,8 +112,9 @@ async function googleKeys() {
 async function verifyIdToken(token, projectId) {
   const parts = (token || "").split(".");
   if (parts.length !== 3 || !projectId) return null;
-  const header = b64urlJson(parts[0]);
-  const p = b64urlJson(parts[1]);
+  // A malformed token is a 401 (not a 500), so the app does not retry it.
+  let header, p;
+  try { header = b64urlJson(parts[0]); p = b64urlJson(parts[1]); } catch (_) { return null; }
   const now = Math.floor(Date.now() / 1000);
   if (header.alg !== "RS256") return null;
   if (p.aud !== projectId || p.iss !== `https://securetoken.google.com/${projectId}`) return null;
