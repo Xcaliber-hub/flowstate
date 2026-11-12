@@ -122,3 +122,34 @@ fun RemoteTimer.isStale(now: Long): Boolean = when (state.status) {
     Status.RUNNING -> !state.countsUp && now - state.endAt > 10 * 60_000L
     Status.PAUSED -> now - updatedAt > 12 * 60 * 60_000L
 }
+
+// ---- 1.8.1 session sync helpers ----
+
+/** A users/{uid}/sessions document as the shared [com.flowstate.focus.domain.SessionSyncPlan] sees it. */
+fun decodeSessionDoc(d: FsDoc) = com.flowstate.focus.domain.CloudSessionDoc(
+    id = d.id, deleted = d.bool("deleted") == true, deviceId = d.string("deviceId").orEmpty(),
+    startedAt = d.long("startedAt"), durationMs = d.long("durationMs") ?: 0L,
+    mode = d.string("mode") ?: "POMODORO", subject = d.string("subject").orEmpty(), completed = d.bool("completed") ?: false,
+)
+
+/** "<updatedAt ISO-8601, full precision>|<document name>". */
+fun formatPullCursor(at: java.time.Instant, docName: String) = "$at|$docName"
+
+fun parsePullCursor(s: String): Pair<java.time.Instant, String>? {
+    val i = s.indexOf('|').takeIf { it > 0 } ?: return null
+    val at = runCatching { java.time.Instant.parse(s.substring(0, i)) }.getOrNull() ?: return null
+    val name = s.substring(i + 1).takeIf { it.isNotBlank() } ?: return null
+    return at to name
+}
+
+/**
+ * One page of users/{uid}/sessions ordered by (updatedAt, document name), starting just after [cursor]
+ * (null: from the beginning).
+ */
+fun sessionPullQuery(cursor: Pair<java.time.Instant, String>?, limit: Int) = Q.query(
+    "sessions",
+    where = cursor?.let { Q.filter("updatedAt", "GREATER_THAN_OR_EQUAL", it.first) },
+    orderBy = listOf(Q.order("updatedAt"), Q.order("__name__")),
+    limit = limit,
+    startAt = cursor?.let { Q.cursorAfter(it.first, it.second) },
+)

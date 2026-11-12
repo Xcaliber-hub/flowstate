@@ -186,10 +186,16 @@ class DesktopTimerEngine(
         scheduleCompletion()
     }
 
-    /** Another device took the session over: stop here without recording, it continues there. */
-    fun releaseForHandoff() = synchronized(lock) {
-        if (_state.value.status == Status.IDLE) return@synchronized
+    /**
+     * Another device claimed the timer: stop here. When [remote] is this block carried on there, nothing is
+     * recorded (that device records it once). 1.8.1: a different block (another subject or plan, an earlier
+     * start, or a block too old for anyone to take over, such as a pause left overnight) is recorded first.
+     */
+    fun releaseForHandoff(remote: TimerState? = null) = synchronized(lock) {
+        val s = _state.value
+        if (s.status == Status.IDLE) return@synchronized
         completionJob?.cancel()
+        com.flowstate.focus.domain.HandoffPolicy.recordOnRelease(s, remote, System.currentTimeMillis())?.let { (ms, completed) -> record(s, ms, completed) }
         finish()
     }
 

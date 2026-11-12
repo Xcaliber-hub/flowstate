@@ -732,7 +732,9 @@ private fun SessionsCard(sessions: List<SessionEntity>, liquid: Boolean, onHold:
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            sessions.take(8).forEach { s -> com.flowstate.focus.ui.sessions.SessionRow(s, onHold) }
+            // 1.8.1: every session of the day. The list is oldest first, and until 1.8.0 only its first 8 were
+            // drawn, so from the 9th session of a day on, each new one looked as if it had vanished.
+            sessions.forEach { s -> androidx.compose.runtime.key(s.id) { com.flowstate.focus.ui.sessions.SessionRow(s, onHold) } }
         }
     }
 }

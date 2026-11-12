@@ -50,9 +50,26 @@ interface SessionDao {
     @Query("DELETE FROM sessions WHERE cloudId = :cloudId")
     suspend fun deleteByCloudId(cloudId: String)
 
-    /** On sign-out: forget the sessions that were only pulled from the account's other devices. */
-    @Query("DELETE FROM sessions WHERE origin IS NOT NULL AND origin != :deviceId")
+    /**
+     * On sign-out: forget the sessions that were only pulled from the account's other devices. 1.8.1: only rows
+     * that came from the cloud (cloudId set), so they come back on the next sign-in; a row of this phone's
+     * own is never removed here.
+     */
+    @Query("DELETE FROM sessions WHERE origin IS NOT NULL AND origin != :deviceId AND cloudId IS NOT NULL")
     suspend fun deletePulled(deviceId: String)
+
+    /** On signing in to another account: drop rows pulled for a different account (they stay in that account's cloud). */
+    @Query("DELETE FROM sessions WHERE origin IS NOT NULL AND origin != :deviceId AND cloudId IS NOT NULL AND ownerUid IS NOT NULL AND ownerUid != :uid")
+    suspend fun deletePulledOfOtherAccounts(deviceId: String, uid: String)
+
+    // ---- 1.8.1 ----
+
+    /** Which of [ids] are already stored (pulling the same page twice is harmless). */
+    @Query("SELECT cloudId FROM sessions WHERE cloudId IN (:ids)")
+    suspend fun cloudIdsIn(ids: List<String>): List<String>
+
+    @Query("SELECT COUNT(*) FROM sessions WHERE cloudId = :cloudId")
+    suspend fun countCloudId(cloudId: String): Int
 }
 
 @Dao

@@ -31,7 +31,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -49,6 +53,9 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.jetbrains.skia.Image as SkiaImage
+import org.jetbrains.skia.Rect as SkRect
+import org.jetbrains.skia.SamplingMode
+import org.jetbrains.skia.Surface
 import java.util.concurrent.ConcurrentHashMap
 
 /** The Slate palette: black-and-white base with five blue-grey steps. */
@@ -89,6 +96,21 @@ fun Modifier.glass(shape: Shape, strong: Boolean = false): Modifier = this
         drawContent()
         drawLine(Color.White.copy(alpha = 0.10f), Offset(size.height / 2, 1f), Offset(size.width - size.height / 2, 1f), 1.5f)
     }
+
+/**
+ * A soft drop shadow faked with three stacked translucent copies of [shape] (1.8.1). It replaces
+ * Modifier.shadow(14.dp) on the leaderboard pills: a real shadow is a blur, and with Skia on the CPU
+ * (Windows' software renderer) each one cost about 0.65 ms on every repaint, for every member.
+ */
+fun Modifier.softShadow(shape: Shape, color: Color = Color.Black): Modifier = this.drawWithCache {
+    val layers = listOf(Triple(1.dp.toPx(), 4.dp.toPx(), 0.22f), Triple(4.dp.toPx(), 7.dp.toPx(), 0.12f), Triple(8.dp.toPx(), 10.dp.toPx(), 0.06f))
+        .map { (grow, dy, alpha) -> Triple(shape.createOutline(Size(size.width + 2 * grow, size.height + 2 * grow), layoutDirection, this), Offset(-grow, dy - grow), alpha) }
+    onDrawBehind {
+        layers.asReversed().forEach { (outline, offset, alpha) ->
+            translate(offset.x, offset.y) { drawOutline(outline, color.copy(alpha = alpha)) }
+        }
+    }
+}
 
 /** The solid content cards: deep slate fading darker, hairline border. */
 fun Modifier.card(radius: Dp = 24.dp): Modifier {
@@ -226,7 +248,28 @@ fun avatarBitmap(id: String): ImageBitmap? {
     if (id.isBlank()) return null
     avatarCache[id]?.let { return it }
     val bytes = Thread.currentThread().contextClassLoader?.getResourceAsStream("avatars/avatar_$id.webp")?.use { it.readBytes() } ?: return null
-    return runCatching { SkiaImage.makeFromEncoded(bytes).toComposeImageBitmap() }.getOrNull()?.also { avatarCache[id] = it }
+    return runCatching { downscaled(SkiaImage.makeFromEncoded(bytes)).toComposeImageBitmap() }.getOrNull()?.also { avatarCache[id] = it }
+}
+
+/** Avatars are drawn at 16 to 56 dp, but the bundled files are about 450 px square. */
+private const val AVATAR_PX = 160
+
+/**
+ * Centre-crops and scales a preset avatar once, with a high-quality filter (1.8.1). Drawing the full
+ * 450 px image into a 32 dp circle made Skia minify it on every repaint, for every avatar on screen
+ * (up to 25 in Settings, a dozen in a chat), and kept about 0.8 MB of pixels per avatar in memory.
+ */
+private fun downscaled(src: SkiaImage): SkiaImage {
+    val side = minOf(src.width, src.height)
+    if (side <= AVATAR_PX) return src
+    val surface = Surface.makeRasterN32Premul(AVATAR_PX, AVATAR_PX)
+    return try {
+        val l = (src.width - side) / 2f
+        val t = (src.height - side) / 2f
+        surface.canvas.drawImageRect(src, SkRect.makeXYWH(l, t, side.toFloat(), side.toFloat()), SkRect.makeWH(AVATAR_PX.toFloat(), AVATAR_PX.toFloat()),
+            SamplingMode.MITCHELL, null, true)
+        surface.makeImageSnapshot()
+    } finally { surface.close(); src.close() }
 }
 
 @Composable

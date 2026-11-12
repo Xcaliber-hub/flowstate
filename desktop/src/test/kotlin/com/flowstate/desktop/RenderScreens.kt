@@ -16,6 +16,7 @@ import com.flowstate.desktop.ui.FocusScreen
 import com.flowstate.desktop.ui.FocusUi
 import com.flowstate.desktop.ui.GroupsActions
 import com.flowstate.desktop.ui.GroupsScreen
+import com.flowstate.desktop.ui.LocalNow
 import com.flowstate.desktop.ui.Shell
 import com.flowstate.desktop.ui.StatsScreen
 import com.flowstate.desktop.ui.liveTodayMs
@@ -35,7 +36,7 @@ import java.time.ZoneId
 fun main(args: Array<String>) {
     System.setProperty("flowstate.home", File(System.getProperty("java.io.tmpdir"), "flowstate-render").path)
     val out = File(args.firstOrNull() ?: "build/screens").apply { mkdirs() }
-    val now = System.currentTimeMillis()
+    val now = renderNow
     val today = LocalDate.now()
     val settings = DesktopSettings(dailyGoalMin = 240)
     val tasks = listOf(
@@ -49,7 +50,7 @@ fun main(args: Array<String>) {
         phaseStartedAt = now - (25 * 60_000L - (18 * 60_000L + 42_000L)), subject = "Physics – Rotational motion", round = 2, plan = Plan(),
     )
     val focusUi = FocusUi(running, FocusSelection(subject = "Physics – Rotational motion"), settings, recordedTodayMs = 2 * 3_600_000L - 6 * 60_000L,
-        sessionsToday = 5, streak = 12, tasks = tasks, remote = null, signedIn = true, now = now, today = today)
+        sessionsToday = 5, streak = 12, tasks = tasks, remote = null, signedIn = true, today = today)
     val phoneRemote = RemoteTimer("android-1", "OnePlus Nord 5", "android",
         running.copy(phaseDurationMs = 50 * 60_000L, phaseStartedAt = now - (50 * 60_000L - (32 * 60_000L + 5_000L))), now)
 
@@ -84,7 +85,7 @@ fun main(args: Array<String>) {
         unreadGroups = setOf("JEE2027GRIND", "NIGHTOWLS234"),
         chat = ChatUi(groups[0].id, msgs, loaded = true, seenBy = mapOf("r" to now, "p" to now, "k" to now)),
     )
-    render(out, "flowstate-1.6.0-desktop-groups.png") { frame(focusUi, Screen.GROUPS) { GroupsScreen(cloud, now, GroupsActions()) {} } }
+    render(out, "flowstate-1.6.0-desktop-groups.png") { frame(focusUi, Screen.GROUPS) { GroupsScreen(cloud, GroupsActions()) {} } }
 
     val sessions = (0 until 40).map { i ->
         val day = today.minusDays((i / 3).toLong())
@@ -96,9 +97,14 @@ fun main(args: Array<String>) {
     kotlin.system.exitProcess(0)
 }
 
+private val renderNow = System.currentTimeMillis()
+
 private fun frame(ui: FocusUi, screen: Screen = Screen.FOCUS, content: @androidx.compose.runtime.Composable () -> Unit): @androidx.compose.runtime.Composable () -> Unit = {
-    FlowstateTheme {
-        Shell(screen, {}, ui.liveTodayMs() / (ui.settings.dailyGoalMin * 60_000f), 1.3f, if (screen != Screen.GROUPS) setOf(Screen.GROUPS) else emptySet()) { content() }
+    // A fixed clock, so every render shows the same moment.
+    androidx.compose.runtime.CompositionLocalProvider(LocalNow provides androidx.compose.runtime.mutableLongStateOf(renderNow)) {
+        FlowstateTheme {
+            Shell(screen, {}, { ui.liveTodayMs(renderNow) / (ui.settings.dailyGoalMin * 60_000f) }, 0.6f, if (screen != Screen.GROUPS) setOf(Screen.GROUPS) else emptySet()) { content() }
+        }
     }
 }
 

@@ -32,24 +32,128 @@ object AppDirs {
 
 val StoreJson = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = false; explicitNulls = false }
 
-/** A small JSON file written atomically (temp file + move), so a crash never leaves half a file. */
-class JsonFile<T>(private val file: File, private val serializer: KSerializer<T>, private val default: () -> T) {
+/**
+ * A small JSON file written atomically (temp file + move), so a crash never leaves half a file.
+ *
+ * 1.8.1: [save] no longer encodes and writes on the caller's thread. Saves were made from the UI thread
+ * (every Settings stepper click, task tick, pause/resume, session delete), and SessionStore re-encoded the
+ * whole history each time. Now the newest value is handed to one background writer thread; several saves
+ * in quick succession collapse into one write of the latest value. [flush] waits for pending writes, and
+ * a shutdown hook flushes on exit.
+ */
+class JsonFile<T>(
+    private val file: File,
+    private val serializer: KSerializer<T>,
+    /**
+     * 1.8.1: rebuilds what it can from a file that no longer decodes as a whole (for a list: every element that
+     * still decodes). Null when nothing can be saved.
+     */
+    private val salvage: ((String) -> T?)? = null,
+    private val default: () -> T,
+) {
+    private val backup = File(file.parentFile, file.name + ".bak")
+    /** The file on disk decoded when loaded, or was written by this process; only such a file becomes the backup. */
+    @Volatile private var fileGood = false
     private val lock = Any()
+    private val pendingLock = Any()
+    private var pending: Any? = NONE
+    private var scheduled = false
+
+    /**
+     * Reads the file. 1.8.1: a file that does not decode is never treated as empty. Until 1.8.0 any decode
+     * failure (a file cut short by a power cut, a disk error) loaded as the default, an empty history, and the
+     * next save wrote that over the file, so every session was gone. Now the unreadable file is kept as
+     * `<name>.corrupt-<time>`, and the last good copy (`<name>.bak`, written before every replace) is used,
+     * or else whatever [salvage] can rebuild from the damaged file.
+     */
     fun load(): T = synchronized(lock) {
-        runCatching { if (file.exists()) StoreJson.decodeFromString(serializer, file.readText()) else default() }.getOrElse { default() }
+        flushPending()
+        if (!file.exists()) return@synchronized decodeFile(backup) ?: default()
+        val text = runCatching { file.readText() }.getOrNull()
+        text?.let { t -> runCatching { StoreJson.decodeFromString(serializer, t) }.getOrNull() }?.let { fileGood = true; return@synchronized it }
+        fileGood = false
+        runCatching { Files.copy(file.toPath(), File(file.parentFile, "${file.name}.corrupt-${System.currentTimeMillis()}").toPath(), StandardCopyOption.REPLACE_EXISTING) }
+        decodeFile(backup) ?: text?.let { t -> salvage?.let { f -> runCatching { f(t) }.getOrNull() } } ?: default()
     }
-    fun save(value: T) = synchronized(lock) {
-        runCatching {
-            file.parentFile?.mkdirs()
-            val tmp = File(file.parentFile, file.name + ".tmp")
-            tmp.writeText(StoreJson.encodeToString(serializer, value))
-            try {
-                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-            } catch (_: Exception) {
-                Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
-            }
+
+    private fun decodeFile(f: File): T? = runCatching { if (f.exists()) StoreJson.decodeFromString(serializer, f.readText()) else null }.getOrNull()
+
+    fun save(value: T) {
+        synchronized(pendingLock) {
+            pending = value
+            if (scheduled) return
+            scheduled = true
         }
-        Unit
+        Writer.submit(this::flushPending)
+    }
+
+    /** Blocks until everything saved so far is on disk. */
+    fun flush() = flushPending()
+
+    @Suppress("UNCHECKED_CAST")
+    private fun flushPending() = synchronized(lock) {
+        val value = synchronized(pendingLock) {
+            val v = pending
+            pending = NONE
+            scheduled = false
+            v
+        }
+        if (value !== NONE) write(value as T)
+    }
+
+    /**
+     * Temp file, flushed to the disk (fsync), then moved over the file. 1.8.1: the fsync (without it a power cut
+     * can leave a renamed but empty file on NTFS), a `.bak` copy of the previous good file, and a few retries
+     * when the move fails (antivirus or a sync client briefly holding the file).
+     */
+    private fun write(value: T) {
+        val text = runCatching { StoreJson.encodeToString(serializer, value) }.getOrNull() ?: return
+        repeat(3) { attempt ->
+            val ok = runCatching {
+                file.parentFile?.mkdirs()
+                val tmp = File(file.parentFile, file.name + ".tmp")
+                java.io.FileOutputStream(tmp).use { out ->
+                    out.write(text.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                    out.fd.sync()
+                }
+                // Keep the previous version only when it is a good one.
+                if (fileGood && file.exists()) runCatching { Files.copy(file.toPath(), backup.toPath(), StandardCopyOption.REPLACE_EXISTING) }
+                try {
+                    Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                } catch (_: Exception) {
+                    Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                }
+                fileGood = true
+            }.isSuccess
+            if (ok) return
+            if (attempt < 2) Thread.sleep(200L)
+        }
+    }
+
+    private companion object {
+        val NONE = Any()
+    }
+
+    /** One daemon thread for all store files; flushed again on JVM exit so the last save is kept. */
+    private object Writer {
+        private val executor = java.util.concurrent.Executors.newSingleThreadExecutor { r ->
+            Thread(r, "flowstate-store-writer").apply { isDaemon = true; priority = Thread.NORM_PRIORITY - 1 }
+        }
+        private val queued = java.util.concurrent.ConcurrentLinkedQueue<Runnable>()
+
+        init {
+            Runtime.getRuntime().addShutdownHook(Thread({
+                executor.shutdown()
+                runCatching { executor.awaitTermination(3, java.util.concurrent.TimeUnit.SECONDS) }
+                while (true) { (queued.poll() ?: break).run() }
+            }, "flowstate-store-flush"))
+        }
+
+        fun submit(task: Runnable) {
+            queued.add(task)
+            runCatching { executor.execute { queued.remove(task); task.run() } }.onFailure { queued.remove(task); task.run() }
+        }
     }
 }
 
@@ -82,6 +186,8 @@ data class DesktopSettings(
     val sound: Boolean = true,
     /** Closing the window keeps Flowstate running in the system tray, so the timer and alerts continue. */
     val closeToTray: Boolean = true,
+    /** Window renderer: AUTO (Skiko's default, Direct3D on Windows), DIRECT3D, OPENGL or SOFTWARE. Applied at next launch. */
+    val renderApi: String = "AUTO",
 )
 
 class SettingsStore {
@@ -99,7 +205,7 @@ class SettingsStore {
 
 /** Local focus history, newest first. Holds this PC's own sessions and those pulled from other devices. */
 class SessionStore(fileName: String = "sessions.json") {
-    private val file = JsonFile(AppDirs.file(fileName), ListSerializer(SessionEntity.serializer())) { emptyList() }
+    private val file = JsonFile(AppDirs.file(fileName), ListSerializer(SessionEntity.serializer()), salvage = ::salvageSessions) { emptyList() }
     private val _all = MutableStateFlow(file.load().sortedByDescending { it.startedAt })
     val all: StateFlow<List<SessionEntity>> = _all.asStateFlow()
 
@@ -125,8 +231,16 @@ class SessionStore(fileName: String = "sessions.json") {
         fresh.size
     }
 
-    fun markSynced(id: Long, cloudId: String, ownerUid: String, origin: String) = synchronized(this) {
-        commit(_all.value.map { if (it.id == id) it.copy(cloudId = cloudId, ownerUid = ownerUid, origin = origin) else it })
+    fun markSynced(id: Long, cloudId: String, ownerUid: String, origin: String) = markSynced(mapOf(id to cloudId), ownerUid, origin)
+
+    /**
+     * Marks many uploaded sessions at once (id to cloud id): one list update and one file write for the whole
+     * batch. Until 1.8.1 each uploaded session rewrote sessions.json and pushed a new history to the UI,
+     * so the first backfill of a few hundred sessions meant hundreds of full writes and recompositions.
+     */
+    fun markSynced(cloudIds: Map<Long, String>, ownerUid: String, origin: String) = synchronized(this) {
+        if (cloudIds.isEmpty()) return@synchronized
+        commit(_all.value.map { row -> cloudIds[row.id]?.let { row.copy(cloudId = it, ownerUid = ownerUid, origin = origin) } ?: row })
     }
 
     fun claim(ids: Set<Long>, ownerUid: String) = synchronized(this) {
@@ -139,14 +253,40 @@ class SessionStore(fileName: String = "sessions.json") {
         row
     }
 
-    fun deleteByCloudId(cloudId: String) = synchronized(this) {
-        if (_all.value.any { it.cloudId == cloudId }) commit(_all.value.filterNot { it.cloudId == cloudId })
+    fun deleteByCloudId(cloudId: String) = deleteByCloudIds(setOf(cloudId))
+
+    /** Drops every session whose cloud id is in [cloudIds], with one write. */
+    fun deleteByCloudIds(cloudIds: Set<String>) = synchronized(this) {
+        if (cloudIds.isNotEmpty() && _all.value.any { it.cloudId in cloudIds }) commit(_all.value.filterNot { it.cloudId in cloudIds })
     }
 
-    /** On sign-out: forget sessions that were only pulled from the account's other devices. */
+    /**
+     * On sign-out: forget sessions that were only pulled from the account's other devices. 1.8.1: only rows that
+     * came from the cloud (cloud id set), so signing in again brings them back; this PC's own rows stay.
+     */
     fun deletePulled(myDeviceId: String) = synchronized(this) {
-        commit(_all.value.filterNot { it.origin != null && it.origin != myDeviceId })
+        if (_all.value.any { isPulled(it, myDeviceId) }) commit(_all.value.filterNot { isPulled(it, myDeviceId) })
     }
+
+    /** On signing in to another account: drop rows pulled for a different account (they stay in its cloud). */
+    fun deletePulledOfOtherAccounts(myDeviceId: String, uid: String) = synchronized(this) {
+        val other = { r: SessionEntity -> isPulled(r, myDeviceId) && r.ownerUid != null && r.ownerUid != uid }
+        if (_all.value.any(other)) commit(_all.value.filterNot(other))
+    }
+
+    private fun isPulled(r: SessionEntity, myDeviceId: String) = r.origin != null && r.origin != myDeviceId && r.cloudId != null
+
+    /** Blocks until the history is on disk (tests, and before the app exits). */
+    fun flush() = file.flush()
+}
+
+/** Every session in a damaged sessions.json that still decodes on its own (1.8.1). */
+internal fun salvageSessions(text: String): List<SessionEntity>? {
+    val array = runCatching { StoreJson.parseToJsonElement(text) as? kotlinx.serialization.json.JsonArray }.getOrNull()
+    if (array != null) return array.mapNotNull { runCatching { StoreJson.decodeFromJsonElement(SessionEntity.serializer(), it) }.getOrNull() }.takeIf { it.isNotEmpty() }
+    // Cut short: decode every complete {...} object before the cut.
+    val rows = Regex("""\{[^{}]*\}""").findAll(text).mapNotNull { m -> runCatching { StoreJson.decodeFromString(SessionEntity.serializer(), m.value) }.getOrNull() }.toList()
+    return rows.takeIf { it.isNotEmpty() }
 }
 
 class TaskStore {
@@ -177,6 +317,13 @@ data class SyncPrefs(
     val chatSeen: Map<String, Long> = emptyMap(),
     /** When this PC last wrote the timer lock (epoch ms). */
     val lockWrittenAt: Long = 0L,
+    /**
+     * 1.8.1, per account: where the session pull stopped, "<updatedAt ISO-8601>|<document name>". Missing means
+     * pull the whole history (once after updating to 1.8.1, which brings back sessions earlier pulls skipped).
+     */
+    val pullCursor: Map<String, String> = emptyMap(),
+    /** 1.8.1, per account: cloud ids deleted on this PC whose "deleted" mark has not reached the cloud yet. */
+    val pendingTombstones: Map<String, Set<String>> = emptyMap(),
 )
 
 class SyncPrefsStore {

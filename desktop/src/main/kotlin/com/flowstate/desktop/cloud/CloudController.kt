@@ -6,6 +6,7 @@ import com.flowstate.desktop.store.SessionStore
 import com.flowstate.desktop.store.SyncPrefsStore
 import com.flowstate.desktop.timer.DesktopTimerEngine
 import com.flowstate.focus.data.db.SessionEntity
+import com.flowstate.focus.domain.SessionSyncPlan
 import com.flowstate.focus.domain.Status
 import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.domain.groups.PresetAvatars
@@ -68,7 +69,7 @@ class CloudController(
     @Volatile private var holdingLock = false
     @Volatile var windowFocused: Boolean = true
     @Volatile var groupsVisible: Boolean = false
-        set(value) { field = value; if (value) scope.launch { refreshMembers() } }
+        set(value) { field = value; if (value) scope.launch { runCatching { refreshMembers() } } }
     @Volatile private var chatNewest = 0L
     @Volatile private var chatFullAt = 0L
     @Volatile private var readWrittenUpTo = 0L
@@ -114,7 +115,8 @@ class CloudController(
             auth.signOut()
             holdingLock = false
             sessions.deletePulled(deviceId)
-            if (old != null) syncPrefs.update { it.copy(lastPull = it.lastPull - old) }
+            // The pulled rows are gone, so the next sign-in pulls the whole history again.
+            if (old != null) syncPrefs.update { it.copy(lastPull = it.lastPull - old, pullCursor = it.pullCursor - old) }
             groupsMutex.withLock { groupsGuard.reset() }
             _state.value = CloudState(configured = auth.configured)
         }
@@ -187,7 +189,8 @@ class CloudController(
             }
             // Session sync: upload own sessions (with the one-time backfill), pull the other devices'.
             launch {
-                runCatching { backfillOnce(uid) }.onFailure(::reportSync)
+                runCatching { sessions.deletePulledOfOtherAccounts(deviceId, uid) }
+                runCatching { backfill(uid) }.onFailure(::reportSync)
                 sessions.all.debounce(1_500).collect { runCatching { uploadPending(uid) }.onFailure(::reportSync); publishMembersQuietly() }
             }
             launch {
@@ -235,7 +238,7 @@ class CloudController(
             otherHolds -> {
                 holdingLock = false
                 if (local.isActive) {
-                    engine.releaseForHandoff()
+                    engine.releaseForHandoff(remote!!.state)
                     _state.update { it.copy(notice = "Your session moved to your ${remote!!.deviceLabel}.") }
                 }
                 _state.update { it.copy(remote = remote) }
@@ -246,7 +249,7 @@ class CloudController(
                     // The other device acted after this PC last wrote the lock: it ended or moved the session.
                     val lastWrite = syncPrefs.get().lockWrittenAt
                     if (remote != null && remote.deviceId != deviceId && remote.updatedAt > lastWrite) {
-                        engine.releaseForHandoff()
+                        engine.releaseForHandoff(remote.state)
                     } else writeLock(local)
                 }
             }
@@ -288,27 +291,52 @@ class CloudController(
 
     // ---------------------------------------------------------------- session sync
 
-    private fun cloudIdFor(row: SessionEntity) = "${deviceId}_${row.startedAt}"
-
-    /** Once per account: claim this PC's sessions recorded while signed out, then upload them. */
-    private suspend fun backfillOnce(uid: String) {
-        if (uid in syncPrefs.get().backfilled) return
+    /**
+     * Every sign-in (1.8.1; once per account before): claim this PC's sessions recorded while signed out, unless
+     * another account has used this PC, then upload them. Until 1.8.0 a session recorded while signed out after
+     * the first sign-in was never uploaded.
+     */
+    private suspend fun backfill(uid: String) {
         val all = sessions.all.value
         val otherOwners = all.mapNotNull { it.ownerUid }.any { it != uid }
         if (!otherOwners) sessions.claim(all.filter { it.ownerUid == null && it.origin == null || it.ownerUid == null && it.origin == deviceId }.map { it.id }.toSet(), uid)
         uploadPending(uid)
-        syncPrefs.update { it.copy(backfilled = it.backfilled + uid) }
+        if (uid !in syncPrefs.get().backfilled) syncPrefs.update { it.copy(backfilled = it.backfilled + uid) }
     }
 
     private val uploadMutex = Mutex()
+
+    /**
+     * Uploads this PC's unsynced sessions, 400 to a commit. 1.8.1: a commit is all-or-nothing, so when the rules
+     * reject one, the chunk is retried one session at a time and every accepted session is still marked; until
+     * 1.8.0 one rejected session kept the whole chunk off the cloud for good. Each row also gets a cloud id no
+     * other row uses. Pending "deleted" marks are retried here too.
+     */
     private suspend fun uploadPending(uid: String) = uploadMutex.withLock {
-        val pending = sessions.all.value.filter { it.cloudId == null && it.ownerUid == uid }
+        retryTombstones(uid)
+        val all = sessions.all.value
+        val pending = all.filter { it.cloudId == null && it.ownerUid == uid }
+        if (pending.isEmpty()) return@withLock
+        val taken = all.mapNotNull { it.cloudId }.toHashSet()
+        val ids = LinkedHashMap<Long, String>()
+        pending.forEach { row -> ids[row.id] = SessionSyncPlan.cloudIdFor(deviceId, row.startedAt, row.id, taken).also { taken += it } }
+        var rejected: CloudException? = null
         pending.chunked(400).forEach { chunk ->
-            db.commit(chunk.map { row ->
-                db.setWrite("users/$uid/sessions/${cloudIdFor(row)}", sessionFields(row), listOf("updatedAt"))
-            })
-            chunk.forEach { sessions.markSynced(it.id, cloudIdFor(it), uid, deviceId) }
+            val write = { row: SessionEntity -> db.setWrite("users/$uid/sessions/${ids.getValue(row.id)}", sessionFields(row), listOf("updatedAt")) }
+            try {
+                db.commit(chunk.map(write))
+                sessions.markSynced(chunk.associate { it.id to ids.getValue(it.id) }, uid, deviceId)
+            } catch (e: CloudException) {
+                if (!e.permissionDenied || chunk.size == 1) throw e
+                val ok = LinkedHashMap<Long, String>()
+                chunk.forEach { row ->
+                    try { db.commit(listOf(write(row))); ok[row.id] = ids.getValue(row.id) }
+                    catch (one: CloudException) { if (one.permissionDenied) rejected = one else throw one }
+                }
+                sessions.markSynced(ok, uid, deviceId)
+            }
         }
+        rejected?.let { throw it }
     }
 
     private fun sessionFields(row: SessionEntity): Map<String, Any?> = mapOf(
@@ -317,40 +345,70 @@ class CloudController(
         "deviceId" to deviceId, "platform" to PLATFORM, "deleted" to false,
     )
 
-    /** Pulls sessions changed since the last pull: other devices' new ones, and deletions. */
+    /**
+     * Pulls sessions changed since the last pull: other devices' new ones, this PC's own that are missing here,
+     * and deletions.
+     *
+     * 1.8.1: paged with a cursor on (updatedAt, document name). Until 1.8.0 each page asked for "updatedAt
+     * greater than the newest seen", 300 at a time; a batch upload stamps all its sessions (up to 400) with one
+     * server time, so the rest of that batch was skipped for good, or (with sub-millisecond times) the same
+     * 300 came back for ever and nothing newer was ever pulled. Nothing here deletes a session that is missing
+     * from the cloud; only an explicit "deleted" mark removes one.
+     */
     private suspend fun pullSessions(uid: String) {
+        var cursor = syncPrefs.get().pullCursor[uid]?.let(::parsePullCursor)
         while (true) {
-            val since = syncPrefs.get().lastPull[uid] ?: 0L
-            val docs = db.runQuery("users/$uid", Q.query("sessions", Q.filter("updatedAt", "GREATER_THAN", Instant.ofEpochMilli(since)), listOf(Q.order("updatedAt")), 300))
+            val docs = db.runQuery("users/$uid", sessionPullQuery(cursor, PULL_PAGE))
             if (docs.isEmpty()) return
-            val add = mutableListOf<SessionEntity>()
-            docs.forEach { d ->
-                if (d.bool("deleted") == true) { sessions.deleteByCloudId(d.id); return@forEach }
-                val origin = d.string("deviceId").orEmpty()
-                if (origin == deviceId) return@forEach
-                add += SessionEntity(
-                    startedAt = d.long("startedAt") ?: return@forEach, durationMs = d.long("durationMs") ?: 0L,
-                    mode = d.string("mode") ?: "POMODORO", subject = d.string("subject").orEmpty(), completed = d.bool("completed") ?: false,
-                    cloudId = d.id, ownerUid = uid, origin = origin.ifBlank { "unknown" },
-                )
-            }
-            sessions.insertRemote(add)
-            val newest = docs.mapNotNull { it.millis("updatedAt") }.maxOrNull() ?: return
-            syncPrefs.update { it.copy(lastPull = it.lastPull + (uid to newest)) }
-            if (docs.size < 300) return
+            if (auth.session?.uid != uid) return
+            val known = sessions.all.value
+            val plan = SessionSyncPlan.plan(
+                docs.map(::decodeSessionDoc), uid, deviceId,
+                knownCloudIds = known.mapNotNull { it.cloudId }.toHashSet(),
+                unsyncedOwnStarts = known.filter { it.cloudId == null && (it.origin == null || it.origin == deviceId) }.map { it.startedAt }.toHashSet(),
+                pendingTombstones = syncPrefs.get().pendingTombstones[uid].orEmpty(),
+            )
+            sessions.deleteByCloudIds(plan.deleteCloudIds)
+            sessions.insertRemote(plan.add)
+            val last = docs.last()
+            val lastAt = last.fields["updatedAt"] as? Instant
+            if (lastAt != null) {
+                cursor = lastAt to last.name
+                val key = formatPullCursor(lastAt, last.name)
+                syncPrefs.update { it.copy(pullCursor = it.pullCursor + (uid to key), lastPull = it.lastPull + (uid to lastAt.toEpochMilli())) }
+            } else return
+            if (docs.size < PULL_PAGE) return
         }
     }
 
     /** Deletes a session here and marks it deleted in the cloud, so the phone drops it too. */
     fun deleteSession(id: Long) {
         val row = sessions.delete(id) ?: return
-        val u = uid ?: return
         val cid = row.cloudId ?: return
-        scope.launch {
-            runCatching {
-                db.commit(listOf(db.setWrite("users/$u/sessions/$cid", mapOf("deleted" to true), listOf("updatedAt"), mask = listOf("deleted"))))
-            }.onFailure(::reportSync)
+        val owner = row.ownerUid ?: uid ?: return
+        // 1.8.1: remembered until the cloud has the mark, so a failed or offline delete is retried and the
+        // full re-pull does not bring the session back.
+        syncPrefs.update { it.copy(pendingTombstones = it.pendingTombstones + (owner to (it.pendingTombstones[owner].orEmpty() + cid))) }
+        val u = uid ?: return
+        if (u != owner) return
+        scope.launch { runCatching { writeTombstone(u, cid) }.onFailure(::reportSync) }
+    }
+
+    private suspend fun writeTombstone(u: String, cid: String) {
+        try {
+            db.commit(listOf(db.setWrite("users/$u/sessions/$cid", mapOf("deleted" to true), listOf("updatedAt"), mask = listOf("deleted"))))
+        } catch (e: CloudException) {
+            // Rejected: the session never reached the cloud, so there is nothing to mark. Stop retrying.
+            if (!e.permissionDenied) throw e
         }
+        syncPrefs.update { p ->
+            val left = p.pendingTombstones[u].orEmpty() - cid
+            p.copy(pendingTombstones = if (left.isEmpty()) p.pendingTombstones - u else p.pendingTombstones + (u to left))
+        }
+    }
+
+    private suspend fun retryTombstones(uid: String) {
+        syncPrefs.get().pendingTombstones[uid].orEmpty().forEach { cid -> runCatching { writeTombstone(uid, cid) } }
     }
 
     // ---------------------------------------------------------------- groups
@@ -651,6 +709,7 @@ class CloudController(
         const val PLATFORM = "windows"
         const val MAX_GROUP_SIZE = 20
         const val CHAT_PAGE = 50
+        const val PULL_PAGE = 300
         const val CHAT_MAX_CHARS = 500
         const val CHAT_REPLY_QUOTE_CHARS = 140
         private const val ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"

@@ -275,6 +275,15 @@ describe('Flowstate Firestore authorization', () => {
     await assertFails(setDoc(sessionDoc(alice(), 'x_4'), sessionBody({ updatedAt: new Date() })));
     await assertFails(setDoc(sessionDoc(alice(), 'x_5'), sessionBody({ owner: 'bob' })));
   });
+  // 1.8.1: subjects are up to 60 characters since 1.8.0; the rules allow 80 (counted in characters, not bytes).
+  // A cloud id may carry the row id when two sessions share a start time ("<device>_<startedAt>_<rowId>").
+  it('accepts 60-character subjects in any script, row-suffixed ids, and rejects 81 characters', async () => {
+    await assertSucceeds(setDoc(sessionDoc(alice(), 'android-a_1793000000000'), sessionBody({ subject: 'P'.repeat(60) })));
+    await assertSucceeds(setDoc(sessionDoc(alice(), 'android-a_1793000000001'), sessionBody({ subject: 'भौतिकी'.repeat(10) })));
+    await assertSucceeds(setDoc(sessionDoc(alice(), 'android-a_1793000000002'), sessionBody({ subject: 'M'.repeat(80) })));
+    await assertSucceeds(setDoc(sessionDoc(alice(), 'android-a_1793000000000_17'), sessionBody()));
+    await assertFails(setDoc(sessionDoc(alice(), 'android-a_1793000000003'), sessionBody({ subject: 'M'.repeat(81) })));
+  });
   it('still accepts a member snapshot whose live map says which device runs the timer', async () => {
     await assertSucceeds(setDoc(member(alice(), 'alice'), { ...payload('cat'), ...stats,
       live: { mode: 'POMODORO', phase: 'FOCUS', status: 'RUNNING', phaseDurationMs: 1500000, phaseStartedAt: 1793000000000, pausedAt: 0, subject: 'x', platform: 'windows' } }));

@@ -223,11 +223,25 @@ object Q {
         put("fieldFilter", buildJsonObject { put("field", field(path)); put("op", op); put("value", fsValue(value)) })
     }
     fun order(path: String, descending: Boolean = false) = buildJsonObject { put("field", field(path)); put("direction", if (descending) "DESCENDING" else "ASCENDING") }
-    fun query(collection: String, where: JsonObject? = null, orderBy: List<JsonObject> = emptyList(), limit: Int? = null) = buildJsonObject {
+    fun query(collection: String, where: JsonObject? = null, orderBy: List<JsonObject> = emptyList(), limit: Int? = null, startAt: JsonObject? = null) = buildJsonObject {
         put("from", buildJsonArray { add(buildJsonObject { put("collectionId", collection) }) })
         if (where != null) put("where", where)
         if (orderBy.isNotEmpty()) put("orderBy", JsonArray(orderBy))
+        if (startAt != null) put("startAt", startAt)
         if (limit != null) put("limit", limit)
+    }
+
+    /**
+     * A cursor just after the document [docName] (full resource name) whose ordered field is [at]; for a query
+     * ordered by that field and then `__name__`. Paging on the timestamp alone skips or repeats documents that
+     * share it, and a batch commit gives every document in it the same server timestamp.
+     */
+    fun cursorAfter(at: java.time.Instant, docName: String) = buildJsonObject {
+        put("values", buildJsonArray {
+            add(fsValue(at))
+            add(buildJsonObject { put("referenceValue", docName) })
+        })
+        put("before", false)
     }
 }
 

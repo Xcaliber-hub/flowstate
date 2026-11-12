@@ -168,7 +168,7 @@ fun SignInPanel(state: CloudState, a: AccountActions, modifier: Modifier = Modif
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SettingsScreen(settings: DesktopSettings, onUpdate: ((DesktopSettings) -> DesktopSettings) -> Unit, cloud: CloudState, account: AccountActions, dataFolder: String, onOpenFolder: () -> Unit, update: com.flowstate.desktop.DesktopUpdate? = null, onDownloadUpdate: () -> Unit = {}) {
+fun SettingsScreen(settings: DesktopSettings, onUpdate: ((DesktopSettings) -> DesktopSettings) -> Unit, cloud: CloudState, account: AccountActions, dataFolder: String, onOpenFolder: () -> Unit, update: com.flowstate.desktop.DesktopUpdate? = null, onDownloadUpdate: () -> Unit = {}, renderApi: String? = null) {
     Column(Modifier.fillMaxSize()) {
         TopBar("Settings", "Flowstate ${FlowstateConfig.VERSION} for Windows", 1f)
         Spacer(Modifier.height(22.dp))
@@ -202,6 +202,7 @@ fun SettingsScreen(settings: DesktopSettings, onUpdate: ((DesktopSettings) -> De
                     }
                     ToggleRow("Sound with alerts", "A short chime when a phase ends", settings.sound) { v -> onUpdate { it.copy(sound = v) } }
                     ToggleRow("Keep running in the tray", "Closing the window keeps the timer and alerts going", settings.closeToTray) { v -> onUpdate { it.copy(closeToTray = v) } }
+                    GraphicsRow(settings.renderApi, renderApi) { v -> onUpdate { it.copy(renderApi = v) } }
                     Spacer(Modifier.height(8.dp))
                     T("App blocking is phone-only: Windows has no equivalent of Android's focus guard, so Flowstate on PC doesn't block apps.", 12.sp, color = Slate.Mist, maxLines = 3)
                 }
@@ -289,5 +290,33 @@ private fun ToggleRow(label: String, detail: String, checked: Boolean, onChange:
             checked, onChange,
             colors = SwitchDefaults.colors(checkedThumbColor = Slate.Ink, checkedTrackColor = Slate.Paper, uncheckedThumbColor = Slate.Mist, uncheckedTrackColor = Slate.Steel, uncheckedBorderColor = Slate.Slate),
         )
+    }
+}
+
+/** Renderer choice (1.8.1): the fix to try when the window feels slow on a particular PC. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun GraphicsRow(choice: String, active: String?, onChoose: (String) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        T("Graphics", 14.sp, FontWeight.SemiBold)
+        val now = when (active) {
+            null -> "Starting…"
+            "DIRECT3D" -> "Direct3D"
+            "OPENGL" -> "OpenGL"
+            "SOFTWARE_FAST", "SOFTWARE_COMPAT" -> "Software (no GPU)"
+            else -> active.lowercase().replaceFirstChar { it.uppercase() }
+        }
+        T("Using $now. If the app feels slow, try another option and restart Flowstate.", 12.sp, color = Slate.Mist, maxLines = 2)
+        Spacer(Modifier.height(8.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("AUTO" to "Automatic", "DIRECT3D" to "Direct3D", "OPENGL" to "OpenGL", "SOFTWARE" to "Software").forEach { (id, label) ->
+                val on = choice == id
+                Box(
+                    Modifier.height(34.dp).clip(RoundedCornerShape(17.dp)).background(if (on) Slate.Paper else Slate.Steel.copy(alpha = 0.5f))
+                        .clickable { onChoose(id) }.padding(horizontal = 14.dp),
+                    contentAlignment = Alignment.Center,
+                ) { T(label, 13.sp, FontWeight.SemiBold, if (on) Slate.Ink else Slate.Fog) }
+            }
+        }
     }
 }

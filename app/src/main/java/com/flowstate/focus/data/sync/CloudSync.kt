@@ -5,7 +5,9 @@ import android.util.Log
 import com.flowstate.focus.data.db.SessionDao
 import com.flowstate.focus.data.db.SessionEntity
 import com.flowstate.focus.data.groups.GroupsRepository
+import com.flowstate.focus.domain.CloudSessionDoc
 import com.flowstate.focus.domain.Phase
+import com.flowstate.focus.domain.SessionSyncPlan
 import com.flowstate.focus.domain.Status
 import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.service.TimerEngine
@@ -47,7 +49,9 @@ import javax.inject.Singleton
  * (its "Take over here"), this phone stops its copy without recording it (the other device continues
  * the same block and records it once) and the Focus screen shows "Running on your PC".
  *
- * Synced stats: every session recorded while signed in is uploaded to users/{uid}/sessions/{deviceId}_{startedAt};
+ * Synced stats (1.8.1 fixes for "sessions disappeared": own sessions are restored from the cloud, pulled
+ * rows are only forgotten on a real sign-out, one rejected session no longer blocks the rest, a handoff of
+ * a different block records it): every session recorded while signed in is uploaded to users/{uid}/sessions/{deviceId}_{startedAt};
  * sessions from the account's other devices are pulled into Room (deduplicated by cloudId), so history,
  * streaks, the daily goal and group totals use the merged history. Deleting a session marks it
  * deleted, and every device drops it.
@@ -81,7 +85,14 @@ class CloudSync @Inject constructor(
         if (started) return
         started = true
         // Before Firebase signs out, give the timer back so the PC isn't left showing "Running on your phone".
-        groups.addSignOutHook { oldUid -> releaseOnSignOut(oldUid) }
+        // 1.8.1: pulled sessions are forgotten only here, on a real sign-out the user asked for. Until 1.8.0 any
+        // moment the account read as null (an auth restore race at launch, a token hiccup) wiped them too.
+        groups.addSignOutHook { oldUid ->
+            releaseOnSignOut(oldUid)
+            stopListeners()
+            uid = null
+            onSignedOut(oldUid)
+        }
         scope.launch {
             var previous: String? = null
             groups.state.map { it.user?.uid }.distinctUntilChanged().collect { next ->
@@ -90,7 +101,6 @@ class CloudSync @Inject constructor(
                 if (next == null) {
                     lock.remote.value = null
                     holdingLock = false
-                    if (previous != null) onSignedOut(previous!!)
                 } else onSignedIn(next)
                 previous = next
             }
@@ -120,7 +130,13 @@ class CloudSync @Inject constructor(
 
     private suspend fun onSignedIn(u: String) {
         val db = db() ?: return
-        runCatching { backfillOnce(u) }.onFailure { Log.w(TAG, "Backfill failed", it) }
+        // Rows pulled for a different account that used this phone before (they stay in that account's cloud).
+        runCatching { dao.deletePulledOfOtherAccounts(device.deviceId(), u) }
+        // 1.8.1, once per account: pull the whole history again. Sessions this phone lost locally come back
+        // (own sessions were skipped by every pull until 1.8.0), and so do sessions an earlier pull missed.
+        if (!prefs.getBoolean(resyncKey(u), false)) prefs.edit().remove(lastPullKey(u)).putBoolean(resyncKey(u), true).apply()
+        runCatching { backfill(u) }.onFailure { Log.w(TAG, "Backfill failed", it) }
+        runCatching { replayTombstones(u) }.onFailure { Log.w(TAG, "Tombstone replay failed", it) }
         var first = true
         lockListener = db.collection("users").document(u).collection("state").document("activeTimer")
             .addSnapshotListener(MetadataChanges.INCLUDE) { snap, err ->
@@ -145,9 +161,10 @@ class CloudSync @Inject constructor(
     }
 
     private suspend fun onSignedOut(oldUid: String) {
-        // Sessions pulled from the other devices belong to that account, not to this phone.
+        // Sessions pulled from the other devices belong to that account, not to this phone. Only rows that came
+        // from the cloud are removed, so signing in again brings every one of them back.
         val me = device.deviceId()
-        dao.deletePulled(me)
+        runCatching { dao.deletePulled(me) }.onFailure { Log.w(TAG, "Sign-out cleanup failed", it) }
         prefs.edit().remove(lastPullKey(oldUid)).apply()
     }
 
@@ -189,7 +206,7 @@ class CloudSync @Inject constructor(
             holdingLock = false
             // Only a server-confirmed claim stops a session here; a cached copy may be old.
             if (local.isActive && fromServer) {
-                engine.releaseForHandoff()
+                engine.releaseForHandoff(remote!!.state)
                 lock.notice.value = "Your session moved to your ${remote!!.deviceLabel}."
             }
             if (!local.isActive || fromServer) lock.remote.value = remote
@@ -199,7 +216,7 @@ class CloudSync @Inject constructor(
         if (initial && local.isActive) {
             // The other device acted after this phone last wrote the lock: it ended or moved the session.
             val lastWrite = prefs.getLong(KEY_LOCK_WRITTEN, 0L)
-            if (remote != null && remote.deviceId != me && remote.updatedAt > lastWrite) engine.releaseForHandoff()
+            if (remote != null && remote.deviceId != me && remote.updatedAt > lastWrite) engine.releaseForHandoff(remote.state)
             else writeLock(u, local)
         }
     }
@@ -235,15 +252,12 @@ class CloudSync @Inject constructor(
 
     // ---------------------------------------------------------------- session sync
 
-    private suspend fun cloudIdFor(row: SessionEntity) = "${device.deviceId()}_${row.startedAt}"
-
     /**
-     * Once per account on this phone: sessions recorded while signed in to it before 1.6.0 are claimed,
-     * and so are sessions recorded while signed out, unless another account has used this phone.
+     * Every sign-in (1.8.1; once per account before): sessions recorded while signed in to this account are
+     * claimed, and so are sessions recorded while signed out, unless another account has used this phone.
+     * Until 1.8.0 a session recorded while signed out after the first sign-in was never uploaded.
      */
-    private suspend fun backfillOnce(u: String) {
-        val key = "backfilled_$u"
-        if (prefs.getBoolean(key, false)) return
+    private suspend fun backfill(u: String) {
         val owners = ownership.all.values.filterIsInstance<String>().filter { it != "unassigned" }.toSet() + dao.owners()
         val onlyMe = owners.all { it == u }
         val ids = dao.unsynced().filter { it.origin == null && it.ownerUid == null }.filter { row ->
@@ -252,29 +266,35 @@ class CloudSync @Inject constructor(
         }.map { it.id }
         ids.chunked(500).forEach { dao.claim(it, u) }
         uploadPending(u)
-        prefs.edit().putBoolean(key, true).apply()
+        prefs.edit().putBoolean("backfilled_$u", true).apply()
     }
 
+    /**
+     * Uploads this phone's unsynced sessions. 1.8.1: one write per session instead of one batch of up to 400.
+     * A batch is all-or-nothing, so a single session the rules rejected used to send the whole batch back
+     * every five minutes, for ever, and none of those sessions ever reached the account's other devices.
+     */
     private suspend fun uploadPending(u: String) {
         if (!uploadMutex.tryLock()) return
         try {
             val db = db() ?: return
             val me = device.deviceId()
             val pending = dao.unsynced().filter { it.ownerUid == u }
-            pending.chunked(400).forEach { chunk ->
-                val batch = db.batch()
-                chunk.forEach { row ->
-                    val ref = db.collection("users").document(u).collection("sessions").document(cloudIdFor(row))
-                    batch.set(ref, sessionFields(row, me))
-                }
-                // Marked as synced straight away: Firestore keeps the batch on disk until it reaches the
-                // server. If the server rejects it (rules not published yet), the rows are retried later.
-                chunk.forEach { dao.markSynced(it.id, cloudIdFor(it), u, me) }
-                val ids = chunk.map { it.id }
-                batch.commit().addOnFailureListener { e ->
-                    Log.w(TAG, "Session upload rejected", e)
-                    if (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) scope.launch { dao.unmarkSynced(ids) }
-                }
+            val takenNow = HashSet<String>()
+            pending.forEach { row ->
+                var cloudId = SessionSyncPlan.cloudIdFor(me, row.startedAt, row.id, takenNow)
+                if (dao.countCloudId(cloudId) > 0) cloudId = "${me}_${row.startedAt}_${row.id}"
+                if (dao.countCloudId(cloudId) > 0) return@forEach
+                takenNow += cloudId
+                // Marked as synced straight away: Firestore keeps the write on disk until it reaches the server.
+                // If the server rejects it, the row goes back to unsynced and is retried later; it is never deleted.
+                dao.markSynced(row.id, cloudId, u, me)
+                db.collection("users").document(u).collection("sessions").document(cloudId)
+                    .set(sessionFields(row, me))
+                    .addOnFailureListener { e ->
+                        Log.w(TAG, "Session upload rejected", e)
+                        scope.launch { runCatching { dao.unmarkSynced(listOf(row.id)) } }
+                    }
             }
         } finally { uploadMutex.unlock() }
     }
@@ -288,41 +308,71 @@ class CloudSync @Inject constructor(
     private suspend fun applyPulled(u: String, docs: List<DocumentSnapshot>) {
         if (uid != u) return
         val me = device.deviceId()
-        val add = mutableListOf<SessionEntity>()
         var newest = prefs.getLong(lastPullKey(u), 0L)
-        docs.forEach { d ->
+        val decoded = docs.map { d ->
             d.getTimestamp("updatedAt")?.toDate()?.time?.let { if (it > newest) newest = it }
-            if (d.getBoolean("deleted") == true) { dao.deleteByCloudId(d.id); return@forEach }
-            val origin = d.getString("deviceId").orEmpty()
-            if (origin == me) return@forEach
-            add += SessionEntity(
-                startedAt = d.getLong("startedAt") ?: return@forEach,
-                durationMs = d.getLong("durationMs") ?: 0L,
-                mode = d.getString("mode") ?: "POMODORO",
-                subject = d.getString("subject").orEmpty(),
+            CloudSessionDoc(
+                id = d.id, deleted = d.getBoolean("deleted") == true, deviceId = d.getString("deviceId").orEmpty(),
+                startedAt = d.getLong("startedAt"), durationMs = d.getLong("durationMs") ?: 0L,
+                mode = d.getString("mode") ?: "POMODORO", subject = d.getString("subject").orEmpty(),
                 completed = d.getBoolean("completed") ?: false,
-                cloudId = d.id, ownerUid = u, origin = origin.ifBlank { "unknown" },
             )
         }
-        if (add.isNotEmpty()) dao.insertAllIgnoring(add)
+        val ids = decoded.map { it.id }
+        val known = ids.chunked(500).flatMap { dao.cloudIdsIn(it) }.toSet()
+        val unsyncedOwn = dao.unsynced().filter { it.origin == null || it.origin == me }.map { it.startedAt }.toSet()
+        val plan = SessionSyncPlan.plan(decoded, u, me, known, unsyncedOwn, pendingTombstones(u))
+        plan.deleteCloudIds.forEach { dao.deleteByCloudId(it) }
+        if (plan.add.isNotEmpty()) dao.insertAllIgnoring(plan.add)
         prefs.edit().putLong(lastPullKey(u), newest).apply()
     }
 
     /** Called after a session is deleted on this phone: every device drops it. */
     fun onSessionDeleted(row: SessionEntity) {
-        val u = uid ?: return
         val cloudId = row.cloudId ?: return
-        if (row.ownerUid != null && row.ownerUid != u) return
+        val owner = row.ownerUid
+        val u = uid
+        // 1.8.1: deleted while signed out (or before Firebase restored): remembered and sent on the next
+        // sign-in, so the full re-pull does not bring the session back.
+        if (u == null || db() == null) { if (owner != null) addPendingTombstone(owner, cloudId); return }
+        if (owner != null && owner != u) { addPendingTombstone(owner, cloudId); return }
+        writeTombstone(u, cloudId)
+    }
+
+    private fun writeTombstone(u: String, cloudId: String) {
         val db = db() ?: return
+        addPendingTombstone(u, cloudId)
         db.collection("users").document(u).collection("sessions").document(cloudId)
             .set(mapOf("deleted" to true, "updatedAt" to FieldValue.serverTimestamp()), SetOptions.merge())
-            .addOnFailureListener { e -> Log.w(TAG, "Session delete sync failed", e) }
+            .addOnSuccessListener { removePendingTombstone(u, cloudId) }
+            .addOnFailureListener { e ->
+                Log.w(TAG, "Session delete sync failed", e)
+                // Rejected: the document never reached the cloud (nothing to mark), so stop retrying.
+                if (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED) removePendingTombstone(u, cloudId)
+            }
+    }
+
+    private fun replayTombstones(u: String) { pendingTombstones(u).forEach { writeTombstone(u, it) } }
+
+    private fun pendingTombstones(u: String): Set<String> =
+        prefs.getStringSet(KEY_TOMBSTONES, emptySet()).orEmpty().mapNotNull { e -> e.split('|', limit = 2).takeIf { it.size == 2 && it[0] == u }?.get(1) }.toSet()
+
+    @Synchronized private fun addPendingTombstone(u: String, cloudId: String) {
+        val set = prefs.getStringSet(KEY_TOMBSTONES, emptySet()).orEmpty().toMutableSet()
+        if (set.add("$u|$cloudId")) prefs.edit().putStringSet(KEY_TOMBSTONES, set).apply()
+    }
+
+    @Synchronized private fun removePendingTombstone(u: String, cloudId: String) {
+        val set = prefs.getStringSet(KEY_TOMBSTONES, emptySet()).orEmpty().toMutableSet()
+        if (set.remove("$u|$cloudId")) prefs.edit().putStringSet(KEY_TOMBSTONES, set).apply()
     }
 
     private fun lastPullKey(u: String) = "last_pull_$u"
+    private fun resyncKey(u: String) = "resync_181_$u"
 
     private companion object {
         const val TAG = "Flowstate"
         const val KEY_LOCK_WRITTEN = "lock_written_at"
+        const val KEY_TOMBSTONES = "pending_tombstones"
     }
 }

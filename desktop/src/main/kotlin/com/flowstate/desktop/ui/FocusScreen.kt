@@ -44,7 +44,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -86,7 +85,6 @@ data class FocusUi(
     val tasks: List<TaskEntity>,
     val remote: RemoteTimer?,
     val signedIn: Boolean,
-    val now: Long,
     val today: LocalDate = LocalDate.now(),
 )
 
@@ -107,14 +105,20 @@ class FocusActions(
     val onTakeOver: () -> Unit = {},
 )
 
-fun FocusUi.liveTodayMs(): Long = recordedTodayMs + if (timer.phase == Phase.FOCUS && timer.isActive) timer.elapsedAt(now) else 0L
+fun FocusUi.liveTodayMs(now: Long): Long = liveTodayMs(recordedTodayMs, timer, now)
+
+/** Focus recorded today plus the running focus block. */
+fun liveTodayMs(recordedTodayMs: Long, timer: TimerState, now: Long): Long =
+    recordedTodayMs + if (timer.phase == Phase.FOCUS && timer.isActive) timer.elapsedAt(now) else 0L
 
 @Composable
 fun FocusScreen(ui: FocusUi, a: FocusActions) {
     val t = ui.timer
     val mode = if (t.isActive) t.mode else ui.selection.mode
     val goalMs = ui.settings.dailyGoalMin * 60_000L
-    val todayMs = ui.liveTodayMs()
+    // Today's total moves with the clock while a block runs; 10 s steps are finer than anything shown
+    // (minutes, a 38 dp ring), so this screen recomposes at most every 10 s instead of every tick.
+    val todayMs = derivedFromNow { now -> ui.liveTodayMs(now) / 10_000L * 10_000L }
     val remote = ui.remote
     var keptRemote by remember(remote?.deviceId, remote?.state?.phaseStartedAt, remote?.state?.status) { mutableStateOf(false) }
     val locked = remote != null && !t.isActive
@@ -139,17 +143,20 @@ fun FocusScreen(ui: FocusUi, a: FocusActions) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Box(Modifier.weight(1f).fillMaxHeight().card(28.dp)) {
                 val showOverlay = locked && !keptRemote
-                Box(Modifier.fillMaxSize().then(if (showOverlay) Modifier.blur(14.dp) else Modifier)) {
-                    if (locked) RemoteTimerView(remote!!, ui.now, onTakeOver = a.onTakeOver, compact = !showOverlay)
+                Box(Modifier.fillMaxSize()) {
+                    if (locked) RemoteTimerView(remote!!, onTakeOver = a.onTakeOver, compact = !showOverlay)
                     else TimerPanel(ui, mode, a)
                 }
                 if (showOverlay) {
-                    Box(Modifier.fillMaxSize().background(Slate.Window.copy(alpha = 0.45f)))
-                    LockedCard(remote!!, ui.now, Modifier.align(Alignment.Center), onTakeOver = a.onTakeOver, onKeep = { keptRemote = true })
+                    // 1.8.1: a denser translucent wash instead of Modifier.blur(14.dp). The blur re-filtered the
+                    // whole panel on every repaint (the clock behind it repaints every second), which is very
+                    // slow when Skia renders on the CPU. The wash reads the same: the timer recedes, the card leads.
+                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Slate.Window.copy(alpha = 0.78f), Slate.Window.copy(alpha = 0.86f)))))
+                    LockedCard(remote!!, Modifier.align(Alignment.Center), onTakeOver = a.onTakeOver, onKeep = { keptRemote = true })
                 }
                 if (t.awaitingCheckIn) {
                     Box(Modifier.fillMaxSize().background(Slate.Window.copy(alpha = 0.55f)))
-                    CheckInCard(t, ui.now, Modifier.align(Alignment.Center), a.onConfirmPresence)
+                    CheckInCard(t, Modifier.align(Alignment.Center), a.onConfirmPresence)
                 }
             }
             Column(Modifier.width(360.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
@@ -169,18 +176,7 @@ private fun TimerPanel(ui: FocusUi, mode: TimerMode, a: FocusActions) {
         Spacer(Modifier.height(30.dp))
         Segmented(TimerMode.entries.map { it.label }, TimerMode.entries.indexOf(mode), enabled = !t.isActive) { a.onMode(TimerMode.entries[it]) }
         Spacer(Modifier.height(28.dp))
-        val (fraction, clock, top, bottom) = ringContent(t, mode, durationMin, ui.settings, ui.now)
-        Box(Modifier.size(380.dp), contentAlignment = Alignment.Center) {
-            TimerRing(fraction, t.status == Status.PAUSED)
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                T(top, 16.sp, FontWeight.Medium, Slate.Mist)
-                Spacer(Modifier.height(10.dp))
-                T(clock, 88.sp, FontWeight.Light, letterSpacing = (-2).sp)
-                Spacer(Modifier.height(10.dp))
-                if (!t.isActive && !mode.countsUp) DurationStepper(durationMin, mode, a.onDuration)
-                else T(bottom, 14.sp, color = Slate.Mist)
-            }
-        }
+        TimerDial(t, mode, durationMin, ui.settings, a.onDuration)
         Spacer(Modifier.height(26.dp))
         SubjectPill(if (t.isActive) t.subject else ui.selection.subject, editable = !t.isActive, onChange = a.onSubject)
         Spacer(Modifier.height(26.dp))
@@ -189,7 +185,28 @@ private fun TimerPanel(ui: FocusUi, mode: TimerMode, a: FocusActions) {
     }
 }
 
+/** The ring and the big clock: the only part of the Focus screen that recomposes every second. */
+@Composable
+private fun TimerDial(t: TimerState, mode: TimerMode, durationMin: Int, settings: DesktopSettings, onDuration: (Int) -> Unit) {
+    val (fraction, clock, top, bottom) = derivedFromNow { now -> ringContent(t, mode, durationMin, settings, now) }
+    Box(Modifier.size(380.dp), contentAlignment = Alignment.Center) {
+        TimerRing(fraction, t.status == Status.PAUSED)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            T(top, 16.sp, FontWeight.Medium, Slate.Mist)
+            Spacer(Modifier.height(10.dp))
+            T(clock, 88.sp, FontWeight.Light, letterSpacing = (-2).sp)
+            Spacer(Modifier.height(10.dp))
+            if (!t.isActive && !mode.countsUp) DurationStepper(durationMin, mode, onDuration)
+            else T(bottom, 14.sp, color = Slate.Mist)
+        }
+    }
+}
+
 private data class RingContent(val fraction: Float, val clock: String, val top: String, val bottom: String)
+
+/** Whole seconds, matching what [formatClock] shows, so the ring and the clock change together once a second. */
+private fun remainingSecondsMs(rem: Long): Long = (rem.coerceAtLeast(0) + 999) / 1000 * 1000
+private fun elapsedSecondsMs(e: Long): Long = e.coerceAtLeast(0) / 1000 * 1000
 
 private fun ringContent(t: TimerState, mode: TimerMode, durationMin: Int, s: DesktopSettings, now: Long): RingContent {
     if (!t.isActive) {
@@ -201,17 +218,17 @@ private fun ringContent(t: TimerState, mode: TimerMode, durationMin: Int, s: Des
     val paused = t.status == Status.PAUSED
     return when {
         t.countsUp -> {
-            val e = t.elapsedAt(now)
+            val e = elapsedSecondsMs(t.elapsedAt(now))
             RingContent((e % 3_600_000L) / 3_600_000f, formatElapsed(e), mode.label, if (paused) "paused · elapsed" else "elapsed")
         }
         t.isBreak -> {
             val label = if (t.phase == Phase.LONG_BREAK) "Long break" else "Short break"
-            val rem = t.remainingAt(now)
+            val rem = remainingSecondsMs(t.remainingAt(now))
             RingContent(rem / t.phaseDurationMs.toFloat(), formatClock(rem), label,
                 (if (paused) "paused · " else "") + if (t.standaloneBreak) "until you're back" else "then block ${block} of $rounds")
         }
         else -> {
-            val rem = t.remainingAt(now)
+            val rem = remainingSecondsMs(t.remainingAt(now))
             val tail = if (t.mode == TimerMode.POMODORO) " · Block $block of $rounds" else ""
             RingContent(rem / t.phaseDurationMs.toFloat(), formatClock(rem), mode.label, (if (paused) "paused" else "remaining") + tail)
         }
@@ -320,9 +337,9 @@ private fun Controls(t: TimerState, strict: Boolean, a: FocusActions, shortBreak
 
 /** The other device's session, read-only, behind the lock card or (after "Keep on phone") with a take-over button. */
 @Composable
-private fun RemoteTimerView(remote: RemoteTimer, now: Long, onTakeOver: () -> Unit, compact: Boolean) {
+private fun RemoteTimerView(remote: RemoteTimer, onTakeOver: () -> Unit, compact: Boolean) {
     val t = remote.state
-    val c = ringContent(t, t.mode, 25, DesktopSettings(), now)
+    val c = derivedFromNow { now -> ringContent(t, t.mode, 25, DesktopSettings(), now) }
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Segmented(TimerMode.entries.map { it.label }, TimerMode.entries.indexOf(t.mode), enabled = false) {}
         Spacer(Modifier.height(28.dp))
@@ -359,7 +376,7 @@ fun remoteSessionLine(remote: RemoteTimer, now: Long): String {
 }
 
 @Composable
-private fun LockedCard(remote: RemoteTimer, now: Long, modifier: Modifier, onTakeOver: () -> Unit, onKeep: () -> Unit) {
+private fun LockedCard(remote: RemoteTimer, modifier: Modifier, onTakeOver: () -> Unit, onKeep: () -> Unit) {
     val shape = RoundedCornerShape(30.dp)
     val t = remote.state
     Column(
@@ -375,7 +392,7 @@ private fun LockedCard(remote: RemoteTimer, now: Long, modifier: Modifier, onTak
         val what = if (t.isBreak) "A break" else "Focus"
         T("$what is running on your ${remote.deviceLabel}", 25.sp, FontWeight.Bold, align = TextAlign.Center, maxLines = 2, lineHeight = 31.sp)
         Spacer(Modifier.height(14.dp))
-        Chip(height = 40.dp) { LiveDot(); T(remoteSessionLine(remote, now), 15.sp, FontWeight.SemiBold) }
+        Chip(height = 40.dp) { LiveDot(); T(derivedFromNow { now -> remoteSessionLine(remote, now) }, 15.sp, FontWeight.SemiBold) }
         Spacer(Modifier.height(16.dp))
         T(listOf(t.mode.label, t.subject).filter { it.isNotBlank() }.joinToString(" · "), 14.sp, color = Slate.Mist, align = TextAlign.Center)
         Spacer(Modifier.height(4.dp))
@@ -389,8 +406,8 @@ private fun LockedCard(remote: RemoteTimer, now: Long, modifier: Modifier, onTak
 }
 
 @Composable
-private fun CheckInCard(t: TimerState, now: Long, modifier: Modifier, onHere: () -> Unit) {
-    val left = (t.checkInAt + 2 * 60_000L - now).coerceAtLeast(0L)
+private fun CheckInCard(t: TimerState, modifier: Modifier, onHere: () -> Unit) {
+    val left = derivedFromNow { now -> remainingSecondsMs(t.checkInAt + 2 * 60_000L - now) }
     Column(
         modifier.width(440.dp).glass(RoundedCornerShape(30.dp), strong = true).background(Slate.Deep.copy(alpha = 0.6f)).padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

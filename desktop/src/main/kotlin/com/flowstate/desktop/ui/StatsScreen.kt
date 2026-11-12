@@ -27,6 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -53,16 +54,22 @@ import java.util.Locale
 @Composable
 fun StatsScreen(all: List<SessionEntity>, goalMin: Int, myDeviceId: String, signedIn: Boolean, today: LocalDate = LocalDate.now(), onDelete: (Long) -> Unit = {}) {
     var period by remember { mutableStateOf(StatsPeriod.WEEK) }
-    val perDay = StatsCalculator.perDay(all)
-    val inPeriod = StatsCalculator.inPeriod(all, period, today)
+    // The whole history is walked here (date conversion per session), so it is computed once per change
+    // of history, period or day, not on every recomposition (1.8.1).
+    val perDay = remember(all) { StatsCalculator.perDay(all) }
+    val inPeriod = remember(all, period, today) { StatsCalculator.inPeriod(all, period, today) }
     val total = inPeriod.sumOf { it.durationMs }
     val completion = if (inPeriod.isEmpty()) 0f else inPeriod.count { it.completed } / inPeriod.size.toFloat()
     val goalMs = goalMin * 60_000L
     val weekMs = (0..6).sumOf { perDay[today.minusDays(it.toLong())] ?: 0L }
-    val buckets = StatsCalculator.buckets(period, inPeriod, today)
-    val streak = StatsCalculator.streak(perDay, today)
+    val buckets = remember(inPeriod, period, today) { StatsCalculator.buckets(period, inPeriod, today) }
+    val streak = remember(perDay, today) { StatsCalculator.streak(perDay, today) }
     val score = StatsCalculator.productivityScore(weekMs, goalMs, completion)
     val fromPhone = inPeriod.filter { it.origin != null && it.origin != myDeviceId }.sumOf { it.durationMs }
+    val dist = remember(inPeriod) {
+        inPeriod.groupBy { it.subject.ifBlank { "No subject" } }.mapValues { (_, l) -> l.sumOf { it.durationMs } }
+            .entries.sortedByDescending { it.value }.take(5).map { it.key to it.value }
+    }
 
     Column(Modifier.fillMaxSize()) {
         TopBar("Stats", "${period.label} · ${if (signedIn) "phone and PC combined" else "this PC"}", if (goalMs > 0) (perDay[today] ?: 0L) / goalMs.toFloat() else 0f) {
@@ -110,8 +117,6 @@ fun StatsScreen(all: List<SessionEntity>, goalMin: Int, myDeviceId: String, sign
                 SectionCard(Modifier.fillMaxWidth().weight(1f)) {
                     T("Subjects", 15.sp, FontWeight.Bold)
                     Spacer(Modifier.height(10.dp))
-                    val dist = inPeriod.groupBy { it.subject.ifBlank { "No subject" } }.mapValues { (_, l) -> l.sumOf { it.durationMs } }
-                        .entries.sortedByDescending { it.value }.take(5)
                     if (dist.isEmpty()) T("No focus recorded in this period yet.", 13.sp, color = Slate.Mist)
                     dist.forEach { (name, ms) ->
                         Row(Modifier.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -124,7 +129,9 @@ fun StatsScreen(all: List<SessionEntity>, goalMin: Int, myDeviceId: String, sign
                     T("Recent sessions", 15.sp, FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
                     Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                        all.take(20).forEach { s -> SessionRow(s, myDeviceId, onDelete) }
+                        // 1.8.1: keyed by id, so an open "Delete this session?" stays with its own session when a
+                        // pull or a finished block shifts the list (positional state used to slide onto the row above).
+                        all.take(20).forEach { s -> key(s.id) { SessionRow(s, myDeviceId, onDelete) } }
                     }
                 }
             }
@@ -159,8 +166,13 @@ private fun SessionRow(s: SessionEntity, myDeviceId: String, onDelete: (Long) ->
             Icon(Icons.Rounded.Close, "Delete session", tint = Slate.Mist, modifier = Modifier.size(14.dp))
         }
     }
-    if (confirm) ConfirmDialog("Delete this session?", "${formatDuration(s.durationMs)} will be removed from your history, stats and streak on every device. This can't be undone.", "Delete",
-        onConfirm = { confirm = false; onDelete(s.id) }, onDismiss = { confirm = false })
+    if (confirm) {
+        // The id is fixed when the dialog opens, and the text names the session, so the right one is deleted.
+        val targetId = remember { s.id }
+        val label = "${formatDuration(s.durationMs)} of ${s.subject.ifBlank { TimerMode.labelFor(s.mode) }} on ${time.format(DateTimeFormatter.ofPattern("EEE d MMM, h:mm a", Locale.ENGLISH))}"
+        ConfirmDialog("Delete this session?", "$label will be removed from your history, stats and streak on every device. This can't be undone.", "Delete",
+            onConfirm = { confirm = false; onDelete(targetId) }, onDismiss = { confirm = false })
+    }
 }
 
 @Composable

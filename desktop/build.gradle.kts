@@ -35,6 +35,7 @@ val syncSharedDomain by tasks.registering(Sync::class) {
             "com/flowstate/focus/domain/Models.kt",
             "com/flowstate/focus/domain/StatsCalculator.kt",
             "com/flowstate/focus/domain/WaterPhysics.kt",
+            "com/flowstate/focus/domain/SessionSync.kt",
             "com/flowstate/focus/domain/groups/*.kt",
         )
     }
@@ -101,7 +102,11 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.flowstate.desktop.MainKt"
-        jvmArgs += listOf("-Dfile.encoding=UTF-8")
+        // 1.8.1: a bounded heap (the app keeps a few MB of JSON; Skia's pixels are native memory) and short
+        // GC pauses so a collection never stalls a frame. The renderer is left to Skiko (Direct3D on Windows,
+        // falling back to OpenGL, then software); Settings › Graphics can force one, and so can the
+        // SKIKO_RENDER_API environment variable (DIRECT3D, OPENGL or SOFTWARE_FAST).
+        jvmArgs += listOf("-Dfile.encoding=UTF-8", "-Xms64m", "-Xmx768m", "-XX:+UseG1GC", "-XX:MaxGCPauseMillis=20")
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Deb)
             packageName = "Flowstate"
@@ -138,5 +143,16 @@ tasks.register<JavaExec>("renderScreens") {
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("com.flowstate.desktop.RenderScreensKt")
     args(providers.gradleProperty("screensOut").orElse(layout.buildDirectory.dir("screens").get().asFile.path).get())
+    systemProperty("java.awt.headless", "true")
+}
+
+// Headless performance probe of the real App composable (frames, recompositions and UI CPU per second):
+//   gradle :desktop:perfProbe [-PperfSeconds=6] [-PperfOut=/some/file.tsv]
+tasks.register<JavaExec>("perfProbe") {
+    group = "verification"
+    dependsOn("testClasses")
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("com.flowstate.desktop.PerfProbeKt")
+    args(listOfNotNull(providers.gradleProperty("perfSeconds").orElse("6").get(), providers.gradleProperty("perfOut").orNull))
     systemProperty("java.awt.headless", "true")
 }

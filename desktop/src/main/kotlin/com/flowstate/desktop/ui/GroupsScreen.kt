@@ -43,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
@@ -77,11 +76,13 @@ class GroupsActions(
 private val IST: ZoneId = ZoneId.of("Asia/Kolkata")
 
 @Composable
-fun GroupsScreen(state: CloudState, now: Long, a: GroupsActions, signIn: @Composable () -> Unit) {
+fun GroupsScreen(state: CloudState, a: GroupsActions, signIn: @Composable () -> Unit) {
     val group = state.selectedGroup
     var showNew by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf(false) }
-    val live = state.members.filter { it.isLiveFocusing(now) }
+    // Who is live depends on the clock (a member counts as live for 90 s after a write); derived, so the
+    // screen recomposes only when that list changes, not on every clock tick (1.8.1).
+    val live = derivedFromNow { now -> state.members.filter { it.isLiveFocusing(now) } }
     Column(Modifier.fillMaxSize()) {
         TopBar(
             title = "Groups",
@@ -102,7 +103,7 @@ fun GroupsScreen(state: CloudState, now: Long, a: GroupsActions, signIn: @Compos
             return@Column
         }
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-            GroupList(state, now, a, Modifier.width(280.dp).fillMaxHeight(), onNew = { showNew = true })
+            GroupList(state, live, a, Modifier.width(280.dp).fillMaxHeight(), onNew = { showNew = true })
             if (group == null) {
                 Column(Modifier.weight(1f).fillMaxHeight().card(28.dp).padding(40.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     T("No groups yet", 22.sp, FontWeight.Bold)
@@ -112,8 +113,8 @@ fun GroupsScreen(state: CloudState, now: Long, a: GroupsActions, signIn: @Compos
                     PillButton("New group", Icons.Rounded.Add, BtnStyle.Primary) { showNew = true }
                 }
             } else {
-                Leaderboard(state, group, now, a, Modifier.weight(1f).fillMaxHeight())
-                ChatPanel(state, group, now, a, Modifier.width(400.dp).fillMaxHeight())
+                Leaderboard(state, group, live, a, Modifier.weight(1f).fillMaxHeight())
+                ChatPanel(state, group, a, Modifier.width(400.dp).fillMaxHeight())
             }
         }
     }
@@ -130,7 +131,7 @@ private fun liveSummary(live: List<Member>, me: String?): String {
 }
 
 @Composable
-private fun GroupList(state: CloudState, now: Long, a: GroupsActions, modifier: Modifier, onNew: () -> Unit) {
+private fun GroupList(state: CloudState, live: List<Member>, a: GroupsActions, modifier: Modifier, onNew: () -> Unit) {
     var query by remember { mutableStateOf("") }
     Column(modifier.card().padding(horizontal = 14.dp, vertical = 20.dp)) {
         T("Your groups", 15.sp, FontWeight.Bold, modifier = Modifier.padding(start = 6.dp))
@@ -140,7 +141,7 @@ private fun GroupList(state: CloudState, now: Long, a: GroupsActions, modifier: 
         Spacer(Modifier.height(14.dp))
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             state.groups.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }.forEach { g ->
-                GroupRow(g, state, now, selected = g.id == state.selectedGroupId) { a.onSelect(g.id) }
+                GroupRow(g, state, live, selected = g.id == state.selectedGroupId) { a.onSelect(g.id) }
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -149,13 +150,10 @@ private fun GroupList(state: CloudState, now: Long, a: GroupsActions, modifier: 
 }
 
 @Composable
-private fun GroupRow(g: Group, state: CloudState, now: Long, selected: Boolean, onClick: () -> Unit) {
+private fun GroupRow(g: Group, state: CloudState, live: List<Member>, selected: Boolean, onClick: () -> Unit) {
     val shape = RoundedCornerShape(18.dp)
     val sub = when {
-        selected && state.members.any { it.isLiveFocusing(now) } -> {
-            val live = state.members.filter { it.isLiveFocusing(now) }
-            liveSummary(live, state.user?.uid) + " · ${live.size} live"
-        }
+        selected && live.isNotEmpty() -> liveSummary(live, state.user?.uid) + " · ${live.size} live"
         state.lastMessages[g.id] != null -> state.lastMessages[g.id]!!.let { m -> (if (m.uid == state.user?.uid) "You" else m.name.substringBefore(' ')) + ": " + m.text }
         else -> "${g.memberIds.size} ${if (g.memberIds.size == 1) "member" else "members"}"
     }
@@ -183,19 +181,17 @@ private fun GroupRow(g: Group, state: CloudState, now: Long, selected: Boolean, 
 }
 
 @Composable
-private fun Leaderboard(state: CloudState, group: Group, now: Long, a: GroupsActions, modifier: Modifier) {
+private fun Leaderboard(state: CloudState, group: Group, live: List<Member>, a: GroupsActions, modifier: Modifier) {
     val members = state.members
     val me = state.user?.uid
-    val weekStart = Instant.ofEpochMilli(weeklyWeekStartIst(now)).atZone(IST).toLocalDate()
-    val weekEndMs = weeklyWeekStartIst(now) + 7L * 24 * 3_600_000
-    val fmt = DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)
-    val liveCount = members.count { it.isLiveFocusing(now) }
+    val liveIds = live.map { it.uid }.toSet()
+    val liveCount = live.size
     Column(modifier.card(28.dp).padding(horizontal = 22.dp, vertical = 20.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 T("This week", 24.sp, FontWeight.Bold)
                 Spacer(Modifier.height(4.dp))
-                T("${weekStart.format(fmt)} – ${weekStart.plusDays(6).format(fmt)} · ends in ${untilLabel(weekEndMs - now)}", 12.5.sp, color = Slate.Mist)
+                T(derivedFromNow(::weekLine), 12.5.sp, color = Slate.Mist)
             }
             Chip(height = 32.dp) {
                 if (liveCount > 0) LiveDot(6.dp)
@@ -210,7 +206,7 @@ private fun Leaderboard(state: CloudState, group: Group, now: Long, a: GroupsAct
                 Box(Modifier.fillMaxWidth().height(step * members.size + 14.dp)) {
                     members.forEachIndexed { i, m ->
                         val color = stackColor(i, members.size)
-                        StackPill(m, i + 1, color, self = m.uid == me, now = now, modifier = Modifier.offset(y = step * i).zIndex(i.toFloat()))
+                        StackPill(m, i + 1, color, self = m.uid == me, live = m.uid in liveIds, modifier = Modifier.offset(y = step * i).zIndex(i.toFloat()))
                     }
                 }
             }
@@ -250,13 +246,13 @@ private fun stackColor(index: Int, count: Int): Color {
 }
 
 @Composable
-private fun StackPill(m: Member, rank: Int, color: Color, self: Boolean, now: Long, modifier: Modifier) {
+private fun StackPill(m: Member, rank: Int, color: Color, self: Boolean, live: Boolean, modifier: Modifier) {
     val shape = RoundedCornerShape(54.dp)
     val dark = color.luminance() > 0.35f
     val fg = if (dark) Slate.Ink else Slate.Paper
     val sub = if (dark) Slate.Ink.copy(alpha = 0.7f) else Slate.Mist
     Row(
-        modifier.fillMaxWidth().height(108.dp).shadow(14.dp, shape, ambientColor = Color.Black, spotColor = Color.Black).clip(shape).background(color)
+        modifier.fillMaxWidth().height(108.dp).softShadow(shape).clip(shape).background(color)
             .then(if (self) Modifier.border(2.dp, Slate.Paper, shape) else Modifier)
             .padding(start = 28.dp, end = 30.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -267,10 +263,11 @@ private fun StackPill(m: Member, rank: Int, color: Color, self: Boolean, now: Lo
         Column(Modifier.weight(1f)) {
             T(if (self) "${m.name} · You" else m.name, 16.sp, FontWeight.SemiBold, fg)
             Spacer(Modifier.height(4.dp))
-            val live = m.live
-            if (m.isLiveFocusing(now) && live != null) {
+            val liveTimer = m.live
+            if (live && liveTimer != null) {
                 val where = when (m.livePlatform) { "windows" -> " on PC"; "android" -> " on phone"; else -> "" }
-                val clock = if (live.countsUp) formatElapsed(live.elapsedAt(now)) else formatClock(live.remainingAt(now))
+                // Only this chip follows the clock, once a second.
+                val clock = derivedFromNow { now -> if (liveTimer.countsUp) formatElapsed(liveTimer.elapsedAt(now)) else formatClock(liveTimer.remainingAt(now)) }
                 Row(
                     Modifier.clip(RoundedCornerShape(12.dp)).background(Slate.Ink.copy(alpha = 0.55f)).border(1.dp, Slate.Fog.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
                         .padding(horizontal = 8.dp, vertical = 3.dp),
@@ -278,12 +275,21 @@ private fun StackPill(m: Member, rank: Int, color: Color, self: Boolean, now: Lo
                 ) {
                     Box(Modifier.size(6.dp).clip(CircleShape).background(Slate.Paper))
                     Spacer(Modifier.width(6.dp))
-                    T((if (live.status == Status.PAUSED) "Paused$where" else "Focusing$where") + " · " + clock, 11.5.sp, FontWeight.SemiBold, Slate.Paper)
+                    T((if (liveTimer.status == Status.PAUSED) "Paused$where" else "Focusing$where") + " · " + clock, 11.5.sp, FontWeight.SemiBold, Slate.Paper)
                 }
             } else T("Weekly focus", 12.5.sp, color = sub)
         }
         T(formatDuration(m.weeklyFocusMs), 21.sp, FontWeight.Bold, fg)
     }
+}
+
+/** "Nov 9 – Nov 15 · ends in 2d 4h": changes once a minute. */
+private fun weekLine(now: Long): String {
+    val fmt = DateTimeFormatter.ofPattern("MMM d", Locale.ENGLISH)
+    val start = weeklyWeekStartIst(now)
+    val weekStart = Instant.ofEpochMilli(start).atZone(IST).toLocalDate()
+    val weekEndMs = start + 7L * 24 * 3_600_000
+    return "${weekStart.format(fmt)} – ${weekStart.plusDays(6).format(fmt)} · ends in ${untilLabel(weekEndMs - now)}"
 }
 
 private fun untilLabel(ms: Long): String {
@@ -294,7 +300,7 @@ private fun untilLabel(ms: Long): String {
 // ---------------------------------------------------------------- chat
 
 @Composable
-private fun ChatPanel(state: CloudState, group: Group, now: Long, a: GroupsActions, modifier: Modifier) {
+private fun ChatPanel(state: CloudState, group: Group, a: GroupsActions, modifier: Modifier) {
     val me = state.user?.uid
     val chat = state.chat
     val membersById = state.members.associateBy { it.uid }

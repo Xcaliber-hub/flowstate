@@ -203,11 +203,18 @@ class TimerEngine @Inject constructor(
         }
     }
 
-    /** Another device took this session over: stop here without recording it; it continues there. */
-    fun releaseForHandoff() {
+    /**
+     * Another device claimed the timer: stop here. When [remote] is this block carried on there, nothing is
+     * recorded (that device records it once). 1.8.1: when it is a different block (another subject or plan,
+     * an earlier start, or this block was too old for anyone to take over), the focus time spent here is
+     * recorded first; until 1.8.0 it was silently dropped.
+     */
+    fun releaseForHandoff(remote: TimerState? = null) {
         synchronized(lock) {
-            if (_state.value.status == Status.IDLE) return@synchronized
+            val s = _state.value
+            if (s.status == Status.IDLE) return@synchronized
             completionJob?.cancel()
+            com.flowstate.focus.domain.HandoffPolicy.recordOnRelease(s, remote, System.currentTimeMillis())?.let { (ms, completed) -> record(s, ms, completed) }
             finish()
         }
     }

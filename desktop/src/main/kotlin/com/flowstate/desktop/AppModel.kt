@@ -41,6 +41,8 @@ class AppModel(alerts: TimerAlerts) {
         Thread { update.value = UpdateCheck.latest() }.apply { isDaemon = true }.start()
     }
     val selection = MutableStateFlow(FocusSelection())
+    /** The renderer Skiko is using for the window (DIRECT3D, OPENGL, SOFTWARE_FAST…), once the window exists. */
+    val renderApi = MutableStateFlow<String?>(null)
 
     fun defaultMinutes(mode: TimerMode, s: DesktopSettings) = if (mode == TimerMode.COUNTDOWN) s.countdownMin else s.focusMin
 

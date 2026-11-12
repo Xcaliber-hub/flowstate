@@ -27,9 +27,18 @@ import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -54,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.flowstate.desktop.Screen
 import kotlin.math.PI
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 private val screenIcons: Map<Screen, ImageVector> = mapOf(
@@ -64,33 +74,49 @@ private val screenIcons: Map<Screen, ImageVector> = mapOf(
     Screen.SETTINGS to Icons.Outlined.Settings,
 )
 
-/** Window background: near-black with two soft slate glows. */
-fun Modifier.windowBackground(): Modifier = this
-    .background(Slate.Window)
-    .background(Brush.radialGradient(listOf(Slate.Steel.copy(alpha = 0.35f), Color.Transparent), center = Offset(260f, 120f), radius = 1100f))
-    .background(Brush.radialGradient(listOf(Slate.Slate.copy(alpha = 0.18f), Color.Transparent), center = Offset(1500f, 1000f), radius = 900f))
+/**
+ * Window background: near-black with two soft slate glows.
+ *
+ * 1.8.1: painted once per window size into a bitmap and then just copied. The two full-window radial
+ * gradients were recomputed on every repaint; headless (Skia on the CPU, as with Windows' software
+ * renderer) they were about 9 of the 15 ms a full repaint of the Focus screen took.
+ */
+fun Modifier.windowBackground(): Modifier = this.drawWithCache {
+    val w = size.width.roundToInt().coerceAtLeast(1)
+    val h = size.height.roundToInt().coerceAtLeast(1)
+    val bitmap = ImageBitmap(w, h)
+    CanvasDrawScope().draw(this, layoutDirection, Canvas(bitmap), Size(w.toFloat(), h.toFloat())) {
+        drawRect(Slate.Window)
+        drawRect(Brush.radialGradient(listOf(Slate.Steel.copy(alpha = 0.35f), Color.Transparent), center = Offset(260f, 120f), radius = 1100f))
+        drawRect(Brush.radialGradient(listOf(Slate.Slate.copy(alpha = 0.18f), Color.Transparent), center = Offset(1500f, 1000f), radius = 900f))
+    }
+    onDrawBehind { drawImage(bitmap) }
+}
 
 /**
  * The app frame: the floating glass nav capsule (92 wide, fully rounded) with the daily-goal water bar
  * at its foot, and the current screen beside it.
+ *
+ * [goalFraction] is read lazily (it changes with the clock while a focus block runs) so only the water
+ * bar follows it. [waterSpeed] is how fast its surface moves; 0 keeps it still (nothing running).
  */
 @Composable
 fun Shell(
     screen: Screen,
     onNavigate: (Screen) -> Unit,
-    goalFraction: Float,
-    waterTime: Float,
+    goalFraction: () -> Float,
+    waterSpeed: Float,
     badges: Set<Screen> = emptySet(),
     content: @Composable () -> Unit,
 ) {
     Row(Modifier.fillMaxSize().windowBackground()) {
-        NavRail(screen, onNavigate, goalFraction, waterTime, badges)
+        NavRail(screen, onNavigate, goalFraction, waterSpeed, badges)
         Box(Modifier.weight(1f).fillMaxHeight().padding(start = 28.dp, top = 22.dp, end = 28.dp, bottom = 26.dp)) { content() }
     }
 }
 
 @Composable
-private fun NavRail(screen: Screen, onNavigate: (Screen) -> Unit, goalFraction: Float, waterTime: Float, badges: Set<Screen>) {
+private fun NavRail(screen: Screen, onNavigate: (Screen) -> Unit, goalFraction: () -> Float, waterSpeed: Float, badges: Set<Screen>) {
     val shape = RoundedCornerShape(46.dp)
     Column(
         Modifier.padding(start = 18.dp, top = 22.dp, bottom = 26.dp).width(92.dp).fillMaxHeight().glass(shape).padding(top = 14.dp),
@@ -115,21 +141,32 @@ private fun NavRail(screen: Screen, onNavigate: (Screen) -> Unit, goalFraction: 
             }
         }
         Spacer(Modifier.weight(1f))
-        WaterTube(goalFraction, waterTime)
+        WaterTube(goalFraction, waterSpeed)
         Spacer(Modifier.height(24.dp))
     }
 }
 
-/** The daily-goal water bar: a slim tube filled to today's share of the goal, with a gently moving surface. */
+/**
+ * The daily-goal water bar: a slim tube filled to today's share of the goal, with a gently moving surface.
+ *
+ * The fill level is quantised to 0.1 % so the bar redraws only when it visibly moves, and the surface
+ * moves (a draw-phase clock read, no recomposition) only while a timer runs ([speed] > 0).
+ */
 @Composable
-fun WaterTube(fraction: Float, time: Float, height: Dp = 170.dp) {
+fun WaterTube(fraction: () -> Float, speed: Float, height: Dp = 170.dp) {
+    val latest = rememberUpdatedState(fraction)
+    val level by remember { derivedStateOf(structuralEqualityPolicy()) { (latest.value().coerceIn(0f, 1f) * 1000f).roundToInt() / 1000f } }
+    val clock = LocalNow.current
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        T("${(fraction.coerceIn(0f, 1f) * 100).toInt()}%", 13.sp, FontWeight.Bold)
+        T("${(level * 100).toInt()}%", 13.sp, FontWeight.Bold)
         Spacer(Modifier.height(8.dp))
         val shape = RoundedCornerShape(10.dp)
         Canvas(Modifier.size(16.dp, height).clip(shape).background(Slate.Fog.copy(alpha = 0.06f)).border(1.dp, Slate.Fog.copy(alpha = 0.18f), shape)) {
-            val f = fraction.coerceIn(0f, 1f)
+            val f = level
             if (f <= 0f) return@Canvas
+            // The surface steps once per clock tick (once a second while a timer runs), so the phase advances
+            // a gentle ~0.6 rad (focus) or ~0.25 rad (break) per step. Still water keeps a fixed phase.
+            val time = if (speed > 0f) ((clock.value / 1000L) % 100_000L) * speed * 0.16f else 0f
             val top = size.height * (1f - f)
             val amp = 2.2f
             val path = Path().apply {

@@ -22,6 +22,49 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
   </tr>
 </table>
 
+## 1.8.1: Windows performance, and the missing sessions fix
+
+### Missing sessions (Android and Windows)
+
+Users reported that "some sessions have somehow disappeared". Several separate causes were found and fixed. None of the fixes ever deletes a local session because it is missing from the cloud; only an explicit "deleted" mark removes one.
+
+- **Windows: the session pull got stuck on big batches.** It paged with "updatedAt greater than the newest seen", 300 at a time. A batch upload (the phone's first sync sends up to 400 sessions in one commit) gives every session the same server time, so the rest of the batch was skipped for good, or, with sub-millisecond times, the same 300 came back on every poll and nothing newer was ever pulled (and each poll re-read 300 documents). The pull now pages with a cursor on (updatedAt, document name) and remembers it (`sync.json` → `pullCursor`).
+- **Windows: a second copy of the app erased sessions.** With close-to-tray on, opening Flowstate again from the Start menu started a second copy; each copy rewrote the whole `sessions.json` from its own memory, so one copy's new sessions vanished at the other's next save. Flowstate now runs once per user (`SingleInstance`, `instance.lock` in `%APPDATA%\Flowstate`); a second launch brings the running window forward and exits.
+- **Windows: an unreadable `sessions.json` loaded as an empty history**, which the next save then wrote over the file. Now the damaged file is kept as `sessions.json.corrupt-<time>`, and the last good copy (`sessions.json.bak`, kept before every replace) is used, or else every session that still decodes. Writes are flushed to disk (fsync) before the rename and retried if the file is briefly locked. This applies to every store file.
+- **Both: own sessions were never restored from the cloud.** Every device skipped cloud sessions carrying its own device id, assuming it still had them. A local history lost to an app-data restore from an older backup, a reinstall, or the Windows causes above could never come back. Own sessions missing locally are now restored, and each account pulls its whole history once after updating to 1.8.1, which brings back every session still in the cloud.
+- **Both: one rejected session blocked the rest.** Uploads went in batches of up to 400, and a batch is all-or-nothing, so one session the rules refused kept the whole batch off the cloud for good. Android now writes each session on its own; Windows retries a rejected batch one session at a time. Two sessions with the same start time no longer share one cloud document (the second gets `<device>_<startedAt>_<rowId>`); on Android that collision made marking the second one throw and stopped every later upload.
+- **Android: Today's sessions showed only the first 8 of the day.** The card is oldest first and drew 8 rows, so from the 9th session of a day on, each new one looked as if it had vanished. It now shows them all.
+- **Android: a hiccup in the sign-in state wiped the PC's sessions.** Any moment the account read as signed out (an auth restore race at launch) ran the sign-out cleanup. Pulled sessions are now forgotten only on a real sign-out, and only rows that came from the cloud, so signing in again brings them back. Rows pulled for a different account are dropped when another account signs in.
+- **Both: a different block was dropped on a handoff.** When another device claimed the timer, this device stopped its session without recording it, assuming it was the same block continuing there. If it was a different block (another subject or plan, an earlier start, or a pause left overnight that no device could have taken over), its focus time is now recorded first (`HandoffPolicy`).
+- **Both: sessions recorded while signed out after the first sign-in were never uploaded.** The claim of signed-out sessions ran once per account; it now runs on every sign-in (still only when no other account has used the device).
+- **Windows: the delete confirmation could land on the wrong row.** Its open state was tied to the row's position, so a pull or a finished block shifting the list moved it onto another session. Rows are keyed by id, the id is fixed when the dialog opens, and the dialog names the session. A delete made offline or while signed out is remembered and its "deleted" mark is sent later on both platforms, so the re-pull does not resurrect it.
+- Checked and not a cause: Room migrations 2→3 and 3→4 only add tables and there is no destructive fallback; the Firestore rules accept 60-character subjects (they allow 80 characters, counted in characters, so Hindi subjects fit too; new emulator test); days are grouped by start time in local time (a session that starts at 23:30 is listed under that day).
+- **No Firestore rules change.** Nothing to republish.
+
+### Windows performance
+
+Measured headless with `gradle :desktop:perfProbe` (real `App` composable, 1440×900):
+
+| Scenario | Recomposed scopes/s, 1.8.0 → 1.8.1 | UI CPU ms/s, 1.8.0 → 1.8.1 |
+| --- | --- | --- |
+| Focus, idle | 4.2 → 0 | 71.3 → 0 |
+| Focus, timer running | 4.3 → 4.0 | 81.3 → 9.9 |
+| Focus, locked (phone runs the timer) | 4.5 → 5.0 | 128.1 → 13.7 |
+| Groups (8 members, 1 live, 50 messages) | 77.8 → 5.0 | 179.1 → 11.4 |
+| Stats (1,500 sessions) | 4.3 → 0.5 | 70.2 → 1.6 |
+
+- **The clock no longer recomposes the whole window.** `now` was read at the top of `App` every 250 ms, so the whole window redrew four times a second even when idle. The clock (`ui/Clock.kt`) is now read only by the few places that show time, ticks once per second on the second, and only while something is counting; idle the window does not redraw at all (4 redraws/s → 0).
+- **Background gradients are cached:** the two full-window radial gradients are painted once per window size into a bitmap and then just copied.
+- **The locked card's blur is replaced by a translucent wash.** The blur re-filtered the Focus screen behind it on every frame.
+- **Fake shadows:** the leaderboard pills' soft shadow is three stacked translucent copies of the shape instead of a real (blurred) shadow.
+- **The daily-goal water bar is still when idle;** its surface drifts only while a timer runs.
+- **Saves happen off the UI thread and are batched.** JSON files are written by one background writer; quick successive saves collapse into one write of the latest value, and pending writes are flushed on exit.
+- **Sync marking is batched:** uploaded sessions are marked synced with one update and one write per batch instead of one per session.
+- **Avatars are pre-scaled** to their display size once instead of being scaled on every draw.
+- **JVM flags:** bounded heap (`-Xms64m -Xmx768m`), G1 with a 20 ms pause target.
+- **Settings › Graphics:** pick the renderer (Automatic, Direct3D, OpenGL, Software); applied at the next launch, and the active one is shown. Software rendering is the usual cause of lag on PCs whose GPU driver is blocklisted. The `SKIKO_RENDER_API` environment variable still works.
+- **Groups no longer throws an uncaught exception when offline.**
+
 ## 1.8.0: syllabus tracker (JEE, NEET, IAT)
 
 - **Tasks | Syllabus.** A segmented toggle at the top of Tasks switches between your tasks and the syllabus tracker, and remembers the last tab. The top bar reads "Syllabus · JEE Main" with the exam's overall progress; its menu picks the exam (JEE Main, NEET, IAT), as do the chips under the toggle.
