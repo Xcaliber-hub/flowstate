@@ -22,6 +22,13 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
   </tr>
 </table>
 
+## 1.8.2: collapsing nav bar and a floating timer bar
+
+- **The bottom nav never hides any more.** Scrolling down shrinks the pill, with a spring, into a circle on the left that shows only the current tab's icon; scrolling up, tapping the circle or switching tabs brings the full bar back. Every tab now shows its icon and label, with one highlight that slides between them.
+- **Drag to switch.** Press the bar and slide sideways: the highlight follows your finger and lands on the tab under it when you let go. Taps work as before.
+- **Floating timer bar.** While a session is running or paused, a glass bar shows the subject (or Focus / Break), the round for Pomodoro, the live time left (time spent for the stopwatch) and a play/pause button. Tapping it opens Focus. It sits above the nav; when the nav collapses it slides into the same row, beside the circle, like a music app's mini player. It is hidden on Focus and Exams, which already show the timer, and strict focus keeps its pause button disabled. Lists get extra bottom padding while it shows.
+- Glass UI off gives both bars the solid look. The side dock is unchanged.
+
 ## 1.8.1: Windows performance, and the missing sessions fix
 
 ### Missing sessions (Android and Windows)

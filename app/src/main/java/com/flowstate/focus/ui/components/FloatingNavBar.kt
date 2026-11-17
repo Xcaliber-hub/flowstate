@@ -1,75 +1,311 @@
 package com.flowstate.focus.ui.components
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 data class NavTab(val route: String, val label: String, val icon: ImageVector)
 
+/** Height of the bottom nav pill; the collapsed nav is a circle of the same size. */
+val NavBarHeight = 64.dp
+
+/** The light blur used by the bottom nav and the timer bar (kept small for mid-range phones). */
+private val DockBlur = 16.dp
+
 /**
- * Capsule navigation that floats over the content. Only the selected tab shows its label, and the
- * pill resizes with a spring (bouncier when Liquid UI is on). [visible] slides it off screen so the
- * parent can hide it while scrolling down.
+ * 1.8.2: the bottom navigation dock. The nav pill never hides any more. While [collapsed] (the user
+ * scrolled down) it shrinks into a circle on the left showing only the selected tab's icon, and a
+ * tap on the circle brings the full pill back.
+ *
+ * [timerBar], when set, is a floating bar for a running or paused session. Expanded it sits above the
+ * nav pill at full width; collapsed it slides down into the nav row, to the right of the circle, and
+ * fills the rest of the width, like a music app's mini player. Position and size follow the same
+ * spring as the nav morph.
+ *
+ * Pressing the expanded pill and dragging sideways moves the highlight with the finger; letting go
+ * selects the tab under it. Taps still work as before.
  */
 @Composable
-fun FloatingNavBar(
+fun BottomNavDock(
     tabs: List<NavTab>,
     selectedRoute: String?,
-    visible: Boolean,
+    collapsed: Boolean,
     liquid: Boolean,
     onSelect: (NavTab) -> Unit,
+    onExpand: () -> Unit,
     modifier: Modifier = Modifier,
+    timerBar: (@Composable () -> Unit)? = null,
+) {
+    // M3 Expressive spatial spring when Liquid UI is on (a small overshoot), a calm critically damped one otherwise.
+    val progress = animateFloatAsState(
+        targetValue = if (collapsed) 1f else 0f,
+        animationSpec = if (liquid) spring(dampingRatio = 0.8f, stiffness = 380f) else spring(dampingRatio = 1f, stiffness = 700f),
+        label = "navCollapse",
+    )
+    val density = LocalDensity.current
+    BoxWithConstraints(
+        modifier
+            .fillMaxWidth()
+            .widthIn(max = 600.dp)
+            .navigationBarsPadding()
+            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+    ) {
+        val fullWidth = maxWidth
+        val showTimer = timerBar != null
+        // Keep the last timer content around so it can fade out after the session ends.
+        val lastTimer = remember { arrayOfNulls<@Composable () -> Unit>(1) }
+        if (timerBar != null) lastTimer[0] = timerBar
+        Layout(
+            content = {
+                // Child 0: the nav pill / circle.
+                NavPill(
+                    tabs = tabs,
+                    selectedRoute = selectedRoute,
+                    collapsed = collapsed,
+                    progress = { progress.value },
+                    liquid = liquid,
+                    fullWidth = fullWidth,
+                    onSelect = onSelect,
+                    onExpand = onExpand,
+                )
+                // Child 1: the timer bar slot. The outer Box always exists so the layout has two children.
+                Box(Modifier.fillMaxSize()) {
+                    AnimatedVisibility(
+                        visible = showTimer,
+                        enter = fadeIn() + scaleIn(initialScale = 0.9f),
+                        exit = fadeOut() + scaleOut(targetScale = 0.9f),
+                    ) {
+                        Box(Modifier.fillMaxSize()) { lastTimer[0]?.invoke() }
+                    }
+                }
+            },
+        ) { measurables, constraints ->
+            val w = constraints.maxWidth
+            val h = NavBarHeight.roundToPx()
+            val gap = TimerBarGap.roundToPx()
+            val th = TimerBarHeight.roundToPx()
+            val p = progress.value
+            val pc = p.coerceIn(0f, 1f)
+            // The pill shrinks from the right into a circle anchored on the left.
+            val navW = (w + (h - w) * p).roundToInt().coerceIn(h, w)
+            val nav = measurables[0].measure(Constraints.fixed(navW, h))
+            // Constant height (room for the timer above the nav) so nothing jumps when a session starts or ends.
+            // The empty space has no pointer input, so touches there reach the screen below.
+            val total = th + gap + h
+            // Timer: full width above the nav when expanded; in the nav row right of the circle when collapsed.
+            val tx = ((h + gap) * p).roundToInt().coerceAtLeast(0)
+            val tw = (w - tx).coerceIn(h, w)
+            val tH = (th + (h - th) * pc).roundToInt()
+            val ty = ((th + gap) * p).roundToInt()
+            val timer = measurables[1].measure(Constraints.fixed(tw, tH))
+            layout(w, total) {
+                nav.place(0, total - h)
+                timer.place(tx, ty.coerceIn(0, (total - tH).coerceAtLeast(0)))
+            }
+        }
+    }
+}
+
+@Composable
+private fun NavPill(
+    tabs: List<NavTab>,
+    selectedRoute: String?,
+    collapsed: Boolean,
+    progress: () -> Float,
+    liquid: Boolean,
+    fullWidth: androidx.compose.ui.unit.Dp,
+    onSelect: (NavTab) -> Unit,
+    onExpand: () -> Unit,
+) {
+    val selectedTab = tabs.firstOrNull { it.route == selectedRoute }
+    FrostedGlassSurface(shape = CircleShape, tinted = true, blurRadius = DockBlur, modifier = Modifier.fillMaxSize()) {
+        // The full tab row keeps its expanded width and is clipped by the shrinking pill while it fades.
+        Box(
+            Modifier
+                .fillMaxHeight()
+                .wrapContentWidth(Alignment.Start, unbounded = true)
+                .width(fullWidth)
+                .graphicsLayer { alpha = (1f - progress() * 1.8f).coerceIn(0f, 1f) },
+        ) {
+            // Stays composed while collapsed (invisible and covered by the expand target) so the highlight keeps its place.
+            TabRow(tabs, selectedRoute, liquid, enabled = !collapsed, onSelect = onSelect)
+        }
+        // Collapsed: the selected tab's icon, centred in the circle. Tapping it expands the bar.
+        if (selectedTab != null) {
+            Box(
+                Modifier
+                    .size(NavBarHeight)
+                    .align(Alignment.CenterStart)
+                    .graphicsLayer {
+                        val a = ((progress() - 0.4f) / 0.6f).coerceIn(0f, 1f)
+                        alpha = a
+                        scaleX = 0.7f + 0.3f * a
+                        scaleY = 0.7f + 0.3f * a
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(selectedTab.icon, contentDescription = null, tint = LocalContentColor.current)
+            }
+        }
+        if (collapsed) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .semantics { contentDescription = "Show navigation" + (selectedTab?.let { ", ${it.label} selected" } ?: "") }
+                    .clickable(onClick = onExpand),
+            )
+        }
+    }
+}
+
+/** Equal slots, icon over label, and one highlight capsule that slides between them (or follows a drag). */
+@Composable
+private fun TabRow(
+    tabs: List<NavTab>,
+    selectedRoute: String?,
+    liquid: Boolean,
+    enabled: Boolean,
+    onSelect: (NavTab) -> Unit,
 ) {
     val haptics = LocalHapticFeedback.current
-    val cs = MaterialTheme.colorScheme
-    val offsetY by animateDpAsState(
-        targetValue = if (visible) 0.dp else 140.dp,
-        animationSpec = spring(
-            dampingRatio = if (liquid) Spring.DampingRatioMediumBouncy else Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
-        label = "navOffset",
-    )
-    // Frosted glass: the screen blurs behind the bar as it scrolls.
-    FrostedGlassSurface(
-        shape = CircleShape,
-        modifier = modifier.widthIn(max = 600.dp).navigationBarsPadding().padding(bottom = 16.dp).offset { androidx.compose.ui.unit.IntOffset(0, offsetY.roundToPx()) },
-        tinted = true,
-    ) {
-        Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            tabs.forEach { tab ->
-                NavItem(tab, tab.route == selectedRoute, liquid) {
-                    if (tab.route != selectedRoute) {
+    val scope = rememberCoroutineScope()
+    val selectedIndex = tabs.indexOfFirst { it.route == selectedRoute }
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    val currentSelected by rememberUpdatedState(selectedIndex)
+    BoxWithConstraints(Modifier.fillMaxSize().padding(4.dp)) {
+        val slotPx = constraints.maxWidth / tabs.size.coerceAtLeast(1).toFloat()
+        val maxX = slotPx * (tabs.size - 1)
+        val indicatorX = remember { Animatable(slotPx * selectedIndex.coerceAtLeast(0)) }
+        var dragging by remember { mutableStateOf(false) }
+        val moveSpec = if (liquid) spring<Float>(0.75f, Spring.StiffnessMediumLow) else spring<Float>(1f, Spring.StiffnessMedium)
+        LaunchedEffect(selectedIndex, slotPx) {
+            if (!dragging && selectedIndex >= 0) indicatorX.animateTo(slotPx * selectedIndex, moveSpec)
+        }
+        // The tab under the highlight right now; labels brighten as it passes during a drag.
+        val hovered by remember(slotPx) {
+            derivedStateOf { ((indicatorX.value + slotPx / 2f) / slotPx).toInt().coerceIn(0, tabs.size - 1) }
+        }
+        // Highlight capsule.
+        if (selectedIndex >= 0) {
+            val slotDp = with(LocalDensity.current) { slotPx.toDp() }
+            Box(
+                Modifier
+                    .offset { IntOffset(indicatorX.value.roundToInt(), 0) }
+                    .width(slotDp)
+                    .fillMaxHeight()
+                    .graphicsLayer { if (dragging) { scaleX = 1.06f; scaleY = 1.06f } }
+                    .background(Glass.selectedFill(), CircleShape)
+                    .border(1.dp, Glass.selectedBorder(), CircleShape),
+            )
+        }
+        Row(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(tabs.size, slotPx, enabled) {
+                    if (!enabled) return@pointerInput
+                    var lastHover = -1
+                    detectHorizontalDragGestures(
+                        onDragStart = { start ->
+                            dragging = true
+                            lastHover = currentSelected
+                            scope.launch { indicatorX.animateTo((start.x - slotPx / 2f).coerceIn(0f, maxX), spring(1f, Spring.StiffnessHigh)) }
+                        },
+                        onHorizontalDrag = { change, _ ->
+                            change.consume()
+                            scope.launch { indicatorX.snapTo((change.position.x - slotPx / 2f).coerceIn(0f, maxX)) }
+                            val over = (change.position.x / slotPx).toInt().coerceIn(0, tabs.size - 1)
+                            if (over != lastHover) {
+                                lastHover = over
+                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            }
+                        },
+                        onDragEnd = {
+                            val target = ((indicatorX.value + slotPx / 2f) / slotPx).toInt().coerceIn(0, tabs.size - 1)
+                            dragging = false
+                            scope.launch { indicatorX.animateTo(slotPx * target, moveSpec) }
+                            if (target != currentSelected) currentOnSelect(tabs[target])
+                        },
+                        onDragCancel = {
+                            dragging = false
+                            scope.launch { indicatorX.animateTo(slotPx * currentSelected.coerceAtLeast(0), moveSpec) }
+                        },
+                    )
+                },
+            horizontalArrangement = Arrangement.Start,
+        ) {
+            tabs.forEachIndexed { i, tab ->
+                val selected = i == selectedIndex
+                val lit = if (dragging) i == hovered else selected
+                NavSlot(
+                    tab = tab,
+                    selected = selected,
+                    lit = lit,
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (!selected) {
                         haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         onSelect(tab)
                     }
@@ -80,27 +316,33 @@ fun FloatingNavBar(
 }
 
 @Composable
-private fun NavItem(tab: NavTab, selected: Boolean, liquid: Boolean, onClick: () -> Unit) {
-    val glass = Glass.content()
-    val background by animateColorAsState(if (selected) Glass.selectedFill() else Color.Transparent, label = "navBg")
-    val rim by animateColorAsState(if (selected) Glass.selectedBorder() else Color.Transparent, label = "navRim")
-    val tint = if (selected) glass else glass.copy(alpha = 0.7f)
-    val sizeSpec = if (liquid) spring<IntSize>(0.55f, Spring.StiffnessMediumLow) else spring<IntSize>(1f, Spring.StiffnessMedium)
-    Row(
-        modifier = Modifier
+private fun NavSlot(tab: NavTab, selected: Boolean, lit: Boolean, enabled: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val base = LocalContentColor.current
+    val tint = if (lit) base else base.copy(alpha = 0.68f)
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
             .clip(CircleShape)
-            .background(background)
-            .border(1.dp, rim, CircleShape)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
-            .animateContentSize(sizeSpec)
-            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
-            .padding(horizontal = if (selected) 12.dp else 9.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .selectable(
+                selected = selected,
+                enabled = enabled,
+                role = Role.Tab,
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
-        Icon(tab.icon, contentDescription = tab.label, tint = tint)
-        if (selected) {
-            Spacer(Modifier.width(8.dp))
-            Text(tab.label, style = MaterialTheme.typography.labelLarge, color = tint, maxLines = 1)
-        }
+        Icon(tab.icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        // One line, never broken mid-word: shrinks a little on narrow phones, then ellipsizes.
+        AutoSizeText(
+            tab.label,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, textAlign = TextAlign.Center),
+            color = tint,
+            minSize = 9.sp,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp),
+        )
     }
 }

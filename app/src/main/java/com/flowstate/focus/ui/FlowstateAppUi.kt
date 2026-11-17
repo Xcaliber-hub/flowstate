@@ -55,7 +55,14 @@ import androidx.navigation.compose.rememberNavController
 import com.flowstate.focus.domain.AppSettings
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.CompositionLocalProvider
-import com.flowstate.focus.ui.components.FloatingNavBar
+import com.flowstate.focus.ui.components.BottomNavDock
+import com.flowstate.focus.ui.components.LocalBottomBarExtra
+import com.flowstate.focus.ui.components.TimerBarGap
+import com.flowstate.focus.ui.components.TimerBarHeight
+import com.flowstate.focus.ui.focus.TimerBar
+import com.flowstate.focus.ui.focus.TimerBarViewModel
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalDensity
 import com.flowstate.focus.ui.components.LocalNavLayout
 import com.flowstate.focus.ui.components.NavLayout
 import com.flowstate.focus.ui.dock.SideDock
@@ -110,19 +117,31 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
     }
     val contentLayer = rememberGraphicsLayer()
     val route = nav.currentBackStackEntryAsState().value?.destination?.route
-    var navVisible by remember { mutableStateOf(true) }
+    // 1.8.2: the bottom nav never hides; scrolling down collapses it into a circle instead.
+    var navCollapsed by remember { mutableStateOf(false) }
     val topBar = remember { TopBarState() }
     val backDispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher
 
-    // Hide the nav bar while scrolling down, bring it back on any upward scroll.
-    val scrollConnection = remember {
+    // Collapse the nav after a short scroll down (content moving up), expand it again after a short scroll up.
+    // Small moves in one direction add up, so a jittery finger does not flip it back and forth.
+    val collapseThresholdPx = with(LocalDensity.current) { 24.dp.toPx() }
+    val scrollConnection = remember(collapseThresholdPx) {
         object : NestedScrollConnection {
+            private var travel = 0f
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y < -8f) navVisible = false else if (available.y > 8f) navVisible = true
+                val dy = available.y
+                if (dy == 0f) return Offset.Zero
+                if ((dy < 0f) != (travel < 0f)) travel = 0f
+                travel += dy
+                if (travel < -collapseThresholdPx) navCollapsed = true
+                else if (travel > collapseThresholdPx) navCollapsed = false
                 return Offset.Zero
             }
         }
     }
+    // The running (or paused) session, from the same timer engine the Focus screen and the timer service use.
+    val timerVm: TimerBarViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+    val timerState by timerVm.state.collectAsState()
 
     val enter = fadeIn(tween(240, delayMillis = 80)) + scaleIn(initialScale = 0.96f, animationSpec = tween(240, delayMillis = 80))
     val exit = fadeOut(tween(90))
@@ -135,7 +154,13 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
         val navLayout = if (settings.sideNav) NavLayout.SIDE else NavLayout.BOTTOM
-        CompositionLocalProvider(LocalNavLayout provides navLayout, LocalBlurSource provides contentLayer, LocalTopBarState provides topBar, LocalGlassUi provides settings.glassUi) {
+        val navShown = Tabs.any { it.route == route } || route == Routes.EXAMS || route == Routes.WEEK_SESSIONS || route == Routes.SYLLABUS_SUBJECT
+        // 1.8.2 timer bar: bottom layout only, while a session runs or is paused, and not on Focus (or its
+        // Exams screen), which already shows the timer.
+        val showTimerBar = navLayout == NavLayout.BOTTOM && navShown && timerState.isActive &&
+            route != Routes.FOCUS && route != Routes.EXAMS
+        val bottomExtra = if (showTimerBar) TimerBarHeight + TimerBarGap else 0.dp
+        CompositionLocalProvider(LocalNavLayout provides navLayout, LocalBottomBarExtra provides bottomExtra, LocalBlurSource provides contentLayer, LocalTopBarState provides topBar, LocalGlassUi provides settings.glassUi) {
         Box(Modifier.fillMaxSize().nestedScroll(scrollConnection)) {
             NavHost(
                 navController = nav,
@@ -187,7 +212,7 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
             }
             // The Exams screen (1.7.0) keeps the frosted bar and the nav, with Focus highlighted; This week's
             // sessions (1.7.2) does the same with Settings highlighted.
-            if (Tabs.any { it.route == route } || route == Routes.EXAMS || route == Routes.WEEK_SESSIONS || route == Routes.SYLLABUS_SUBJECT) {
+            if (navShown) {
                 val selectedRoute = when (route) {
                     Routes.EXAMS -> Routes.FOCUS
                     Routes.WEEK_SESSIONS -> Routes.SETTINGS
@@ -206,8 +231,10 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
                     state = topBar,
                     modifier = Modifier.align(Alignment.TopEnd).padding(end = 16.dp, top = statusTop + TopBarTopGap + TopBarHeight + 10.dp),
                 )
+                // Every tab switch, by tap or by drag, brings the full nav back.
+                androidx.compose.runtime.LaunchedEffect(selectedRoute) { navCollapsed = false }
                 val onSelect: (NavTab) -> Unit = { tab ->
-                    navVisible = true
+                    navCollapsed = false
                     nav.navigate(tab.route) {
                         popUpTo(nav.graph.findStartDestination().id) { saveState = true }
                         launchSingleTop = true
@@ -215,13 +242,24 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
                     }
                 }
                 when (navLayout) {
-                    NavLayout.BOTTOM -> FloatingNavBar(
+                    NavLayout.BOTTOM -> BottomNavDock(
                         tabs = Tabs,
                         selectedRoute = selectedRoute,
-                        visible = navVisible,
+                        collapsed = navCollapsed,
                         liquid = settings.liquidUi,
                         onSelect = onSelect,
+                        onExpand = { navCollapsed = false },
                         modifier = Modifier.align(Alignment.BottomCenter),
+                        timerBar = if (showTimerBar) {
+                            {
+                                TimerBar(
+                                    state = timerState,
+                                    onOpen = { onSelect(Tabs.first { it.route == Routes.FOCUS }) },
+                                    onPause = timerVm::pause,
+                                    onResume = timerVm::resume,
+                                )
+                            }
+                        } else null,
                     )
                     // Compact rail and daily-goal water bar, stacked on the left edge.
                     // Fixed in place: the side dock never hides on scroll.
