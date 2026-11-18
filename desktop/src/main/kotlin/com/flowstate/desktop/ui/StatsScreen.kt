@@ -2,7 +2,6 @@ package com.flowstate.desktop.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -55,15 +54,10 @@ import java.util.Locale
 @Composable
 fun StatsScreen(all: List<SessionEntity>, goalMin: Int, myDeviceId: String, signedIn: Boolean, today: LocalDate = LocalDate.now(), onDelete: (Long) -> Unit = {}) {
     var period by remember { mutableStateOf(StatsPeriod.WEEK) }
-    // The coarse subject the numbers are read for; null is every subject.
-    var subject by remember { mutableStateOf<String?>(null) }
     // The whole history is walked here (date conversion per session), so it is computed once per change
     // of history, period or day, not on every recomposition (1.8.1).
     val perDay = remember(all) { StatsCalculator.perDay(all) }
-    val inPeriod = remember(all, period, today, subject) {
-        val inPeriodNow = StatsCalculator.inPeriod(all, period, today)
-        if (subject.isNullOrBlank()) inPeriodNow else inPeriodNow.filter { StatsCalculator.subjectIs(it.subject, subject ?: "") }
-    }
+    val inPeriod = remember(all, period, today) { StatsCalculator.inPeriod(all, period, today) }
     val total = inPeriod.sumOf { it.durationMs }
     val completion = if (inPeriod.isEmpty()) 0f else inPeriod.count { it.completed } / inPeriod.size.toFloat()
     val goalMs = goalMin * 60_000L
@@ -84,13 +78,6 @@ fun StatsScreen(all: List<SessionEntity>, goalMin: Int, myDeviceId: String, sign
         Spacer(Modifier.height(22.dp))
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Column(Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SubjectPill("All", subject = null, selected = subject == null) { subject = null }
-                    SubjectPill("Physics", subject = "Physics", selected = subject == "Physics") { subject = "Physics" }
-                    SubjectPill("Chemistry", subject = "Chemistry", selected = subject == "Chemistry") { subject = "Chemistry" }
-                    SubjectPill("Maths", subject = "Maths", selected = subject == "Maths") { subject = "Maths" }
-                    SubjectPill("Biology", subject = "Biology", selected = subject == "Biology") { subject = "Biology" }
-                }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     StatTile(formatDuration(total), "Focus time", Modifier.weight(1f))
                     StatTile("${inPeriod.size}", "Sessions", Modifier.weight(1f))
@@ -150,17 +137,6 @@ fun StatsScreen(all: List<SessionEntity>, goalMin: Int, myDeviceId: String, sign
             }
         }
     }
-}
-
-@Composable
-private fun SubjectPill(label: String, subject: String?, selected: Boolean, onClick: () -> Unit) {
-    Box(
-        Modifier.height(36.dp).clip(RoundedCornerShape(18.dp))
-            .background(if (selected) Slate.Paper.copy(alpha = 0.16f) else Slate.Fog.copy(alpha = 0.06f))
-            .border(1.dp, Slate.Fog.copy(alpha = if (selected) 0.35f else 0.16f), RoundedCornerShape(18.dp))
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center,
-    ) { T(label, 13.sp, FontWeight.SemiBold, if (selected) Slate.Paper else Slate.Mist) }
 }
 
 @Composable

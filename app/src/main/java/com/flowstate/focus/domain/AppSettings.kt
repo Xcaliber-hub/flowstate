@@ -40,6 +40,8 @@ data class AppSettings(
     val blockedPackages: Set<String> = emptySet(),
     /** Push notifications for new group chat messages. Off: this phone unsubscribes from every group's pushes. */
     val chatNotifications: Boolean = true,
+    /** 1.8.4: the last few custom subjects typed on Focus, newest first (see SubjectChoices). */
+    val recentSubjects: List<String> = emptyList(),
 )
 
 /** The check-in intervals offered in Settings, in minutes. */

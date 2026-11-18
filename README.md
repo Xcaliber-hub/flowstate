@@ -17,6 +17,12 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
   </tr>
 </table>
 
+## 1.8.4: subject picker on Focus
+
+- **Pick a subject instead of typing one.** The "Subject (optional)" field on Focus is now a row of pills: Physics, Chemistry, Maths, Biology and **+ Custom**. Tap one to select it, tap it again to clear it (a session can still have no subject). The row scrolls sideways; the selected pill is filled, the rest are outlined, on glass when Glass UI is on.
+- **+ Custom** opens a small dialog to type any subject. It shows as a selected pill, and the last three custom subjects come back as pills next time (kept in settings on this phone). A syllabus "Focus on this" chapter, such as "Physics – Rotational motion", shows as a selected custom pill; long names end with an ellipsis.
+- **Statistics:** the subject filter bar added in 1.8.3 is gone again, on Android and Windows. The Subjects breakdown is unchanged.
+
 ## 1.8.2: collapsing nav bar and a floating timer bar
 
 - **The bottom nav never hides any more.** Scrolling down shrinks the pill, with a spring, into a circle on the left that shows only the current tab's icon; scrolling up, tapping the circle or switching tabs brings the full bar back. Every tab now shows its icon and label, with one highlight that slides between them.

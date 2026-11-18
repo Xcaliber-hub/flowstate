@@ -102,16 +102,6 @@ object StatsCalculator {
             .mapValues { (_, list) -> list.sumOf { it.durationMs } }
             .entries.sortedByDescending { it.value }.take(5).map { it.key to it.value }
 
-    /**
-     * True when a session belongs to [chosen]. Coarse names cover their long form, so "Maths" also
-     * picks up sessions tagged "Mathematics", and matching ignores case and punctuation.
-     */
-    fun subjectIs(sessionSubject: String, chosen: String): Boolean {
-        fun norm(s: String) = s.lowercase().replace(Regex("[^a-z0-9]+"), " ").trim().replace(Regex(" +"), " ")
-        fun key(s: String) = if (s == "maths" || s == "math") "mathematics" else s
-        return key(norm(sessionSubject)) == key(norm(chosen))
-    }
-
     /** 0-100. Blends how close you are to your daily goal with how many sessions you finish. */
     fun productivityScore(weekMs: Long, goalMs: Long, completionRate: Float): Int {
         if (goalMs <= 0L) return 0

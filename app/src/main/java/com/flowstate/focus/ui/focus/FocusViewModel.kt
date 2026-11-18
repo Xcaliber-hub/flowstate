@@ -12,6 +12,7 @@ import com.flowstate.focus.data.repo.SessionRepository
 import com.flowstate.focus.domain.AppSettings
 import com.flowstate.focus.domain.Plan
 import com.flowstate.focus.domain.StatsCalculator
+import com.flowstate.focus.domain.SubjectChoices
 import com.flowstate.focus.domain.TimerMode
 import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.data.sync.CloudSync
@@ -63,7 +64,7 @@ private data class Selection(
 class FocusViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val engine: TimerEngine,
-    settingsRepo: SettingsRepository,
+    private val settingsRepo: SettingsRepository,
     private val sessionRepo: SessionRepository,
     private val cloudSync: CloudSync,
     private val deleter: com.flowstate.focus.data.repo.SessionDeleter,
@@ -122,6 +123,18 @@ class FocusViewModel @Inject constructor(
     fun setStrict(strict: Boolean) = selection.update { it.copy(strict = strict) }
     fun setSubject(subject: String) = selection.update { it.copy(subject = subject.take(SUBJECT_MAX)) }
 
+    /** 1.8.4: a subject typed through "+ Custom" becomes the selection and one of the remembered chips. */
+    fun setCustomSubject(subject: String) {
+        val s = SubjectChoices.clean(subject).take(SUBJECT_MAX)
+        setSubject(s)
+        rememberSubject(s)
+    }
+
+    private fun rememberSubject(subject: String) {
+        if (!SubjectChoices.isCustom(subject)) return
+        viewModelScope.launch { settingsRepo.update { it.copy(recentSubjects = SubjectChoices.remember(it.recentSubjects, subject)) } }
+    }
+
     /**
      * Starts a focus block from what the user picked on the idle screen. Reads the selection directly
      * rather than [ui], which may still show the break that was just ended.
@@ -140,6 +153,8 @@ class FocusViewModel @Inject constructor(
         }
         engine.start(mode, plan, sel.strict ?: st.strictByDefault, sel.subject.trim())
         startService()
+        // A custom subject that was started (e.g. a syllabus "Focus on this" chapter) is remembered too.
+        rememberSubject(sel.subject)
     }
 
     /** Starts a standalone break. A notification is posted when it ends, also in the background. */

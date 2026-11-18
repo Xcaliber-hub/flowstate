@@ -45,6 +45,8 @@ private object Keys {
     val CHECK_IN_MINUTES = intPreferencesKey("check_in_minutes")
     val BLOCKED = stringSetPreferencesKey("blocked")
     val CHAT_NOTIFS = booleanPreferencesKey("chat_notifications")
+    /** Newline-separated, newest first. A plain string keeps the order a string set would lose. */
+    val RECENT_SUBJECTS = stringPreferencesKey("recent_subjects")
 }
 
 private fun Preferences.toSettings(): AppSettings {
@@ -70,6 +72,7 @@ private fun Preferences.toSettings(): AppSettings {
         checkInMinutes = normalizeCheckInMinutes(this[Keys.CHECK_IN_MINUTES] ?: d.checkInMinutes),
         blockedPackages = this[Keys.BLOCKED] ?: d.blockedPackages,
         chatNotifications = this[Keys.CHAT_NOTIFS] ?: d.chatNotifications,
+        recentSubjects = this[Keys.RECENT_SUBJECTS]?.split('\n')?.filter { it.isNotBlank() } ?: d.recentSubjects,
     )
 }
 
@@ -94,6 +97,7 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[Keys.CHECK_IN_MINUTES] = normalizeCheckInMinutes(s.checkInMinutes)
     this[Keys.BLOCKED] = s.blockedPackages
     this[Keys.CHAT_NOTIFS] = s.chatNotifications
+    this[Keys.RECENT_SUBJECTS] = s.recentSubjects.joinToString("\n") { it.replace('\n', ' ') }
 }
 
 /** DataStore-backed settings. Every change goes through [update] so reads and writes stay atomic. */

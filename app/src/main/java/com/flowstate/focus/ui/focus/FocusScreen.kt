@@ -57,7 +57,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -109,6 +108,7 @@ import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.ui.components.DepthSurface
 import com.flowstate.focus.ui.components.Entrance
 import com.flowstate.focus.ui.components.GlassCard
+import com.flowstate.focus.ui.components.LocalGlassUi
 import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.formatClock
 import com.flowstate.focus.ui.components.formatDuration
@@ -218,6 +218,7 @@ fun FocusScreen(
                         onForceStop = vm::forceStop,
                         onStrict = vm::setStrict,
                         onSubject = vm::setSubject,
+                        onCustomSubject = vm::setCustomSubject,
                         onDuration = vm::setDuration,
                     )
                 }
@@ -283,6 +284,7 @@ private fun TimerCard(
     onForceStop: () -> Unit,
     onStrict: (Boolean) -> Unit,
     onSubject: (String) -> Unit,
+    onCustomSubject: (String) -> Unit,
     onDuration: (Int) -> Unit,
 ) {
     val t = ui.timer
@@ -293,7 +295,7 @@ private fun TimerCard(
             when {
                 // "Start focus" only exists while nothing is running, so a second session can't be started.
                 !t.isActive -> {
-                    SetupSection(ui, onStrict, onSubject, onDuration)
+                    SetupSection(ui, onStrict, onSubject, onCustomSubject, onDuration)
                     Spacer(Modifier.height(16.dp))
                     StartFocusButton(onStart)
                     Spacer(Modifier.height(10.dp))
@@ -403,7 +405,7 @@ private fun BreakSheet(defaultMin: Int, onDismiss: () -> Unit, onStart: (Int) ->
 }
 
 @Composable
-private fun SetupSection(ui: FocusUiState, onStrict: (Boolean) -> Unit, onSubject: (String) -> Unit, onDuration: (Int) -> Unit) {
+private fun SetupSection(ui: FocusUiState, onStrict: (Boolean) -> Unit, onSubject: (String) -> Unit, onCustomSubject: (String) -> Unit, onDuration: (Int) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (!ui.mode.countsUp) {
             val range = if (ui.mode == TimerMode.POMODORO) 5f..90f else 5f..180f
@@ -420,13 +422,17 @@ private fun SetupSection(ui: FocusUiState, onStrict: (Boolean) -> Unit, onSubjec
                 valueRange = range,
             )
         }
-        OutlinedTextField(
-            value = ui.subject,
-            onValueChange = onSubject,
-            label = { Text("Subject (optional)") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
+        // 1.8.4: pills instead of the "Subject (optional)" text field. Setup only shows while idle,
+        // so the picker is never live during a session; enabled is kept explicit anyway.
+        SubjectPicker(
+            subject = ui.subject,
+            recents = ui.settings.recentSubjects,
+            glass = LocalGlassUi.current,
+            onSubject = onSubject,
+            onCustomSubject = onCustomSubject,
+            enabled = !ui.timer.isActive,
+            maxLength = SUBJECT_MAX,
+            modifier = Modifier.padding(vertical = 4.dp),
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
