@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
@@ -61,6 +62,27 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
             contentPadding = screenContentPadding(),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            item(key = "subject") {
+                GlassCard(Modifier.fillMaxWidth(), liquid) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                "All" to null,
+                                "Physics" to "Physics",
+                                "Chemistry" to "Chemistry",
+                                "Maths" to "Maths",
+                                "Biology" to "Biology",
+                            ).forEach { (label, value) ->
+                                FilterChip(
+                                    selected = ui.subject == value,
+                                    onClick = { vm.setSubject(value) },
+                                    label = { Text(label, maxLines = 1, softWrap = false) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
             item(key = "chart") {
                 Entrance(1) {
                     GlassCard(Modifier.fillMaxWidth(), liquid) {
