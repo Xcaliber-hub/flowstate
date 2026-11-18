@@ -8,7 +8,6 @@ import java.time.YearMonth
 import java.time.ZoneId
 import java.time.format.TextStyle
 import java.util.Locale
-import java.util.regex.Regex
 
 enum class StatsPeriod(val label: String) { DAY("Day"), WEEK("Week"), MONTH("Month"), YEAR("Year") }
 
