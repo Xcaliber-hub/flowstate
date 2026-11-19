@@ -50,9 +50,7 @@ jobs:
       - name: Rename APK
         run: cp app/build/outputs/apk/release/app-release.apk "Flowstate-${{ steps.version.outputs.name }}.apk"
 
-      # Paused for the APK-only 1.8.6 build (no release); restored after the build.
       - name: Publish GitHub Release
-        if: false
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.version.outputs.name }}
