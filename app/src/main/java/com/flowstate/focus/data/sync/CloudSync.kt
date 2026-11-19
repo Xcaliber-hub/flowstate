@@ -11,6 +11,7 @@ import com.flowstate.focus.domain.SessionSyncPlan
 import com.flowstate.focus.domain.Status
 import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.service.TimerEngine
+import com.flowstate.focus.widgets.WidgetRefresh
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentChange
 import com.google.firebase.firestore.DocumentSnapshot
@@ -61,7 +62,7 @@ import javax.inject.Singleton
 @OptIn(FlowPreview::class)
 @Singleton
 class CloudSync @Inject constructor(
-    @ApplicationContext context: Context,
+    @ApplicationContext private val context: Context,
     private val groups: GroupsRepository,
     private val engine: TimerEngine,
     private val dao: SessionDao,
@@ -324,6 +325,7 @@ class CloudSync @Inject constructor(
         val plan = SessionSyncPlan.plan(decoded, u, me, known, unsyncedOwn, pendingTombstones(u))
         plan.deleteCloudIds.forEach { dao.deleteByCloudId(it) }
         if (plan.add.isNotEmpty()) dao.insertAllIgnoring(plan.add)
+        if (plan.deleteCloudIds.isNotEmpty() || plan.add.isNotEmpty()) WidgetRefresh.requestDaily(context)
         prefs.edit().putLong(lastPullKey(u), newest).apply()
     }
 

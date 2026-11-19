@@ -389,7 +389,7 @@ class GroupsRepository @Inject constructor(
     }
 
     /** Sends [text] to [groupId], optionally as a reply to [replyTo]. It shows at once and is marked sent when the server accepts it. */
-    fun sendChat(groupId: String, text: String, replyTo: ChatMessage? = null): Boolean {
+    suspend fun sendChat(groupId: String, text: String, replyTo: ChatMessage? = null): Boolean {
         val clean = text.trim()
         if (clean.isEmpty() || clean.length > CHAT_MAX_CHARS) return false
         val me = activeUser ?: return false
@@ -399,33 +399,40 @@ class GroupsRepository @Inject constructor(
             "id" to replyTo.id, "uid" to replyTo.uid, "name" to replyTo.name.take(40),
             "text" to replyTo.text.take(CHAT_REPLY_QUOTE_CHARS),
         )
-        clearTyping()
-        ref.set(data)
-            .addOnSuccessListener { requestPush(groupId, ref.id) }
-            .addOnFailureListener { e ->
-                Log.w("Flowstate", "Group chat send failed", e)
-                chatById.remove(ref.id); publishChat()
-                _chat.update { it.copy(error = chatError(e)) }
-            }
-        return true
+        return try {
+            ref.set(data).await()
+            requestPush(groupId, ref.id)
+            true
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            Log.w("Flowstate", "Group chat send failed", e)
+            chatById.remove(ref.id); publishChat()
+            _chat.update { it.copy(error = chatError(e)) }
+            false
+        }
     }
 
     /** Changes the text of one of your own messages for everyone; it is marked "Edited". */
-    fun editChat(groupId: String, messageId: String, text: String): Boolean {
+    suspend fun editChat(groupId: String, messageId: String, text: String): Boolean {
         val clean = text.trim()
         if (clean.isEmpty() || clean.length > CHAT_MAX_CHARS) return false
         val me = activeUser ?: return false
         val old = chatById[messageId] ?: return false
         if (old.uid != me.uid) return false
         chatById[messageId] = old.copy(text = clean, edited = true); publishChat()
-        messagesRef(groupId).document(messageId)
-            .update(mapOf("text" to clean, "editedAt" to FieldValue.serverTimestamp()))
-            .addOnFailureListener { e ->
-                Log.w("Flowstate", "Group chat edit failed", e)
-                if (_chat.value.groupId == groupId && chatById.containsKey(messageId)) { chatById[messageId] = old; publishChat() }
-                _chat.update { it.copy(error = chatError(e)) }
+        return try {
+            messagesRef(groupId).document(messageId)
+                .update(mapOf("text" to clean, "editedAt" to FieldValue.serverTimestamp())).await()
+            true
+        } catch (e: CancellationException) { throw e }
+        catch (e: Exception) {
+            Log.w("Flowstate", "Group chat edit failed", e)
+            if (_chat.value.groupId == groupId && chatById[messageId]?.text == clean) {
+                chatById[messageId] = old; publishChat()
             }
-        return true
+            _chat.update { it.copy(error = chatError(e)) }
+            false
+        }
     }
 
     /** Deletes one of your own messages for everyone. */

@@ -81,6 +81,26 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="group_chat" />
+        <receiver
+            android:name=".widgets.DailyProgressWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/daily_progress_widget_info" />
+        </receiver>
+        <receiver
+            android:name=".widgets.GroupFocusWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/group_focus_widget_info" />
+        </receiver>
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.updates"

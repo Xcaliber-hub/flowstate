@@ -1,10 +1,12 @@
 package com.flowstate.focus.data.repo
 
+import android.content.Context
 import com.flowstate.focus.data.db.SessionDao
 import com.flowstate.focus.data.db.SessionEntity
 import com.flowstate.focus.data.db.TaskDao
 import com.flowstate.focus.data.db.TaskEntity
 import kotlinx.coroutines.flow.Flow
+import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 
 interface SessionRepository {
@@ -15,11 +17,20 @@ interface SessionRepository {
     suspend fun byId(id: Long): SessionEntity?
 }
 
-class SessionRepositoryImpl @Inject constructor(private val dao: SessionDao) : SessionRepository {
+class SessionRepositoryImpl @Inject constructor(
+    private val dao: SessionDao,
+    @ApplicationContext private val context: Context,
+) : SessionRepository {
     override fun sessionsSince(fromMs: Long): Flow<List<SessionEntity>> = dao.since(fromMs)
-    override suspend fun insert(session: SessionEntity) = dao.insert(session)
+    override suspend fun insert(session: SessionEntity) {
+        dao.insert(session)
+        com.flowstate.focus.widgets.WidgetRefresh.requestDaily(context)
+    }
     override suspend fun all(): List<SessionEntity> = dao.all()
-    override suspend fun delete(id: Long) = dao.deleteById(id)
+    override suspend fun delete(id: Long) {
+        dao.deleteById(id)
+        com.flowstate.focus.widgets.WidgetRefresh.requestDaily(context)
+    }
     override suspend fun byId(id: Long): SessionEntity? = dao.byId(id)
 }
 

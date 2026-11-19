@@ -239,6 +239,7 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     val chatLayer = rememberGraphicsLayer()
     val listState = rememberLazyListState()
     var draft by rememberSaveable { mutableStateOf("") }
+    var submitting by remember { mutableStateOf(false) }
     var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
     var editing by remember { mutableStateOf<ChatMessage?>(null) }
     var actionsFor by remember { mutableStateOf<ChatMessage?>(null) }
@@ -255,16 +256,32 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     LaunchedEffect(draft.isNotBlank(), draft, editing) { vm.setTyping(group.id, draft.isNotBlank() && editing == null) }
     val typingRow = chat.typing.isNotEmpty()
     val send: (String) -> Unit = { text ->
-        val target = editing
-        if (target != null) {
-            // Editing: an unchanged text just closes the editor.
-            if (text.trim() == target.text || vm.editChat(group.id, target.id, text)) {
-                draft = ""; editing = null
-                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        if (!submitting && text.isNotBlank()) {
+            submitting = true
+            val target = editing
+            val reply = replyingTo
+            scope.launch {
+                try {
+                    if (target != null) {
+                        // An unchanged edit closes immediately; a changed edit remains in place until
+                        // Firestore accepts it, so a rejected write never discards the user's text.
+                        val accepted = text.trim() == target.text || vm.editChat(group.id, target.id, text)
+                        if (accepted && editing?.id == target.id && draft == text) {
+                            draft = ""; editing = null
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                    } else if (vm.sendChat(group.id, text, reply)) {
+                        // Clear only the text that was submitted. If the user typed ahead while the
+                        // network request was pending, leave that newer draft (and reply target) intact.
+                        if (draft == text && replyingTo?.id == reply?.id) {
+                            draft = ""; replyingTo = null
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                        }
+                    }
+                } finally {
+                    submitting = false
+                }
             }
-        } else if (vm.sendChat(group.id, text, replyingTo)) {
-            draft = ""; replyingTo = null
-            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
         }
     }
     val startReply: (ChatMessage) -> Unit = { m ->
@@ -420,7 +437,7 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                             )
                         }
                     }
-                    GlassCircleButton(if (editing != null) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.Send, if (editing != null) "Save edit" else "Send", enabled = draft.isNotBlank()) { send(draft) }
+                    GlassCircleButton(if (editing != null) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.Send, if (editing != null) "Save edit" else "Send", enabled = draft.isNotBlank() && !submitting) { send(draft) }
                 }
                 if (draft.length > CHAT_MAX_CHARS - 80) Text("${draft.length}/$CHAT_MAX_CHARS",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

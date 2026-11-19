@@ -17,6 +17,14 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
   </tr>
 </table>
 
+## 1.8.5: Daily progress and Group focus widgets
+
+- **Daily progress widget:** shows today's focused time, goal progress, session count and streak. It reads the same Room history, daily goal and local-time date/streak calculations as the Focus and Statistics screens.
+- **Group focus widget:** shows the currently selected group's active focus count, up to three preset avatars and the first two members' elapsed focus time. Presence older than two minutes is treated as stale and is not counted as live.
+- Both widgets use rounded translucent glass surfaces with fully opaque text for contrast. They refresh on app foregrounding, session inserts/deletes and group presence changes; Android's periodic widget refresh is also enabled. Tapping the Daily progress widget opens Flowstate; tapping Group focus opens that group.
+- **Chat send/edit drafts are preserved:** the composer now clears only after Firestore accepts the write. Failed sends/edits leave the submitted text available for correction or retry, and newer text typed while a request is pending is not cleared.
+- Android version code is **39** (version **1.8.5**), so a build signed with the existing release key can install over version 1.8.4. No Firestore rules change is required.
+
 ## 1.8.4: subject picker on Focus
 
 - **Pick a subject instead of typing one.** The "Subject (optional)" field on Focus is now a row of pills: Physics, Chemistry, Maths, Biology and **+ Custom**. Tap one to select it, tap it again to clear it (a session can still have no subject). The row scrolls sideways; the selected pill is filled, the rest are outlined, on glass when Glass UI is on.

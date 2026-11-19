@@ -7,6 +7,20 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import com.flowstate.focus.service.Notifications
 import dagger.hilt.android.HiltAndroidApp
+import com.flowstate.focus.widgets.WidgetRefresh
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+
+private data class GroupWidgetRefreshKey(
+    val configured: Boolean,
+    val uid: String?,
+    val selectedGroup: com.flowstate.focus.data.groups.FocusGroup?,
+    val members: List<com.flowstate.focus.data.groups.GroupMember>,
+)
 
 @HiltAndroidApp
 class FlowstateApp : Application() {
@@ -17,6 +31,7 @@ class FlowstateApp : Application() {
     @Inject lateinit var cloudSync: com.flowstate.focus.data.sync.CloudSync
     // 1.7.0: ambient sounds follow the focus timer even while the Focus screen is closed.
     @Inject lateinit var ambient: com.flowstate.focus.service.ambient.AmbientController
+    private val widgetScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     override fun onCreate() {
         super.onCreate()
         val nm = getSystemService(NotificationManager::class.java)
@@ -34,6 +49,12 @@ class FlowstateApp : Application() {
         chatPush.start()
         cloudSync.start()
         ambient.start()
+        widgetScope.launch {
+            groupsRepository.state
+                .map { state -> GroupWidgetRefreshKey(state.configured, state.user?.uid, state.selectedGroup, state.members) }
+                .distinctUntilChanged()
+                .collect { WidgetRefresh.requestGroup(this@FlowstateApp) }
+        }
     }
 
     /**

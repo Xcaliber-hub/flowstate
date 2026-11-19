@@ -98,7 +98,13 @@ private val Tabs = listOf(
 )
 
 @Composable
-fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatGroupHandled: () -> Unit = {}) {
+fun FlowstateAppUi(
+    settings: AppSettings,
+    openChatGroup: String? = null,
+    openGroupId: String? = null,
+    onChatGroupHandled: () -> Unit = {},
+    onGroupHandled: () -> Unit = {},
+) {
     val nav = rememberNavController()
     // Tapping a chat notification: wait for the group to load, select it and open its chat.
     if (openChatGroup != null) {
@@ -113,6 +119,22 @@ fun FlowstateAppUi(settings: AppSettings, openChatGroup: String? = null, onChatG
                 nav.navigate(Routes.GROUP_CHAT) { launchSingleTop = true }
             }
             onChatGroupHandled()
+        }
+    }
+    if (openGroupId != null) {
+        val groupsVm: com.flowstate.focus.ui.groups.GroupsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+        androidx.compose.runtime.LaunchedEffect(openGroupId) {
+            val found = kotlinx.coroutines.withTimeoutOrNull(15_000L) {
+                groupsVm.state.first { st -> st.groups.any { it.id == openGroupId } }
+            }
+            if (found != null) {
+                groupsVm.selectGroup(openGroupId)
+                nav.navigate(Routes.GROUPS) {
+                    popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                    launchSingleTop = true
+                }
+            }
+            onGroupHandled()
         }
     }
     val contentLayer = rememberGraphicsLayer()

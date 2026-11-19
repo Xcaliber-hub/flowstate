@@ -38,17 +38,28 @@ class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
     /** Group whose chat a tapped notification asked to open. */
     private var openChatGroup by androidx.compose.runtime.mutableStateOf<String?>(null)
+    /** Group whose page a tapped Group focus widget asked to open. */
+    private var openGroupId by androidx.compose.runtime.mutableStateOf<String?>(null)
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         intent.getStringExtra(com.flowstate.focus.push.ChatNotifications.EXTRA_OPEN_CHAT)?.let { openChatGroup = it }
+        intent.getStringExtra(com.flowstate.focus.widgets.GroupFocusWidgetProvider.EXTRA_OPEN_GROUP)?.let { openGroupId = it }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        com.flowstate.focus.widgets.WidgetRefresh.requestAll(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
         splash.setKeepOnScreenCondition { vm.settings.value == null }
-        if (savedInstanceState == null) openChatGroup = intent?.getStringExtra(com.flowstate.focus.push.ChatNotifications.EXTRA_OPEN_CHAT)
+        if (savedInstanceState == null) {
+            openChatGroup = intent?.getStringExtra(com.flowstate.focus.push.ChatNotifications.EXTRA_OPEN_CHAT)
+            openGroupId = intent?.getStringExtra(com.flowstate.focus.widgets.GroupFocusWidgetProvider.EXTRA_OPEN_GROUP)
+        }
         setContent {
             val settings by vm.settings.collectAsStateWithLifecycle()
             settings?.let { s ->
@@ -62,7 +73,7 @@ class MainActivity : ComponentActivity() {
                     onDispose { }
                 }
                 FlowstateTheme(s, dark) {
-                    FlowstateAppUi(s, openChatGroup) { openChatGroup = null }
+                    FlowstateAppUi(s, openChatGroup, openGroupId, onChatGroupHandled = { openChatGroup = null }, onGroupHandled = { openGroupId = null })
                     CheckInPrompt()
                     UpdatePrompt()
                 }
