@@ -31,9 +31,10 @@
             android:textSize="14sp"
             android:textStyle="bold" />
 
-        <View
+        <ImageView
             android:layout_width="26dp"
             android:layout_height="3dp"
+            android:importantForAccessibility="no"
             android:background="@drawable/widget_accent_bar" />
     </LinearLayout>
 

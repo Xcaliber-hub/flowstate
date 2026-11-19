@@ -17,6 +17,11 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
   </tr>
 </table>
 
+## 1.8.6: Fix Android widget loading
+
+- The Daily progress and Group focus widgets used generic `View` elements for decorative bars. Android's `RemoteViews` does not support that class, which can make the launcher show its widget error placeholder. Replaced those decorative elements with supported `ImageView`s in all light and dark layouts, and added a regression test that checks every widget layout for unsupported classes.
+- Android version code is **40** (version **1.8.6**), so a build signed with the existing release key can install over version 1.8.5. No Firebase, Firestore or cloud-data changes were made.
+
 ## 1.8.5: Daily progress and Group focus widgets
 
 - **Daily progress widget:** shows today's focused time, goal progress, session count and streak. It reads the same Room history, daily goal and local-time date/streak calculations as the Focus and Statistics screens.
