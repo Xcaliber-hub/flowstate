@@ -44,7 +44,7 @@ import com.flowstate.focus.domain.Status
 import com.flowstate.focus.domain.TimerMode
 import com.flowstate.focus.domain.TimerState
 import com.flowstate.focus.service.TimerEngine
-import com.flowstate.focus.ui.components.FrostedGlassSurface
+import com.flowstate.focus.ui.components.GlassBarSurface
 import com.flowstate.focus.ui.components.formatClock
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -126,7 +126,8 @@ fun TimerBar(
     // Strict focus cannot be paused (the engine refuses); show the button disabled instead of doing nothing.
     val canToggle = !(running && state.strict && state.phase == Phase.FOCUS)
 
-    FrostedGlassSurface(shape = CircleShape, tinted = true, blurRadius = 16.dp, modifier = modifier.fillMaxSize()) {
+    // Liquid or frosted glass, per Settings › Glass UI (same look as the nav bar it floats with).
+    GlassBarSurface(tinted = true, blurRadius = 16.dp, modifier = modifier.fillMaxSize()) {
         val content = LocalContentColor.current
         Row(
             Modifier

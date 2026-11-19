@@ -33,7 +33,7 @@ class FocusBlockerService : AccessibilityService() {
     @Inject lateinit var settingsRepo: SettingsRepository
     @Inject lateinit var alerts: AlertNotifier
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = com.flowstate.focus.util.AppScopes.background(Dispatchers.Main.immediate, "FocusBlockerService")
     private var settings = AppSettings()
     private var lastNudgeAt = 0L
 

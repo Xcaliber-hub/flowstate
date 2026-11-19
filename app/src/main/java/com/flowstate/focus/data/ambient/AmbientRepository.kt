@@ -21,7 +21,11 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.ambientStore: DataStore<Preferences> by preferencesDataStore(name = "ambient")
+// 1.8.7: replace a corrupted file with defaults instead of failing every read and write.
+private val Context.ambientStore: DataStore<Preferences> by preferencesDataStore(
+    name = "ambient",
+    corruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 private object AmbientKeys {
     val ENABLED = stringSetPreferencesKey("enabled")

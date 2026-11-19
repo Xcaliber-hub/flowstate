@@ -136,6 +136,8 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/** 1.8.7: how long a restored chat waits for the account and its group to load again before leaving. */
+private const val CHAT_RESTORE_WAIT_MS = 10_000L
 /** Messages from one person less than this far apart stack into one run (one name, one avatar). */
 private const val RUN_GAP_MS = 5 * 60_000L
 private val STARTERS = listOf("Who's focusing tonight?", "Starting a 50 min block", "Good luck everyone")
@@ -212,8 +214,19 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val chat by vm.chat.collectAsStateWithLifecycle()
     val group = state.selectedGroup
-    if (group == null || state.user == null) { LaunchedEffect(Unit) { onBack() }; return }
+    if (group == null || state.user == null) {
+        // 1.8.7: after the process was killed in the background, Navigation restores this screen before the
+        // account and groups have loaded again. Leaving at once popped the chat and threw its draft away.
+        // Wait a little for them (the group comes back as the one last opened); leave only if it does not.
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            CircularProgressIndicator(Modifier.align(Alignment.Center))
+        }
+        LaunchedEffect(Unit) { if (state.configured) delay(CHAT_RESTORE_WAIT_MS); onBack() }
+        return
+    }
     DisposableEffect(group.id) { vm.openChat(group.id); onDispose { vm.closeChat() } }
+    // 1.8.7: an auth refresh closes every listener; reopen the chat instead of leaving it on an endless spinner.
+    LaunchedEffect(group.id, chat.groupId, state.user?.uid) { if (chat.groupId != group.id) vm.openChat(group.id) }
     // Chat pushes need notification permission on Android 13+; ask once, the first time a chat opens.
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val askNotifications = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -238,10 +251,18 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     val scope = rememberCoroutineScope()
     val chatLayer = rememberGraphicsLayer()
     val listState = rememberLazyListState()
-    var draft by rememberSaveable { mutableStateOf("") }
+    // 1.8.7: the draft is per group and also kept in ChatDraftStore, so it survives the chat being popped,
+    // re-navigation from a notification or widget, and process death, not only configuration changes.
+    var draft by rememberSaveable(group.id) { mutableStateOf(vm.draftFor(group.id)) }
     var submitting by remember { mutableStateOf(false) }
-    var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
-    var editing by remember { mutableStateOf<ChatMessage?>(null) }
+    var replyingTo by remember(group.id) { mutableStateOf<ChatMessage?>(null) }
+    // 1.8.7: edit mode is saved by id (it used to be lost on rotation while the edited text stayed in the box,
+    // where it then went out as a new message), and the message being written before Edit is kept aside and
+    // put back afterwards (Edit used to overwrite it and Cancel cleared the box).
+    var editingId by rememberSaveable(group.id) { mutableStateOf<String?>(null) }
+    var editingOriginal by rememberSaveable(group.id) { mutableStateOf("") }
+    var stashedDraft by rememberSaveable(group.id) { mutableStateOf<String?>(null) }
+    val editing: String? = editingId
     var actionsFor by remember { mutableStateOf<ChatMessage?>(null) }
     var seenSheetFor by remember { mutableStateOf<ChatMessage?>(null) }
     var deleting by remember { mutableStateOf<ChatMessage?>(null) }
@@ -254,38 +275,59 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     val faces = (others.ifEmpty { state.members }).take(3).map { it.name to it.avatarId }
     // Tell the others I'm typing while the draft changes; the repository throttles the writes.
     LaunchedEffect(draft.isNotBlank(), draft, editing) { vm.setTyping(group.id, draft.isNotBlank() && editing == null) }
+    // Keep the unsent message on the phone as it is typed (not the text of a message being edited).
+    LaunchedEffect(group.id) {
+        snapshotFlow { draft to (editingId == null) }.collect { (text, composing) -> if (composing) vm.saveDraft(group.id, text) }
+    }
+    val endEdit: () -> Unit = {
+        editingId = null; editingOriginal = ""
+        draft = stashedDraft.orEmpty(); stashedDraft = null
+    }
     val typingRow = chat.typing.isNotEmpty()
     val send: (String) -> Unit = { text ->
-        if (!submitting && text.isNotBlank()) {
-            submitting = true
-            val target = editing
-            val reply = replyingTo
-            scope.launch {
-                try {
-                    if (target != null) {
-                        // An unchanged edit closes immediately; a changed edit remains in place until
-                        // Firestore accepts it, so a rejected write never discards the user's text.
-                        val accepted = text.trim() == target.text || vm.editChat(group.id, target.id, text)
-                        if (accepted && editing?.id == target.id && draft == text) {
-                            draft = ""; editing = null
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        }
-                    } else if (vm.sendChat(group.id, text, reply)) {
-                        // Clear only the text that was submitted. If the user typed ahead while the
-                        // network request was pending, leave that newer draft (and reply target) intact.
-                        if (draft == text && replyingTo?.id == reply?.id) {
-                            draft = ""; replyingTo = null
-                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        }
+        val targetId = editingId
+        if (text.isNotBlank() && targetId != null) {
+            if (!submitting) {
+                // Edits: an unchanged edit just closes. A changed one closes at once too: Firestore applies it
+                // locally and delivers it when online, so an offline edit no longer leaves the box stuck. If the
+                // server rejects it (and the box was not reused meanwhile) the edit is opened again for retry.
+                val original = editingOriginal
+                val stash = stashedDraft
+                endEdit()
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                if (text.trim() != original) {
+                    submitting = true
+                    scope.launch {
+                        try {
+                            if (!vm.editChat(group.id, targetId, text) && editingId == null && draft == stash.orEmpty()) {
+                                stashedDraft = stash; editingId = targetId; editingOriginal = original; draft = text
+                            }
+                        } finally { submitting = false }
                     }
-                } finally {
-                    submitting = false
+                }
+            }
+        } else if (text.isNotBlank()) {
+            // 1.8.7: Firestore keeps a sent message on the phone and shows it at once as pending, delivering it
+            // when the network allows. 1.8.5-1.8.6 kept the text in the box (Send disabled) until the server
+            // answered, which never happens offline or can take long on a weak connection; leaving the chat
+            // meanwhile dropped the draft. Now the box clears straight away, and a rejected message is put back
+            // (here if the box is still empty, otherwise as the group's stored draft by the repository).
+            val reply = replyingTo
+            draft = ""; replyingTo = null
+            vm.saveDraft(group.id, "")
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            scope.launch {
+                if (!vm.sendChat(group.id, text, reply) && draft.isBlank() && editingId == null) {
+                    draft = text
+                    if (replyingTo == null) replyingTo = reply
                 }
             }
         }
     }
+    // Conversation starters are sent as they are and never touch what is in the box.
+    val sendStarter: (String) -> Unit = { text -> scope.launch { vm.sendChat(group.id, text, null) } }
     val startReply: (ChatMessage) -> Unit = { m ->
-        if (editing != null) { editing = null; draft = "" }
+        if (editingId != null) endEdit()
         replyingTo = m
         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
         runCatching { focus.requestFocus() }
@@ -324,7 +366,7 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                 when {
                     !chat.loaded -> CircularProgressIndicator(Modifier.align(Alignment.Center))
                     chat.messages.isEmpty() -> {
-                        EmptyChat(group.name, faces, onStarter = send,
+                        EmptyChat(group.name, faces, onStarter = sendStarter,
                             modifier = Modifier.fillMaxSize().padding(top = topPad, bottom = bottomPad))
                         if (typingRow) TypingRow(chat.typing, Modifier.align(Alignment.BottomStart).padding(start = 12.dp, end = 12.dp, bottom = bottomPad))
                     }
@@ -403,10 +445,10 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                         Column(Modifier.animateContentSize()) {
                             // Replying: the quoted message rides on top of the text field until you send or cancel.
                             // Editing: a bar naming what you are changing, with a cross that puts the draft back.
-                            editing?.let { e ->
+                            if (editing != null) {
                                 Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    QuoteBlock(name = "Editing message", text = e.text, modifier = Modifier.weight(1f))
-                                    IconButton(onClick = { editing = null; draft = "" }) { Icon(Icons.Rounded.Close, contentDescription = "Cancel edit") }
+                                    QuoteBlock(name = "Editing message", text = editingOriginal, modifier = Modifier.weight(1f))
+                                    IconButton(onClick = endEdit) { Icon(Icons.Rounded.Close, contentDescription = "Cancel edit") }
                                 }
                             }
                             replyingTo?.let { r ->
@@ -437,7 +479,7 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                             )
                         }
                     }
-                    GlassCircleButton(if (editing != null) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.Send, if (editing != null) "Save edit" else "Send", enabled = draft.isNotBlank() && !submitting) { send(draft) }
+                    GlassCircleButton(if (editing != null) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.Send, if (editing != null) "Save edit" else "Send", enabled = draft.isNotBlank() && !(editing != null && submitting)) { send(draft) }
                 }
                 if (draft.length > CHAT_MAX_CHARS - 80) Text("${draft.length}/$CHAT_MAX_CHARS",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -456,7 +498,9 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                 SheetAction(Icons.Rounded.ContentCopy, "Copy text") { clipboard.setText(AnnotatedString(m.text)); actionsFor = null }
                 if (m.uid == me && !m.pending) {
                     SheetAction(Icons.Rounded.Edit, "Edit") {
-                        actionsFor = null; replyingTo = null; editing = m; draft = m.text
+                        actionsFor = null; replyingTo = null
+                        if (editingId == null) stashedDraft = draft
+                        editingId = m.id; editingOriginal = m.text; draft = m.text
                         runCatching { focus.requestFocus() }
                     }
                     SheetAction(Icons.Rounded.Visibility, "Seen by") { actionsFor = null; seenSheetFor = m }
@@ -488,7 +532,7 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
             onDismissRequest = { deleting = null },
             title = { Text("Delete message?") },
             text = { Text("It will be removed for everyone in ${group.name}.") },
-            confirmButton = { TextButton(onClick = { vm.deleteChat(group.id, m.id); if (replyingTo?.id == m.id) replyingTo = null; if (editing?.id == m.id) { editing = null; draft = "" }; deleting = null }) { Text("Delete") } },
+            confirmButton = { TextButton(onClick = { vm.deleteChat(group.id, m.id); if (replyingTo?.id == m.id) replyingTo = null; if (editingId == m.id) endEdit(); deleting = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("Cancel") } },
         )
     }

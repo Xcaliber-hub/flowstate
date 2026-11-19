@@ -63,6 +63,7 @@ import com.flowstate.focus.domain.CHECK_IN_CHOICES
 import com.flowstate.focus.domain.checkInLabel
 import com.flowstate.focus.domain.AppSettings
 import com.flowstate.focus.domain.ThemeMode
+import com.flowstate.focus.domain.GlassStyle
 import com.flowstate.focus.service.FocusBlockerService
 import com.flowstate.focus.ui.components.Entrance
 import com.flowstate.focus.ui.components.GlassCard
@@ -110,7 +111,6 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
         if (uri != null) vm.export(uri)
     }
-    val liquid = s.liquidUi
 
     ScreenTopBar(TopBarSpec(key = "settings", title = "Settings", subtitle = "Appearance, timer and more", icon = Icons.Rounded.Settings))
     ScreenContainer {
@@ -122,7 +122,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
 
             item {
                 Entrance(1) {
-                    Group("Appearance", liquid) {
+                    Group("Appearance") {
                         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                             ThemeMode.entries.forEachIndexed { i, mode ->
                                 SegmentedButton(
@@ -161,11 +161,18 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
                                 }
                             }
                         }
-                        ToggleRow("Glass UI", "Frosted, see-through bars, cards and chat bubbles tinted with your theme colour. Off: plain solid surfaces", s.glassUi) { v -> vm.update { it.copy(glassUi = v) } }
-                        ToggleRow("Liquid UI", "Breathing cards, fluid navigation and a living progress ring", s.liquidUi) { v -> vm.update { it.copy(liquidUi = v) } }
-                        ToggleRow("Side navigation", "Experimental: a compact rail and a daily-goal water bar on the left edge", s.sideNav) { v -> vm.update { it.copy(sideNav = v) } }
-                        if (s.sideNav) {
-                            ToggleRow("Goal bar on top", "Swap places: water bar above the navigation", s.sideNavSwapped) { v -> vm.update { it.copy(sideNavSwapped = v) } }
+                        ToggleRow("Glass UI", "See-through glass bars, cards and chat bubbles tinted with your theme colour. Off: plain solid surfaces", s.glassUi) { v -> vm.update { it.copy(glassUi = v) } }
+                        if (s.glassUi) {
+                            // Liquid: clear lens-like glass on the floating bars. Frosted: the blurred, milky look.
+                            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                                GlassStyleChoices.forEachIndexed { i, (style, label) ->
+                                    SegmentedButton(
+                                        selected = s.glassStyle == style,
+                                        onClick = { vm.update { it.copy(glassStyle = style) } },
+                                        shape = SegmentedButtonDefaults.itemShape(i, GlassStyleChoices.size),
+                                    ) { AutoSizeText(label) }
+                                }
+                            }
                         }
                     }
                 }
@@ -173,7 +180,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
 
             item {
                 Entrance(2) {
-                    Group("Timer", liquid) {
+                    Group("Timer") {
                         SliderRow("Focus length", s.focusMin, 5..90, "min") { v -> vm.update { it.copy(focusMin = v) } }
                         SliderRow("Short break", s.shortBreakMin, 1..30, "min") { v -> vm.update { it.copy(shortBreakMin = v) } }
                         SliderRow("Long break", s.longBreakMin, 5..60, "min") { v -> vm.update { it.copy(longBreakMin = v) } }
@@ -188,7 +195,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
 
             item {
                 Entrance(3) {
-                    Group("Focus mode", liquid) {
+                    Group("Focus mode") {
                         ToggleRow("Strict mode by default", "Locks each session until it ends", s.strictByDefault) { v -> vm.update { it.copy(strictByDefault = v) } }
                         ToggleRow("Focus Guard", "Nudge me if I leave for another app", s.focusGuard) { v -> vm.update { it.copy(focusGuard = v) } }
                         ToggleRow(
@@ -222,7 +229,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
 
             item {
                 Entrance(4) {
-                    Group("Notifications", liquid) {
+                    Group("Notifications") {
                         ToggleRow(
                             "Chat notifications",
                             "Pop up new group chat messages, even when Flowstate is closed",
@@ -239,7 +246,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
 
             item {
                 Entrance(5) {
-                    Group("Data", liquid) {
+                    Group("Data") {
                         LinkRow("This week's sessions", "Monday to Sunday, newest first. Hold one to delete it", external = false, onClick = onOpenWeekSessions)
                         LinkRow("Export sessions", "Save your history as a CSV file") { exporter.launch("flowstate-sessions.csv") }
                         Text(
@@ -253,7 +260,7 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
 
             item {
                 Entrance(6) {
-                    Group("About", liquid) {
+                    Group("About") {
                         UpdateRow()
                         LinkRow("Source code", "github.com/${UpdateChecker.OWNER}/${UpdateChecker.REPO}") {
                             runCatching {
@@ -290,8 +297,8 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
 }
 
 @Composable
-private fun Group(title: String, liquid: Boolean, content: @Composable () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth(), liquid) {
+private fun Group(title: String, content: @Composable () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth()) {
         AutoSizeText(title, style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(12.dp))
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { content() }
@@ -363,6 +370,9 @@ private tailrec fun Context.findActivity(): ComponentActivity? = when (this) {
     is ContextWrapper -> baseContext.findActivity()
     else -> null
 }
+
+/** The two looks offered under Glass UI, in the order shown. */
+private val GlassStyleChoices = listOf(GlassStyle.LIQUID to "Liquid glass UI", GlassStyle.FROSTED to "Frosted glass UI")
 
 /** Daily focus goal limits in minutes: 15 minutes to 16 hours. */
 private val DAILY_GOAL_RANGE_MIN = 15..960

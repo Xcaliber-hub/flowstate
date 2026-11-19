@@ -11,7 +11,6 @@ import com.flowstate.focus.ui.components.LocalTopBarState
 import com.flowstate.focus.ui.components.TopBarHeight
 import com.flowstate.focus.ui.components.TopBarState
 import com.flowstate.focus.ui.components.TopBarTopGap
-import com.flowstate.focus.ui.components.SideDockWidth
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -34,6 +33,7 @@ import com.flowstate.focus.ui.groups.GroupsScreen
 import com.flowstate.focus.ui.groups.EmojiInbox
 import com.flowstate.focus.ui.groups.GroupChatScreen
 import com.flowstate.focus.ui.components.LocalGlassUi
+import com.flowstate.focus.ui.components.LocalGlassStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
@@ -63,14 +63,12 @@ import com.flowstate.focus.ui.focus.TimerBar
 import com.flowstate.focus.ui.focus.TimerBarViewModel
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.platform.LocalDensity
-import com.flowstate.focus.ui.components.LocalNavLayout
-import com.flowstate.focus.ui.components.NavLayout
-import com.flowstate.focus.ui.dock.SideDock
 import com.flowstate.focus.ui.components.NavTab
 import com.flowstate.focus.ui.focus.FocusScreen
 import com.flowstate.focus.ui.settings.BlockedAppsScreen
 import com.flowstate.focus.ui.settings.SettingsScreen
 import com.flowstate.focus.ui.stats.StatsScreen
+import com.flowstate.focus.ui.tasks.TasksOpenRequest
 import com.flowstate.focus.ui.tasks.TasksScreen
 
 object Routes {
@@ -104,8 +102,40 @@ fun FlowstateAppUi(
     openGroupId: String? = null,
     onChatGroupHandled: () -> Unit = {},
     onGroupHandled: () -> Unit = {},
+    openRoute: String? = null,
+    openAddTask: Boolean = false,
+    onRouteHandled: () -> Unit = {},
 ) {
     val nav = rememberNavController()
+    // 1.8.8: a tapped widget opens its screen. "+ Add task" also opens the Add task sheet, and the Syllabus rings
+    // widget opens the Syllabus tab of Tasks.
+    var tasksRequest by remember { mutableStateOf<TasksOpenRequest?>(null) }
+    if (openRoute != null) {
+        androidx.compose.runtime.LaunchedEffect(openRoute, openAddTask) {
+            val target = when (openRoute) {
+                com.flowstate.focus.MainActivity.ROUTE_TASKS, com.flowstate.focus.MainActivity.ROUTE_SYLLABUS -> Routes.TASKS
+                com.flowstate.focus.MainActivity.ROUTE_EXAMS -> Routes.EXAMS
+                com.flowstate.focus.MainActivity.ROUTE_STATS -> Routes.STATS
+                com.flowstate.focus.MainActivity.ROUTE_GROUPS -> Routes.GROUPS
+                else -> Routes.FOCUS
+            }
+            tasksRequest = when {
+                openRoute == com.flowstate.focus.MainActivity.ROUTE_SYLLABUS -> TasksOpenRequest.SYLLABUS
+                openRoute == com.flowstate.focus.MainActivity.ROUTE_TASKS && openAddTask -> TasksOpenRequest.ADD_TASK
+                openRoute == com.flowstate.focus.MainActivity.ROUTE_TASKS -> TasksOpenRequest.TASKS
+                else -> null
+            }
+            runCatching {
+                if (nav.currentDestination?.route != target) {
+                    nav.navigate(target) {
+                        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                    }
+                }
+            }.onFailure { android.util.Log.w("Flowstate", "Could not open $target from a widget", it) }
+            onRouteHandled()
+        }
+    }
     // Tapping a chat notification: wait for the group to load, select it and open its chat.
     if (openChatGroup != null) {
         val groupsVm: com.flowstate.focus.ui.groups.GroupsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
@@ -115,8 +145,13 @@ fun FlowstateAppUi(
             }
             if (found != null) {
                 groupsVm.selectGroup(openChatGroup)
-                nav.navigate(Routes.GROUPS) { popUpTo(nav.graph.findStartDestination().id) { saveState = true }; launchSingleTop = true }
-                nav.navigate(Routes.GROUP_CHAT) { launchSingleTop = true }
+                // 1.8.7: when a chat is already open, switching the selected group is enough. Popping to Groups and
+                // pushing a new chat destination threw away the open chat's screen state (and, before 1.8.7,
+                // its unsent message).
+                if (nav.currentDestination?.route != Routes.GROUP_CHAT) {
+                    nav.navigate(Routes.GROUPS) { popUpTo(nav.graph.findStartDestination().id) { saveState = true }; launchSingleTop = true }
+                    nav.navigate(Routes.GROUP_CHAT) { launchSingleTop = true }
+                }
             }
             onChatGroupHandled()
         }
@@ -175,14 +210,13 @@ fun FlowstateAppUi(
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground,
     ) {
-        val navLayout = if (settings.sideNav) NavLayout.SIDE else NavLayout.BOTTOM
         val navShown = Tabs.any { it.route == route } || route == Routes.EXAMS || route == Routes.WEEK_SESSIONS || route == Routes.SYLLABUS_SUBJECT
-        // 1.8.2 timer bar: bottom layout only, while a session runs or is paused, and not on Focus (or its
+        // 1.8.2 timer bar: while a session runs or is paused, and not on Focus (or its
         // Exams screen), which already shows the timer.
-        val showTimerBar = navLayout == NavLayout.BOTTOM && navShown && timerState.isActive &&
+        val showTimerBar = navShown && timerState.isActive &&
             route != Routes.FOCUS && route != Routes.EXAMS
         val bottomExtra = if (showTimerBar) TimerBarHeight + TimerBarGap else 0.dp
-        CompositionLocalProvider(LocalNavLayout provides navLayout, LocalBottomBarExtra provides bottomExtra, LocalBlurSource provides contentLayer, LocalTopBarState provides topBar, LocalGlassUi provides settings.glassUi) {
+        CompositionLocalProvider(LocalBottomBarExtra provides bottomExtra, LocalBlurSource provides contentLayer, LocalTopBarState provides topBar, LocalGlassUi provides settings.glassUi, LocalGlassStyle provides settings.glassStyle) {
         Box(Modifier.fillMaxSize().nestedScroll(scrollConnection)) {
             NavHost(
                 navController = nav,
@@ -198,7 +232,12 @@ fun FlowstateAppUi(
                 composable(Routes.GROUPS) { GroupsScreen(settings, onOpenFocus = { nav.navigate(Routes.FOCUS) { launchSingleTop = true } }, onOpenChat = { nav.navigate(Routes.GROUP_CHAT) { launchSingleTop = true } }) }
                 composable(Routes.GROUP_CHAT) { GroupChatScreen(onBack = { nav.popBackStack() }) }
                 composable(Routes.TASKS) {
-                    TasksScreen(settings, onOpenSubject = { exam, subject -> nav.navigate(Routes.syllabusSubject(exam, subject)) { launchSingleTop = true } })
+                    TasksScreen(
+                        settings,
+                        onOpenSubject = { exam, subject -> nav.navigate(Routes.syllabusSubject(exam, subject)) { launchSingleTop = true } },
+                        openRequest = tasksRequest,
+                        onOpenRequestHandled = { tasksRequest = null },
+                    )
                 }
                 composable(
                     Routes.SYLLABUS_SUBJECT,
@@ -210,7 +249,6 @@ fun FlowstateAppUi(
                     com.flowstate.focus.ui.syllabus.SyllabusSubjectScreen(
                         examId = entry.arguments?.getString("exam").orEmpty(),
                         subjectName = entry.arguments?.getString("subject").orEmpty(),
-                        liquid = settings.liquidUi,
                         // "Focus on this": switch to the Focus tab the same way the nav bar does.
                         onOpenFocus = {
                             nav.navigate(Routes.FOCUS) {
@@ -223,14 +261,14 @@ fun FlowstateAppUi(
                 }
                 composable(Routes.STATS) { StatsScreen(settings) }
                 composable(Routes.SETTINGS) { SettingsScreen(onOpenBlockedApps = { nav.navigate(Routes.BLOCKED) }, onOpenWeekSessions = { nav.navigate(Routes.WEEK_SESSIONS) { launchSingleTop = true } }) }
-                composable(Routes.WEEK_SESSIONS) { com.flowstate.focus.ui.sessions.WeekSessionsScreen(settings.liquidUi) }
+                composable(Routes.WEEK_SESSIONS) { com.flowstate.focus.ui.sessions.WeekSessionsScreen() }
                 composable(Routes.BLOCKED) { BlockedAppsScreen(onBack = { nav.popBackStack() }) }
             }
             // Screen content scrolls under a soft blur at the top; the nav dock and bar stay crisp above it.
             // The group chat draws its own frosted bars, so the screen-edge blurs stay off there.
             if (route != Routes.GROUP_CHAT) {
                 TopBlur(contentLayer, Modifier.align(Alignment.TopCenter))
-                if (navLayout == NavLayout.BOTTOM) BottomBlur(contentLayer, Modifier.align(Alignment.BottomCenter))
+                BottomBlur(contentLayer, Modifier.align(Alignment.BottomCenter))
             }
             // The Exams screen (1.7.0) keeps the frosted bar and the nav, with Focus highlighted; This week's
             // sessions (1.7.2) does the same with Settings highlighted.
@@ -243,11 +281,10 @@ fun FlowstateAppUi(
                 }
                 // Frosted top bar: back, the screen's title pill and, where it has options, the three-line menu.
                 val statusTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-                val barStart = if (navLayout == NavLayout.SIDE) 8.dp + SideDockWidth + 10.dp else 16.dp
                 FrostedTopBar(
                     state = topBar,
                     onBack = { if (!nav.popBackStack()) backDispatcher?.onBackPressed() },
-                    modifier = Modifier.align(Alignment.TopCenter).padding(start = barStart, end = 16.dp, top = statusTop + TopBarTopGap),
+                    modifier = Modifier.align(Alignment.TopCenter).padding(start = 16.dp, end = 16.dp, top = statusTop + TopBarTopGap),
                 )
                 FrostedTopBarMenu(
                     state = topBar,
@@ -263,12 +300,10 @@ fun FlowstateAppUi(
                         restoreState = true
                     }
                 }
-                when (navLayout) {
-                    NavLayout.BOTTOM -> BottomNavDock(
+                BottomNavDock(
                         tabs = Tabs,
                         selectedRoute = selectedRoute,
                         collapsed = navCollapsed,
-                        liquid = settings.liquidUi,
                         onSelect = onSelect,
                         onExpand = { navCollapsed = false },
                         modifier = Modifier.align(Alignment.BottomCenter),
@@ -283,17 +318,6 @@ fun FlowstateAppUi(
                             }
                         } else null,
                     )
-                    // Compact rail and daily-goal water bar, stacked on the left edge.
-                    // Fixed in place: the side dock never hides on scroll.
-                    NavLayout.SIDE -> SideDock(
-                        tabs = Tabs,
-                        selectedRoute = selectedRoute,
-                        liquid = settings.liquidUi,
-                        swapped = settings.sideNavSwapped,
-                        onSelect = onSelect,
-                        modifier = Modifier.align(Alignment.TopStart),
-                    )
-                }
             }
             // Emojis friends sent while the app was closed pop up over everything, once each.
             EmojiInbox()

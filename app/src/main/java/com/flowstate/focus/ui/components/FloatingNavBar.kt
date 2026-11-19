@@ -45,6 +45,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -87,13 +90,13 @@ fun BottomNavDock(
     tabs: List<NavTab>,
     selectedRoute: String?,
     collapsed: Boolean,
-    liquid: Boolean,
     onSelect: (NavTab) -> Unit,
     onExpand: () -> Unit,
     modifier: Modifier = Modifier,
     timerBar: (@Composable () -> Unit)? = null,
 ) {
-    // M3 Expressive spatial spring when Liquid UI is on (a small overshoot), a calm critically damped one otherwise.
+    // Liquid glass morphs with a springy overshoot, like a droplet; frosted glass uses a calm critically damped spring.
+    val liquid = liquidGlassDrawn()
     val progress = animateFloatAsState(
         targetValue = if (collapsed) 1f else 0f,
         animationSpec = if (liquid) spring(dampingRatio = 0.8f, stiffness = 380f) else spring(dampingRatio = 1f, stiffness = 700f),
@@ -144,14 +147,17 @@ fun BottomNavDock(
             val p = progress.value
             val pc = p.coerceIn(0f, 1f)
             // The pill shrinks from the right into a circle anchored on the left.
-            val navW = (w + (h - w) * p).roundToInt().coerceIn(h, w)
+            // 1.8.7: coerceIn(h, w) throws when the dock is measured narrower than one nav height (split screen,
+            // very large display size, a zero-width first pass); the lower bound now never exceeds the width.
+            val minW = minOf(h, w).coerceAtLeast(0)
+            val navW = (w + (h - w) * p).roundToInt().coerceIn(minW, w.coerceAtLeast(minW))
             val nav = measurables[0].measure(Constraints.fixed(navW, h))
             // Constant height (room for the timer above the nav) so nothing jumps when a session starts or ends.
             // The empty space has no pointer input, so touches there reach the screen below.
             val total = th + gap + h
             // Timer: full width above the nav when expanded; in the nav row right of the circle when collapsed.
             val tx = ((h + gap) * p).roundToInt().coerceAtLeast(0)
-            val tw = (w - tx).coerceIn(h, w)
+            val tw = (w - tx).coerceIn(minW, w.coerceAtLeast(minW))
             val tH = (th + (h - th) * pc).roundToInt()
             val ty = ((th + gap) * p).roundToInt()
             val timer = measurables[1].measure(Constraints.fixed(tw, tH))
@@ -175,7 +181,9 @@ private fun NavPill(
     onExpand: () -> Unit,
 ) {
     val selectedTab = tabs.firstOrNull { it.route == selectedRoute }
-    FrostedGlassSurface(shape = CircleShape, tinted = true, blurRadius = DockBlur, modifier = Modifier.fillMaxSize()) {
+    // Liquid glass: the tab highlight is a lens the bar's shader bends (see LiquidGlass.kt).
+    val lens = remember { LiquidLens() }
+    GlassBarSurface(tinted = true, blurRadius = DockBlur, lens = lens, modifier = Modifier.fillMaxSize()) {
         // The full tab row keeps its expanded width and is clipped by the shrinking pill while it fades.
         Box(
             Modifier
@@ -185,7 +193,7 @@ private fun NavPill(
                 .graphicsLayer { alpha = (1f - progress() * 1.8f).coerceIn(0f, 1f) },
         ) {
             // Stays composed while collapsed (invisible and covered by the expand target) so the highlight keeps its place.
-            TabRow(tabs, selectedRoute, liquid, enabled = !collapsed, onSelect = onSelect)
+            TabRow(tabs, selectedRoute, liquid, lens, enabled = !collapsed, onSelect = onSelect)
         }
         // Collapsed: the selected tab's icon, centred in the circle. Tapping it expands the bar.
         if (selectedTab != null) {
@@ -221,6 +229,7 @@ private fun TabRow(
     tabs: List<NavTab>,
     selectedRoute: String?,
     liquid: Boolean,
+    lens: LiquidLens,
     enabled: Boolean,
     onSelect: (NavTab) -> Unit,
 ) {
@@ -242,18 +251,43 @@ private fun TabRow(
         val hovered by remember(slotPx) {
             derivedStateOf { ((indicatorX.value + slotPx / 2f) / slotPx).toInt().coerceIn(0, tabs.size - 1) }
         }
+        // Liquid glass: 0 = the resting droplet, 1 = the magnifying bubble while dragging. It springs back
+        // (with a little wobble) when the finger lifts.
+        val lensStrength = animateFloatAsState(
+            targetValue = if (dragging) 1f else 0f,
+            animationSpec = spring(dampingRatio = 0.5f, stiffness = 420f),
+            label = "lensStrength",
+        )
+        // The lens in the glass surface's pixels: this row sits at its start edge, inset by the 4 dp padding.
+        val padPx = with(LocalDensity.current) { 4.dp.toPx() }
+        val rowHeightPx = constraints.maxHeight.toFloat()
+        lens.bounds = {
+            if (selectedIndex < 0) androidx.compose.ui.geometry.Rect.Zero
+            else androidx.compose.ui.geometry.Rect(padPx + indicatorX.value, padPx, padPx + indicatorX.value + slotPx, padPx + rowHeightPx)
+        }
+        lens.strength = { lensStrength.value }
         // Highlight capsule.
         if (selectedIndex >= 0) {
             val slotDp = with(LocalDensity.current) { slotPx.toDp() }
-            Box(
-                Modifier
-                    .offset { IntOffset(indicatorX.value.roundToInt(), 0) }
-                    .width(slotDp)
-                    .fillMaxHeight()
-                    .graphicsLayer { if (dragging) { scaleX = 1.06f; scaleY = 1.06f } }
-                    .background(Glass.selectedFill(), CircleShape)
-                    .border(1.dp, Glass.selectedBorder(), CircleShape),
-            )
+            if (liquid) {
+                LiquidDroplet(
+                    strength = { lensStrength.value },
+                    modifier = Modifier
+                        .offset { IntOffset(indicatorX.value.roundToInt(), 0) }
+                        .width(slotDp)
+                        .fillMaxHeight(),
+                )
+            } else {
+                Box(
+                    Modifier
+                        .offset { IntOffset(indicatorX.value.roundToInt(), 0) }
+                        .width(slotDp)
+                        .fillMaxHeight()
+                        .graphicsLayer { if (dragging) { scaleX = 1.06f; scaleY = 1.06f } }
+                        .background(Glass.selectedFill(), CircleShape)
+                        .border(1.dp, Glass.selectedBorder(), CircleShape),
+                )
+            }
         }
         Row(
             Modifier
@@ -308,6 +342,38 @@ private fun TabRow(
             }
         }
     }
+}
+
+/**
+ * Liquid glass tab highlight. At rest it is a small glass droplet (a faint fill and a lit rim). While
+ * dragging it swells into a clear bubble: the fill fades so the bar's shader lens (magnification and
+ * rainbow fringe) shows through, and the rim brightens. Everything is read in the draw phase.
+ */
+@Composable
+private fun LiquidDroplet(strength: () -> Float, modifier: Modifier) {
+    val dark = isDarkCanvas()
+    val fill = LiquidColors.dropletFill()
+    Box(
+        modifier
+            .graphicsLayer {
+                val s = strength()
+                scaleX = 1f + 0.08f * s
+                scaleY = 1f + 0.10f * s
+            }
+            .drawWithCache {
+                val outline = CircleShape.createOutline(size, layoutDirection, this)
+                val mid = androidx.compose.ui.geometry.Offset(size.width / 2f, size.height / 2f)
+                val restRim = LiquidColors.rimBrush(dark, mid, 0.7f)
+                val bubbleRim = LiquidColors.rimBrush(dark, mid, 1.3f)
+                val rimWidth = 1.5.dp.toPx()
+                onDrawBehind {
+                    val s = strength().coerceIn(0f, 1f)
+                    drawOutline(outline, fill.copy(alpha = fill.alpha * (1f - 0.75f * s)))
+                    drawOutline(outline, restRim, alpha = 1f - s, style = Stroke(rimWidth))
+                    if (s > 0.01f) drawOutline(outline, bubbleRim, alpha = s, style = Stroke(rimWidth * 1.4f))
+                }
+            },
+    )
 }
 
 @Composable

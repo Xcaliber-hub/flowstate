@@ -82,7 +82,6 @@ fun SyllabusExamChips(exams: List<SyllabusExam>, selected: String, onSelect: (St
 fun LazyListScope.syllabusOverviewItems(
     ui: SyllabusUi,
     exam: SyllabusExam?,
-    liquid: Boolean,
     onSelectExam: (String) -> Unit,
     onOpenSubject: (String) -> Unit,
 ) {
@@ -94,10 +93,10 @@ fun LazyListScope.syllabusOverviewItems(
         return
     }
     val overall = SyllabusMath.stats(exam.subjects.flatMap { s -> s.chapters.map { ui.progressOf(s.name, it) } })
-    item(key = "syl-overall-${exam.id}") { Entrance(1) { OverallCard(ui, exam, overall.fraction, overall.done, overall.chapters, overall.revisions, liquid) } }
+    item(key = "syl-overall-${exam.id}") { Entrance(1) { OverallCard(ui, exam, overall.fraction, overall.done, overall.chapters, overall.revisions) } }
     exam.subjects.forEachIndexed { i, subject ->
         item(key = "syl-${exam.id}-${subject.name}") {
-            Entrance(2 + i) { SubjectCard(ui, exam, subject, liquid) { onOpenSubject(subject.name) } }
+            Entrance(2 + i) { SubjectCard(ui, exam, subject) { onOpenSubject(subject.name) } }
         }
     }
     item(key = "syl-footer") {
@@ -111,10 +110,10 @@ fun LazyListScope.syllabusOverviewItems(
 }
 
 @Composable
-private fun OverallCard(ui: SyllabusUi, exam: SyllabusExam, fraction: Float, done: Int, total: Int, revisions: Int, liquid: Boolean) {
+private fun OverallCard(ui: SyllabusUi, exam: SyllabusExam, fraction: Float, done: Int, total: Int, revisions: Int) {
     val cs = MaterialTheme.colorScheme
     val userExam = ui.examDates[exam.id]
-    GlassCard(Modifier.fillMaxWidth(), liquid) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CookieBadge(78.dp, cs.secondary, shape = Cookie10) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -143,12 +142,12 @@ private fun OverallCard(ui: SyllabusUi, exam: SyllabusExam, fraction: Float, don
 }
 
 @Composable
-private fun SubjectCard(ui: SyllabusUi, exam: SyllabusExam, subject: SyllabusSubject, liquid: Boolean, onOpen: () -> Unit) {
+private fun SubjectCard(ui: SyllabusUi, exam: SyllabusExam, subject: SyllabusSubject, onOpen: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val progressOf: (String) -> ChapterProgress = { ui.progressOf(subject.name, it) }
     val stats = SyllabusMath.stats(subject.chapters, progressOf)
     val next = SyllabusMath.upNext(subject.chapters, progressOf, ui.examDate(exam.id))
-    GlassCard(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).clickable(onClick = onOpen), liquid) {
+    GlassCard(Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp)).clickable(onClick = onOpen)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SyllabusRing(stats.fraction, 58.dp, 7.dp) {
                 AutoSizeText("${SyllabusMath.percent(stats.fraction)}%", style = MaterialTheme.typography.titleSmall.copy(fontSize = 15.sp, fontWeight = FontWeight.ExtraBold), minSize = 10.sp)
@@ -193,7 +192,6 @@ private enum class ChapterFilter(val label: String) { ALL("All"), IN_PROGRESS("I
 fun SyllabusSubjectScreen(
     examId: String,
     subjectName: String,
-    liquid: Boolean,
     onOpenFocus: () -> Unit,
     vm: SyllabusViewModel = hiltViewModel(),
 ) {
@@ -237,7 +235,7 @@ fun SyllabusSubjectScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             item(key = "header") {
-                GlassCard(Modifier.fillMaxWidth(), liquid) {
+                GlassCard(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         SyllabusRing(stats.fraction, 84.dp, 9.dp) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 10.dp)) {

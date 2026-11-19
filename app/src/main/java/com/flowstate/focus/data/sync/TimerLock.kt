@@ -21,7 +21,11 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.deviceStore: DataStore<Preferences> by preferencesDataStore(name = "device")
+// 1.8.7: replace a corrupted file instead of throwing from every deviceId() call (a new id is generated).
+private val Context.deviceStore: DataStore<Preferences> by preferencesDataStore(
+    name = "device",
+    corruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler { androidx.datastore.preferences.core.emptyPreferences() },
+)
 private val DEVICE_ID = stringPreferencesKey("device_id")
 
 /** A stable id for this installation (DataStore), used by the timer lock and in synced session ids. */

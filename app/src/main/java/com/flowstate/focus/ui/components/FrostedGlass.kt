@@ -39,6 +39,9 @@ val LocalBlurSource = staticCompositionLocalOf<GraphicsLayer?> { null }
 /** Settings › Glass UI. Off brings back the earlier plain, solid surfaces everywhere. */
 val LocalGlassUi = staticCompositionLocalOf { true }
 
+/** Settings › Glass UI style: liquid (clear, lens-like) or frosted glass on the floating bars. See LiquidGlass.kt. */
+val LocalGlassStyle = staticCompositionLocalOf { com.flowstate.focus.domain.GlassStyle.FROSTED }
+
 /** Colours that read well on frosted glass in either theme. */
 object Glass {
     @Composable fun content(): Color = if (isDarkCanvas()) Color.White else Color(0xFF1B1B1F)

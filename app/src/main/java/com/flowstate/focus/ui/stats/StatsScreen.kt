@@ -44,7 +44,6 @@ import androidx.compose.material.icons.rounded.BarChart
 @Composable
 fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val liquid = settings.liquidUi
     ScreenTopBar(
         TopBarSpec(
             key = "stats",
@@ -63,7 +62,7 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
         ) {
             item(key = "chart") {
                 Entrance(1) {
-                    GlassCard(Modifier.fillMaxWidth(), liquid) {
+                    GlassCard(Modifier.fillMaxWidth()) {
                         AutoSizeText("Focus time", style = MaterialTheme.typography.titleMedium)
                         Text(formatDuration(ui.totalMs), style = MaterialTheme.typography.headlineMedium)
                         Spacer(Modifier.height(16.dp))
@@ -75,19 +74,19 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
                 Entrance(2) {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Metric("Sessions", ui.sessionCount.toString(), liquid, Modifier.weight(1f).fillMaxHeight())
-                            Metric("Avg. length", formatDuration(ui.averageMs), liquid, Modifier.weight(1f).fillMaxHeight())
+                            Metric("Sessions", ui.sessionCount.toString(), Modifier.weight(1f).fillMaxHeight())
+                            Metric("Avg. length", formatDuration(ui.averageMs), Modifier.weight(1f).fillMaxHeight())
                         }
                         Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            Metric("Completed", "${ui.completionPercent}%", liquid, Modifier.weight(1f).fillMaxHeight())
-                            Metric("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", liquid, Modifier.weight(1f).fillMaxHeight())
+                            Metric("Completed", "${ui.completionPercent}%", Modifier.weight(1f).fillMaxHeight())
+                            Metric("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", Modifier.weight(1f).fillMaxHeight())
                         }
                     }
                 }
             }
             item(key = "score") {
                 Entrance(3) {
-                    GlassCard(Modifier.fillMaxWidth(), liquid) {
+                    GlassCard(Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth()) {
                             AutoSizeText("Productivity score", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                             Text("${ui.productivityScore} / 100", style = MaterialTheme.typography.titleMedium)
@@ -109,7 +108,7 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
             }
             item(key = "heatmap") {
                 Entrance(4) {
-                    GlassCard(Modifier.fillMaxWidth(), liquid) {
+                    GlassCard(Modifier.fillMaxWidth()) {
                         AutoSizeText("Last 15 weeks", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
                         Heatmap(ui.perDay, ui.goalMs)
@@ -118,7 +117,7 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
             }
             item(key = "distribution") {
                 Entrance(5) {
-                    GlassCard(Modifier.fillMaxWidth(), liquid) {
+                    GlassCard(Modifier.fillMaxWidth()) {
                         AutoSizeText("Where your focus went", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.height(12.dp))
                         if (ui.distribution.isEmpty()) {
@@ -150,8 +149,8 @@ fun StatsScreen(settings: AppSettings, vm: StatsViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun Metric(title: String, value: String, liquid: Boolean, modifier: Modifier) {
-    GlassCard(modifier, liquid) {
+private fun Metric(title: String, value: String, modifier: Modifier) {
+    GlassCard(modifier) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(6.dp))
         AutoSizeText(value, style = MaterialTheme.typography.headlineMedium)

@@ -1,125 +1,239 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 1.8.8 Daily progress, 4x2: today, goal %, bar, sessions, streak and this week's bars. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_glass_dark"
-    android:clickable="true"
-    android:focusable="true"
-    android:orientation="vertical"
-    android:paddingStart="18dp"
-    android:paddingTop="15dp"
-    android:paddingEnd="18dp"
-    android:paddingBottom="14dp">
-
+    android:clipToPadding="false"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="16dp">
     <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/today_label"
-            android:layout_width="0dp"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1.6"
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:letterSpacing="0.08"
-            android:text="TODAY"
-            android:textColor="#D0CDDA"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView
+                android:id="@+id/today_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="TODAY"
+                android:textColor="#D0CDDA"
+                android:textSize="11.5sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.09" />
+            <TextView
+                android:id="@+id/percent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="78%"
+                android:textColor="#B7A4F5"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
         <TextView
-            android:id="@+id/percent"
-            android:layout_width="wrap_content"
+            android:id="@+id/focus_time"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="0%"
-            android:textColor="#B7A4F5"
-            android:textSize="16sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <TextView
-        android:id="@+id/focus_time"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
-        android:includeFontPadding="false"
-        android:maxLines="1"
-        android:text="0m"
-        android:textColor="#F9F8FF"
-        android:textSize="38sp"
-        android:textStyle="bold"
-        android:ellipsize="end" />
-
-    <TextView
-        android:id="@+id/focus_subtitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="-1dp"
-        android:text="focused today"
-        android:textColor="#D0CDDA"
-        android:textSize="13sp" />
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/goal_label"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
             android:maxLines="1"
-            android:text="Goal 2h"
+            android:ellipsize="end"
+            android:text="3h 06m"
+            android:textColor="#F9F8FF"
+            android:textSize="36sp"
+            android:fontFamily="sans-serif"
+            android:layout_marginTop="6dp" />
+        <TextView
+            android:id="@+id/goal_line"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="focused of 4h goal"
             android:textColor="#D0CDDA"
-            android:textSize="12sp" />
-
-        <ProgressBar
-            android:id="@+id/goal_progress"
-            style="?android:attr/progressBarStyleHorizontal"
-            android:layout_width="0dp"
-            android:layout_height="8dp"
-            android:layout_marginStart="12dp"
-            android:layout_weight="1"
-            android:indeterminate="false"
-            android:max="100"
-            android:progress="0"
-            android:progressDrawable="@drawable/widget_progress" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_marginTop="10dp"
-        android:layout_weight="1"
-        android:gravity="bottom|center_vertical"
-        android:orientation="horizontal">
-
-        <TextView
-            android:id="@+id/sessions_summary"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:paddingEnd="14dp"
-            android:text="0 sessions"
-            android:textColor="#F9F8FF"
-            android:textSize="13sp" />
-
+            android:textSize="12.5sp"
+            android:layout_marginTop="2dp" />
         <ImageView
-            android:layout_width="1dp"
-            android:layout_height="18dp"
+            android:id="@+id/goal_bar"
+            android:layout_width="match_parent"
+            android:layout_height="7dp"
+            android:scaleType="fitXY"
             android:importantForAccessibility="no"
-            android:background="#47FFFFFF" />
-
-        <TextView
-            android:id="@+id/streak_summary"
-            android:layout_width="wrap_content"
+            android:layout_marginTop="10dp" />
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:paddingStart="14dp"
-            android:text="0 day streak"
-            android:textColor="#F9F8FF"
-            android:textSize="13sp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView
+                android:id="@+id/sessions_summary"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="5 sessions"
+                android:textColor="#D0CDDA"
+                android:textSize="12.5sp" />
+            <ImageView
+                android:id="@+id/divider"
+                android:layout_width="1dp"
+                android:layout_height="16dp"
+                android:src="@drawable/widget_divider"
+                android:scaleType="fitXY"
+                android:tint="#38FFFFFF"
+                android:importantForAccessibility="no"
+                android:layout_marginStart="10dp"
+                android:layout_marginEnd="10dp" />
+            <TextView
+                android:id="@+id/streak_summary"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="🔥 12 day streak"
+                android:textColor="#D0CDDA"
+                android:textSize="12.5sp" />
+        </LinearLayout>
+    </LinearLayout>
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:layout_marginStart="18dp">
+        <TextView
+            android:id="@+id/week_label"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="THIS WEEK"
+            android:textColor="#D0CDDA"
+            android:textSize="11.5sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.09"
+            android:gravity="end" />
+        <ImageView
+            android:id="@+id/week_chart"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:scaleType="fitXY"
+            android:importantForAccessibility="no"
+            android:layout_weight="1"
+            android:layout_marginTop="8dp" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="5dp">
+            <TextView
+                android:id="@+id/day0"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="M"
+                android:textColor="#8CF9F8FF"
+                android:textSize="10sp" />
+            <TextView
+                android:id="@+id/day1"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="T"
+                android:textColor="#8CF9F8FF"
+                android:textSize="10sp" />
+            <TextView
+                android:id="@+id/day2"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="W"
+                android:textColor="#8CF9F8FF"
+                android:textSize="10sp" />
+            <TextView
+                android:id="@+id/day3"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="T"
+                android:textColor="#8CF9F8FF"
+                android:textSize="10sp" />
+            <TextView
+                android:id="@+id/day4"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="F"
+                android:textColor="#8CF9F8FF"
+                android:textSize="10sp" />
+            <TextView
+                android:id="@+id/day5"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="S"
+                android:textColor="#8CF9F8FF"
+                android:textSize="10sp" />
+            <TextView
+                android:id="@+id/day6"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="S"
+                android:textColor="#8CF9F8FF"
+                android:textSize="10sp" />
+        </LinearLayout>
     </LinearLayout>
 </LinearLayout>

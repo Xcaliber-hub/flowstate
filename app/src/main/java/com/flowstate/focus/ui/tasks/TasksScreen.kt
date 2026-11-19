@@ -72,11 +72,16 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+/** 1.8.8: what a home-screen widget asked the Tasks screen to show. */
+enum class TasksOpenRequest { TASKS, ADD_TASK, SYLLABUS }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksScreen(
     settings: AppSettings,
     onOpenSubject: (examId: String, subject: String) -> Unit = { _, _ -> },
+    openRequest: TasksOpenRequest? = null,
+    onOpenRequestHandled: () -> Unit = {},
     vm: TasksViewModel = hiltViewModel(),
     syllabusVm: SyllabusViewModel = hiltViewModel(),
 ) {
@@ -89,6 +94,17 @@ fun TasksScreen(
     val exam = syllabus.syllabus.exam(examId) ?: syllabus.syllabus.exams.firstOrNull()
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
     var showSheet by rememberSaveable { mutableStateOf(false) }
+    // 1.8.8: the Today's tasks widget's "+ Add task" opens the Tasks tab with the Add task sheet; the Syllabus
+    // rings widget opens the Syllabus tab.
+    androidx.compose.runtime.LaunchedEffect(openRequest) {
+        when (openRequest) {
+            TasksOpenRequest.ADD_TASK -> { syllabusVm.setTab(SyllabusViewModel.TAB_TASKS); showSheet = true }
+            TasksOpenRequest.TASKS -> syllabusVm.setTab(SyllabusViewModel.TAB_TASKS)
+            TasksOpenRequest.SYLLABUS -> syllabusVm.setTab(SyllabusViewModel.TAB_SYLLABUS)
+            null -> return@LaunchedEffect
+        }
+        onOpenRequestHandled()
+    }
 
     val visible = remember(tasks, filter) { tasks.filter { filter == null || it.category == filter } }
     val doneCount = visible.count { it.done }
@@ -131,14 +147,14 @@ fun TasksScreen(
             ) {
                 item(key = "tab-toggle") { TasksSyllabusToggle(tab, syllabusVm::setTab) }
                 if (onSyllabus) {
-                    syllabusOverviewItems(syllabus, exam, settings.liquidUi, onSelectExam = syllabusVm::selectExam) { subject ->
+                    syllabusOverviewItems(syllabus, exam, onSelectExam = syllabusVm::selectExam) { subject ->
                         exam?.let { onOpenSubject(it.id, subject) }
                     }
                     return@LazyColumn
                 }
                 item(key = "progress") {
                     Entrance(1) {
-                        GlassCard(Modifier.fillMaxWidth(), settings.liquidUi) {
+                        GlassCard(Modifier.fillMaxWidth()) {
                             AutoSizeText(
                                 if (visible.isEmpty()) "Nothing planned" else "$doneCount of ${visible.size} done",
                                 style = MaterialTheme.typography.titleMedium,

@@ -200,13 +200,13 @@ fun FocusScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             ui.notice?.let { notice ->
-                item(key = "notice") { FocusNoticeCard(notice, ui.settings.liquidUi, onDismiss = vm::clearNotice) }
+                item(key = "notice") { FocusNoticeCard(notice, onDismiss = vm::clearNotice) }
             }
             item(key = "timer") {
                 Entrance(1) {
                     // 1.6.0: the timer runs on one device at a time. While the PC has it, show it here instead.
                     val remote = ui.remote
-                    if (remote != null && !ui.timer.isActive) RemoteTimerCard(remote, ui.settings.liquidUi, onTakeOver = vm::takeOver)
+                    if (remote != null && !ui.timer.isActive) RemoteTimerCard(remote, onTakeOver = vm::takeOver)
                     else TimerCard(
                         ui = ui,
                         onStart = ::requestStart,
@@ -242,14 +242,14 @@ fun FocusScreen(
             item(key = "tiles") {
                 Entrance(2) {
                     Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        StatTile("Today", formatDuration(ui.todayMs), null, ui.settings.liquidUi, Modifier.weight(1f).fillMaxHeight())
-                        StatTile("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", Icons.Rounded.LocalFireDepartment, ui.settings.liquidUi, Modifier.weight(1f).fillMaxHeight())
+                        StatTile("Today", formatDuration(ui.todayMs), null, Modifier.weight(1f).fillMaxHeight())
+                        StatTile("Streak", if (ui.streak == 1) "1 day" else "${ui.streak} days", Icons.Rounded.LocalFireDepartment, Modifier.weight(1f).fillMaxHeight())
                     }
                 }
             }
             item(key = "goal") { Entrance(3) { GoalCard(ui) } }
-            item(key = "quote") { Entrance(4) { QuoteCard(ui.settings.liquidUi) } }
-            item(key = "sessions") { Entrance(5) { SessionsCard(ui.todaySessions, ui.settings.liquidUi, onHold = { pendingDelete = it }) } }
+            item(key = "quote") { Entrance(4) { QuoteCard() } }
+            item(key = "sessions") { Entrance(5) { SessionsCard(ui.todaySessions, onHold = { pendingDelete = it }) } }
         }
     }
 
@@ -288,9 +288,9 @@ private fun TimerCard(
     onDuration: (Int) -> Unit,
 ) {
     val t = ui.timer
-    GlassCard(Modifier.fillMaxWidth(), liquid = ui.settings.liquidUi) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            TimerDisplay(state = t, mode = ui.mode, idleMs = ui.durationMin * 60_000L, liquid = ui.settings.liquidUi)
+            TimerDisplay(state = t, mode = ui.mode, idleMs = ui.durationMin * 60_000L)
             Spacer(Modifier.height(20.dp))
             when {
                 // "Start focus" only exists while nothing is running, so a second session can't be started.
@@ -529,7 +529,7 @@ private fun rememberNow(running: Boolean): State<Long> =
     }
 
 @Composable
-private fun TimerDisplay(state: TimerState, mode: TimerMode, idleMs: Long, liquid: Boolean) {
+private fun TimerDisplay(state: TimerState, mode: TimerMode, idleMs: Long) {
     val running = state.status == Status.RUNNING
     val now = rememberNow(running)
     val countsUp = if (state.isActive) state.countsUp else mode.countsUp
@@ -569,7 +569,7 @@ private fun TimerDisplay(state: TimerState, mode: TimerMode, idleMs: Long, liqui
         val ring = minOf(maxWidth, 280.dp)
         val clockSize = (ring.value * if (clock.length > 5) 0.15f else 0.18f).sp
         Box(Modifier.size(ring).aspectRatio(1f), contentAlignment = Alignment.Center) {
-        ProgressRing(progress = progress, liquid = liquid, active = running)
+        ProgressRing(progress = progress)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             AutoSizeText(label, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(
@@ -591,30 +591,17 @@ private fun TimerDisplay(state: TimerState, mode: TimerMode, idleMs: Long, liqui
     }
 }
 
-@Composable
-private fun rememberWobble(enabled: Boolean): State<Float> {
-    if (!enabled) return remember { mutableFloatStateOf(0f) }
-    val transition = rememberInfiniteTransition(label = "wobble")
-    return transition.animateFloat(
-        initialValue = 0f,
-        targetValue = (2 * PI).toFloat(),
-        animationSpec = infiniteRepeatable(tween(4_200, easing = LinearEasing), RepeatMode.Restart),
-        label = "wobblePhase",
-    )
-}
-
 /**
- * Progress ring. Progress and the Liquid UI wobble are read inside the draw block only,
+ * Progress ring. Progress is read inside the draw block only,
  * so animating the ring never triggers recomposition.
  */
 @Composable
-private fun ProgressRing(progress: () -> Float, liquid: Boolean, active: Boolean, modifier: Modifier = Modifier) {
+private fun ProgressRing(progress: () -> Float, modifier: Modifier = Modifier) {
     val cs = MaterialTheme.colorScheme
     val track = if (cs.background == androidx.compose.ui.graphics.Color.Black) cs.surfaceVariant
     else cs.surfaceVariant.copy(alpha = 0.5f)
     val primary = cs.primary
     val tertiary = cs.tertiary
-    val wobble = rememberWobble(liquid && active)
     Canvas(modifier.fillMaxSize()) {
         val stroke = 18.dp.toPx()
         val pad = stroke + 6.dp.toPx()
@@ -624,11 +611,7 @@ private fun ProgressRing(progress: () -> Float, liquid: Boolean, active: Boolean
 
         val sweep = 360f * progress().coerceIn(0f, 1f)
         if (sweep < 1f) return@Canvas
-        val wave = if (liquid && active) sin(wobble.value) else 0f
         rotate(-90f, center) {
-            if (liquid && active) {
-                drawArc(primary.copy(alpha = 0.16f), 0f, sweep, false, topLeft, arcSize, style = Stroke(stroke + 12.dp.toPx() + wave * 4.dp.toPx(), cap = StrokeCap.Round))
-            }
             drawArc(
                 brush = Brush.sweepGradient(listOf(primary, tertiary, primary), center),
                 startAngle = 0f,
@@ -636,15 +619,15 @@ private fun ProgressRing(progress: () -> Float, liquid: Boolean, active: Boolean
                 useCenter = false,
                 topLeft = topLeft,
                 size = arcSize,
-                style = Stroke(stroke * (1f + 0.08f * wave), cap = StrokeCap.Round),
+                style = Stroke(stroke, cap = StrokeCap.Round),
             )
         }
     }
 }
 
 @Composable
-private fun StatTile(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, liquid: Boolean, modifier: Modifier) {
-    GlassCard(modifier, liquid) {
+private fun StatTile(title: String, value: String, icon: androidx.compose.ui.graphics.vector.ImageVector?, modifier: Modifier) {
+    GlassCard(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (icon != null) {
                 Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
@@ -662,7 +645,7 @@ private fun StatTile(title: String, value: String, icon: androidx.compose.ui.gra
 private fun GoalCard(ui: FocusUiState) {
     val goalMs = ui.settings.dailyGoalMin * 60_000L
     val ratio = if (goalMs > 0) (ui.todayMs / goalMs.toFloat()).coerceIn(0f, 1f) else 0f
-    GlassCard(Modifier.fillMaxWidth(), ui.settings.liquidUi) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             AutoSizeText("Today's goal", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
@@ -712,16 +695,16 @@ private val Quotes = listOf(
 )
 
 @Composable
-private fun QuoteCard(liquid: Boolean) {
+private fun QuoteCard() {
     val quote = Quotes[LocalDate.now().toEpochDay().mod(Quotes.size.toLong()).toInt()]
-    GlassCard(Modifier.fillMaxWidth(), liquid) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Text(quote, style = MaterialTheme.typography.titleMedium)
     }
 }
 
 @Composable
-private fun SessionsCard(sessions: List<SessionEntity>, liquid: Boolean, onHold: (SessionEntity) -> Unit) {
-    GlassCard(Modifier.fillMaxWidth(), liquid) {
+private fun SessionsCard(sessions: List<SessionEntity>, onHold: (SessionEntity) -> Unit) {
+    GlassCard(Modifier.fillMaxWidth()) {
         AutoSizeText("Today's sessions", style = MaterialTheme.typography.titleMedium)
         if (sessions.isNotEmpty()) {
             Text(

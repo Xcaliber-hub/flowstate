@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1.8.8 Quick start, 4x1: 25 min Pomodoro, 50 min Deep work, Stopwatch, 5 min Break. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_glass_dark"
+    android:clipToPadding="false"
+    android:orientation="vertical"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="QUICK START"
+            android:textColor="#D0CDDA"
+            android:textSize="10.5sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.09" />
+        <TextView
+            android:id="@+id/hint"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="Tap to begin"
+            android:textColor="#8CF9F8FF"
+            android:textSize="11sp" />
+    </LinearLayout>
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:layout_marginTop="7dp">
+        <FrameLayout
+            android:id="@+id/pill1"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="0dp"
+            android:layout_marginEnd="3dp"
+            android:minHeight="36dp"
+            android:contentDescription="25 min Pomodoro">
+            <ImageView
+                android:id="@+id/pill1_bg"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/widget_shape_pill"
+                android:scaleType="fitXY"
+                android:tint="#B7A4F5"
+                android:importantForAccessibility="no" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:layout_gravity="center">
+                <TextView
+                    android:id="@+id/pill1_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="25 min"
+                    android:textColor="#17131F"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/pill1_sub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="Pomodoro"
+                    android:textColor="#B317131F"
+                    android:textSize="9.5sp"
+                    android:layout_marginTop="1dp" />
+            </LinearLayout>
+        </FrameLayout>
+        <FrameLayout
+            android:id="@+id/pill2"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="3dp"
+            android:layout_marginEnd="3dp"
+            android:minHeight="36dp"
+            android:contentDescription="50 min Deep work">
+            <ImageView
+                android:id="@+id/pill2_bg"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/widget_pill_dark"
+                android:scaleType="fitXY"
+                android:importantForAccessibility="no" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:layout_gravity="center">
+                <TextView
+                    android:id="@+id/pill2_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="50 min"
+                    android:textColor="#F9F8FF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/pill2_sub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="Deep work"
+                    android:textColor="#8CF9F8FF"
+                    android:textSize="9.5sp"
+                    android:layout_marginTop="1dp" />
+            </LinearLayout>
+        </FrameLayout>
+        <FrameLayout
+            android:id="@+id/pill3"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="3dp"
+            android:layout_marginEnd="3dp"
+            android:minHeight="36dp"
+            android:contentDescription="∞ Stopwatch">
+            <ImageView
+                android:id="@+id/pill3_bg"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/widget_pill_dark"
+                android:scaleType="fitXY"
+                android:importantForAccessibility="no" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:layout_gravity="center">
+                <TextView
+                    android:id="@+id/pill3_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="∞"
+                    android:textColor="#F9F8FF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/pill3_sub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="Stopwatch"
+                    android:textColor="#8CF9F8FF"
+                    android:textSize="9.5sp"
+                    android:layout_marginTop="1dp" />
+            </LinearLayout>
+        </FrameLayout>
+        <FrameLayout
+            android:id="@+id/pill4"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_marginStart="3dp"
+            android:layout_marginEnd="0dp"
+            android:minHeight="36dp"
+            android:contentDescription="5 min Break">
+            <ImageView
+                android:id="@+id/pill4_bg"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/widget_pill_dark"
+                android:scaleType="fitXY"
+                android:importantForAccessibility="no" />
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center_horizontal"
+                android:layout_gravity="center">
+                <TextView
+                    android:id="@+id/pill4_value"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="5 min"
+                    android:textColor="#F9F8FF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+                <TextView
+                    android:id="@+id/pill4_sub"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:includeFontPadding="false"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="Break"
+                    android:textColor="#8CF9F8FF"
+                    android:textSize="9.5sp"
+                    android:layout_marginTop="1dp" />
+            </LinearLayout>
+        </FrameLayout>
+    </LinearLayout>
+</LinearLayout>

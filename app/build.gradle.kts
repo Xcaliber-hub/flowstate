@@ -26,8 +26,8 @@ android {
         applicationId = "com.flowstate.focus"
         minSdk = 26
         targetSdk = 35
-        versionCode = 40
-        versionName = "1.8.6"
+        versionCode = 42
+        versionName = "1.8.8"
     }
 
     signingConfigs {

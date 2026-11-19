@@ -54,7 +54,7 @@ class AmbientController @Inject constructor(
     private val engine: TimerEngine,
     private val player: AmbientPlayer,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = com.flowstate.focus.util.AppScopes.background(Dispatchers.Main.immediate, "AmbientController")
     private val mix = MutableStateFlow(AmbientMix())
     private val on = MutableStateFlow(false)
     private val stopAt = MutableStateFlow(0L)

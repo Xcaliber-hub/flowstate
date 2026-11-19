@@ -12,18 +12,18 @@ enum class ThemeMode {
     }
 }
 
+/** Settings › Appearance › Glass UI style for the floating bars (nav, timer bar, top bar). */
+enum class GlassStyle { LIQUID, FROSTED }
+
 @Immutable
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = true,
     val accentIndex: Int = 0,
-    val liquidUi: Boolean = true,
     /** Frosted, see-through bars, cards and chat bubbles. Off: the earlier plain, solid surfaces. */
     val glassUi: Boolean = true,
-    /** Experimental: a compact navigation rail and daily-goal water bar on the left edge instead of the bottom bar. */
-    val sideNav: Boolean = false,
-    /** With side navigation: put the daily-goal water bar above the nav rail instead of below it. */
-    val sideNavSwapped: Boolean = false,
+    /** With Glass UI on: clear, lens-like liquid glass on the floating bars, or the frosted look. */
+    val glassStyle: GlassStyle = GlassStyle.LIQUID,
     val focusMin: Int = 25,
     val shortBreakMin: Int = 5,
     val longBreakMin: Int = 15,

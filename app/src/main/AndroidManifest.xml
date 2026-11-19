@@ -82,25 +82,119 @@
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="group_chat" />
         <receiver
-            android:name=".widgets.DailyProgressWidgetProvider"
-            android:exported="true">
+            android:name=".widgets.FocusRingWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_focus_ring_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/daily_progress_widget_info" />
+                android:resource="@xml/widget_info_focus_ring" />
+        </receiver>
+        <receiver
+            android:name=".widgets.NowFocusingWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_now_focusing_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_now_focusing" />
+        </receiver>
+        <receiver
+            android:name=".widgets.QuickStartWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_quick_start_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_quick_start" />
+        </receiver>
+        <receiver
+            android:name=".widgets.ExamCountdownWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_exam_countdown_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_exam_countdown" />
+        </receiver>
+        <receiver
+            android:name=".widgets.DailyProgressWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_daily_progress_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_daily_progress" />
+        </receiver>
+        <receiver
+            android:name=".widgets.StreakHeatmapWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_streak_heatmap_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_streak_heatmap" />
+        </receiver>
+        <receiver
+            android:name=".widgets.TodayTasksWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_today_tasks_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_today_tasks" />
         </receiver>
         <receiver
             android:name=".widgets.GroupFocusWidgetProvider"
-            android:exported="true">
+            android:exported="true"
+            android:label="@string/widget_group_focus_label">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/group_focus_widget_info" />
+                android:resource="@xml/widget_info_group_focus" />
         </receiver>
+        <receiver
+            android:name=".widgets.SyllabusRingsWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_syllabus_rings_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_syllabus_rings" />
+        </receiver>
+        <receiver
+            android:name=".widgets.BreakModeWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_break_mode_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_break_mode" />
+        </receiver>
+        <!-- 1.8.8: midnight roll-over and the once-a-minute ring step for the widgets (non-waking alarms). -->
+        <receiver
+            android:name=".widgets.WidgetAlarmReceiver"
+            android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.updates"

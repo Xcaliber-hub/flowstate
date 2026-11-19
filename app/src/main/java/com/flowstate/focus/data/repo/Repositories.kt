@@ -40,6 +40,8 @@ interface TaskRepository {
     suspend fun update(task: TaskEntity)
     suspend fun delete(task: TaskEntity)
     suspend fun clearDone()
+    /** 1.8.8: for the Today's tasks widget. */
+    suspend fun byId(id: Long): TaskEntity?
 }
 
 class TaskRepositoryImpl @Inject constructor(private val dao: TaskDao) : TaskRepository {
@@ -48,4 +50,5 @@ class TaskRepositoryImpl @Inject constructor(private val dao: TaskDao) : TaskRep
     override suspend fun update(task: TaskEntity) = dao.update(task)
     override suspend fun delete(task: TaskEntity) = dao.delete(task)
     override suspend fun clearDone() = dao.clearDone()
+    override suspend fun byId(id: Long): TaskEntity? = dao.byId(id)
 }

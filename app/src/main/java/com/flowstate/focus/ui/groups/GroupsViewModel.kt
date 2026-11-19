@@ -44,4 +44,7 @@ class GroupsViewModel @Inject constructor(
     fun deleteChat(groupId: String, messageId: String) = repository.deleteChat(groupId, messageId)
     fun clearChatError() = repository.clearChatError()
     fun setTyping(groupId: String, typing: Boolean) = repository.setTyping(groupId, typing)
+    /** 1.8.7: the group's unsent message, kept on the phone so leaving the chat or a process restart never loses it. */
+    fun draftFor(groupId: String): String = repository.drafts.get(groupId)
+    fun saveDraft(groupId: String, text: String) = repository.drafts.set(groupId, text)
 }

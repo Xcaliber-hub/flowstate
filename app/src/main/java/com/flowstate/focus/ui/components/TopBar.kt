@@ -137,10 +137,11 @@ fun FrostedTopBar(state: TopBarState, onBack: () -> Unit, modifier: Modifier = M
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlassCircleButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back") {
+        GlassCircleButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", liquid = true) {
             haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); onBack()
         }
-        FrostedGlassSurface(CircleShape, Modifier.weight(1f).height(TopBarHeight), tinted = true) {
+        // The bar's controls are liquid or frosted glass per Settings › Glass UI (see GlassBarSurface).
+        GlassBarSurface(Modifier.weight(1f).height(TopBarHeight), tinted = true) {
             Row(
                 Modifier.fillMaxSize().padding(start = 12.dp, end = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -160,21 +161,24 @@ fun FrostedTopBar(state: TopBarState, onBack: () -> Unit, modifier: Modifier = M
             }
         }
         if (spec.menu.isNotEmpty()) {
-            GlassCircleButton(Icons.Rounded.Tune, if (state.menuOpen) "Close options" else "Options") {
+            GlassCircleButton(Icons.Rounded.Tune, if (state.menuOpen) "Close options" else "Options", liquid = true) {
                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); state.menuOpen = !state.menuOpen
             }
         }
     }
 }
 
-/** Round frosted button from the top bar; also used by the group chat's bars. */
+/**
+ * Round frosted button from the top bar; also used by the group chat's bars. [liquid] lets it follow the
+ * Liquid glass setting (the top bar does); the group chat's bars stay frosted to match their own glass.
+ */
 @Composable
-internal fun GlassCircleButton(icon: ImageVector, label: String, size: Dp = TopBarHeight, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun GlassCircleButton(icon: ImageVector, label: String, size: Dp = TopBarHeight, enabled: Boolean = true, liquid: Boolean = false, onClick: () -> Unit) {
     var pressed by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (pressed) 0.9f else 1f, spring(0.4f, Spring.StiffnessMedium), label = "glassPress")
     val latestClick by rememberUpdatedState(onClick)
     val latestEnabled by rememberUpdatedState(enabled)
-    FrostedGlassSurface(CircleShape, Modifier.size(size).scale(scale), tinted = true) {
+    val body: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit = {
         Box(
             Modifier.fillMaxSize()
                 .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
@@ -191,6 +195,8 @@ internal fun GlassCircleButton(icon: ImageVector, label: String, size: Dp = TopB
             contentAlignment = Alignment.Center,
         ) { Icon(icon, contentDescription = null) }
     }
+    if (liquid) GlassBarSurface(Modifier.size(size).scale(scale), tinted = true, content = body)
+    else FrostedGlassSurface(CircleShape, Modifier.size(size).scale(scale), tinted = true, content = body)
 }
 
 @Composable

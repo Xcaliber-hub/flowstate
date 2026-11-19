@@ -70,7 +70,7 @@ class CloudSync @Inject constructor(
     private val lock: TimerLockState,
     private val account: AccountHolder,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.flowstate.focus.util.AppScopes.background(Dispatchers.IO, "CloudSync")
     private val prefs = context.getSharedPreferences("cloud_sync", Context.MODE_PRIVATE)
     // Pre-1.6 ownership map written by GroupsRepository: owner_<sessionId> = uid or "unassigned".
     private val ownership = context.getSharedPreferences("group_session_owners", Context.MODE_PRIVATE)
@@ -102,7 +102,10 @@ class CloudSync @Inject constructor(
                 if (next == null) {
                     lock.remote.value = null
                     holdingLock = false
-                } else onSignedIn(next)
+                } else {
+                    // 1.8.7: an exception here used to end this collector (and crash the app), stopping sync for good.
+                    runCatching { onSignedIn(next) }.onFailure { Log.w(TAG, "Sign-in sync setup failed", it) }
+                }
                 previous = next
             }
         }
@@ -147,7 +150,7 @@ class CloudSync @Inject constructor(
                 val fromServer = !snap.metadata.isFromCache
                 val initial = first && fromServer
                 if (fromServer) first = false
-                scope.launch { handleLock(u, snap, fromServer, initial) }
+                scope.launch { runCatching { handleLock(u, snap, fromServer, initial) }.onFailure { Log.w(TAG, "Timer lock handling failed", it) } }
             }
         val since = prefs.getLong(lastPullKey(u), 0L)
         sessionsListener = db.collection("users").document(u).collection("sessions")
@@ -157,7 +160,8 @@ class CloudSync @Inject constructor(
                 if (err != null) { Log.w(TAG, "Session sync listener failed", err); return@addSnapshotListener }
                 val changes = snap?.documentChanges.orEmpty().filter { it.type != DocumentChange.Type.REMOVED && !it.document.metadata.hasPendingWrites() }
                 if (changes.isEmpty()) return@addSnapshotListener
-                scope.launch { applyPulled(u, changes.map { it.document }) }
+                // 1.8.7: Room or decode errors while applying a pull were uncaught on a background scope (app crash).
+                scope.launch { runCatching { applyPulled(u, changes.map { it.document }) }.onFailure { Log.w(TAG, "Applying pulled sessions failed", it) } }
             }
     }
 

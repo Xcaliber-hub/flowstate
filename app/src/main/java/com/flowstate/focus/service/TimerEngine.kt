@@ -45,7 +45,7 @@ class TimerEngine @Inject constructor(
     settings: SettingsRepository,
     private val account: com.flowstate.focus.data.sync.AccountHolder,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = com.flowstate.focus.util.AppScopes.background(Dispatchers.Default, "TimerEngine")
     private val prefs = context.getSharedPreferences("timer_state", Context.MODE_PRIVATE)
     private val lock = Any()
     private var completionJob: Job? = null
@@ -147,6 +147,43 @@ class TimerEngine @Inject constructor(
         }
         finish()
         false
+    }
+
+    /**
+     * 1.8.8 (widget "skip"): moves on to the next phase now.
+     *  - A break: same as [skipBreak] (the next Pomodoro round starts, a standalone break ends).
+     *  - A Pomodoro focus block: the focus time spent so far is recorded (as not completed) and the cycle's
+     *    break starts, short or long exactly as if the block had run out.
+     * Ignored for strict focus, for countdown and stopwatch focus (they have no next phase) and when idle.
+     * Returns true when the phase changed.
+     */
+    fun skipPhase(): Boolean = synchronized(lock) {
+        val s = _state.value
+        if (!s.isActive) return@synchronized false
+        if (s.isBreak) {
+            skipBreak()
+            return@synchronized true
+        }
+        if (s.phase != Phase.FOCUS || s.mode != TimerMode.POMODORO || s.strict) return@synchronized false
+        completionJob?.cancel()
+        val now = System.currentTimeMillis()
+        record(s, s.elapsedAt(now), completed = false)
+        val round = s.round + 1
+        val long = round % s.plan.rounds.coerceAtLeast(1) == 0
+        publish(
+            s.copy(
+                phase = if (long) Phase.LONG_BREAK else Phase.SHORT_BREAK,
+                status = Status.RUNNING,
+                phaseDurationMs = if (long) s.plan.longBreakMs else s.plan.shortBreakMs,
+                phaseStartedAt = now,
+                pausedAt = 0L,
+                round = round,
+                checkInAt = 0L,
+                autoPaused = false,
+            )
+        )
+        scheduleCompletion()
+        true
     }
 
     /** Ignored while a strict focus block is running. */
@@ -355,7 +392,11 @@ class TimerEngine @Inject constructor(
             // The account signed in when it was recorded (null when signed out); CloudSync uploads it.
             ownerUid = account.uid,
         )
-        scope.launch { sessions.insert(entity) }
+        // 1.8.7: a failed insert (disk full, a locked database) used to crash the app from this background scope.
+        scope.launch {
+            runCatching { sessions.insert(entity) }
+                .onFailure { android.util.Log.e("Flowstate", "Could not record the session", it) }
+        }
     }
 
     private fun persist(s: TimerState) {

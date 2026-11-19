@@ -13,6 +13,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.flowstate.focus.domain.normalizeCheckInMinutes
 import com.flowstate.focus.domain.AppSettings
+import com.flowstate.focus.domain.GlassStyle
 import com.flowstate.focus.domain.ThemeMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -22,16 +23,20 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+// 1.8.7: a corrupted settings file (power loss mid-write) made every write throw CorruptionException. Reads were
+// already mapped to defaults; now the file is replaced with defaults so the app can save settings again.
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "settings",
+    corruptionHandler = androidx.datastore.core.handlers.ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 private object Keys {
     val THEME = stringPreferencesKey("theme")
     val DYNAMIC = booleanPreferencesKey("dynamic")
     val ACCENT = intPreferencesKey("accent")
-    val LIQUID = booleanPreferencesKey("liquid")
     val GLASS = booleanPreferencesKey("glass_ui")
-    val SIDE_NAV = booleanPreferencesKey("side_nav")
-    val SIDE_NAV_SWAPPED = booleanPreferencesKey("side_nav_swapped")
+    /** Liquid or frosted glass. Old "liquid", "side_nav" and "side_nav_swapped" keys are simply ignored. */
+    val GLASS_STYLE = stringPreferencesKey("glass_style")
     val FOCUS = intPreferencesKey("focus_min")
     val SHORT = intPreferencesKey("short_min")
     val LONG = intPreferencesKey("long_min")
@@ -55,10 +60,10 @@ private fun Preferences.toSettings(): AppSettings {
         themeMode = this[Keys.THEME]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: d.themeMode,
         dynamicColor = this[Keys.DYNAMIC] ?: d.dynamicColor,
         accentIndex = this[Keys.ACCENT] ?: d.accentIndex,
-        liquidUi = this[Keys.LIQUID] ?: d.liquidUi,
         glassUi = this[Keys.GLASS] ?: d.glassUi,
-        sideNav = this[Keys.SIDE_NAV] ?: d.sideNav,
-        sideNavSwapped = this[Keys.SIDE_NAV_SWAPPED] ?: d.sideNavSwapped,
+        // Fresh installs (nothing saved yet) start on liquid glass; people updating keep the frosted look.
+        glassStyle = this[Keys.GLASS_STYLE]?.let { runCatching { GlassStyle.valueOf(it) }.getOrNull() }
+            ?: if (this[Keys.THEME] == null) d.glassStyle else GlassStyle.FROSTED,
         focusMin = this[Keys.FOCUS] ?: d.focusMin,
         shortBreakMin = this[Keys.SHORT] ?: d.shortBreakMin,
         longBreakMin = this[Keys.LONG] ?: d.longBreakMin,
@@ -80,10 +85,8 @@ private fun MutablePreferences.write(s: AppSettings) {
     this[Keys.THEME] = s.themeMode.name
     this[Keys.DYNAMIC] = s.dynamicColor
     this[Keys.ACCENT] = s.accentIndex
-    this[Keys.LIQUID] = s.liquidUi
     this[Keys.GLASS] = s.glassUi
-    this[Keys.SIDE_NAV] = s.sideNav
-    this[Keys.SIDE_NAV_SWAPPED] = s.sideNavSwapped
+    this[Keys.GLASS_STYLE] = s.glassStyle.name
     this[Keys.FOCUS] = s.focusMin
     this[Keys.SHORT] = s.shortBreakMin
     this[Keys.LONG] = s.longBreakMin

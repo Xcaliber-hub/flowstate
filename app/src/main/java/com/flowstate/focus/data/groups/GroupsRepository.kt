@@ -87,8 +87,10 @@ class GroupsRepository @Inject constructor(
     private val sessions: SessionRepository,
     private val account: com.flowstate.focus.data.sync.AccountHolder,
     private val timerLock: com.flowstate.focus.data.sync.TimerLockState,
+    /** 1.8.7: unsent chat messages per group, kept across navigation and process death. */
+    val drafts: ChatDraftStore,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.flowstate.focus.util.AppScopes.background(Dispatchers.IO, "GroupsRepository")
     private val _state = MutableStateFlow(GroupsState())
     val state: StateFlow<GroupsState> = _state.asStateFlow()
     private val _chat = MutableStateFlow(ChatState())
@@ -124,6 +126,15 @@ class GroupsRepository @Inject constructor(
         chatVisible = visible
         if (visible) _chat.value.groupId?.let { markChatSeen(it) } else clearTyping()
     }
+    /**
+     * 1.8.7: guards the listener bookkeeping below (listener registrations, the ping maps, the chat cache cursor).
+     * Snapshot callbacks and UI calls run on the main thread while auth changes, sign-out and group
+     * create/join/leave ran on IO threads, so two threads could mutate the same ArrayList/HashMap at once
+     * (ConcurrentModificationException, an uncaught crash on sign-up, where acceptAuth runs twice at once).
+     */
+    private val listenerLock = Any()
+    /** 1.8.7: the group last opened, so a process restart reopens the same group (and its chat) instead of the first one. */
+    private val selection = context.getSharedPreferences("groups_selection", Context.MODE_PRIVATE)
     private val chatById = java.util.concurrent.ConcurrentHashMap<String, ChatMessage>()
     private var chatCursor: DocumentSnapshot? = null
     private val chatSeen = context.getSharedPreferences("group_chat_seen", Context.MODE_PRIVATE)
@@ -135,8 +146,8 @@ class GroupsRepository @Inject constructor(
     private val pingsByGroup = mutableMapOf<String, List<EmojiPing>>()
     private var selectedMembers = emptyList<GroupMember>()
     private var syncJob: kotlinx.coroutines.Job? = null
-    private var activeUser: GroupUser? = null
-    private var groupList = emptyList<FocusGroup>()
+    @Volatile private var activeUser: GroupUser? = null
+    @Volatile private var groupList = emptyList<FocusGroup>()
     private val authGeneration = AtomicLong(0L)
     // A heartbeat must never overwrite a just-saved avatar with its old snapshot.
     private val publishMutex = Mutex()
@@ -173,6 +184,8 @@ class GroupsRepository @Inject constructor(
     fun signOut() { scope.launch {
         activeUser?.uid?.let { old -> signOutHooks.forEach { hook -> runCatching { hook(old) } } }
         authGeneration.incrementAndGet(); cleanupListeners(); activeUser = null; account.uid = null; groupList = emptyList(); auth?.signOut(); _state.value = GroupsState(configured = _state.value.configured)
+        // 1.8.7: drafts and the remembered group belong to the account that signed out.
+        drafts.clearAll(); selection.edit().clear().apply()
     } }
     fun updateProfile(name: String, avatarId: String) = launchBusy {
         _state.update { it.copy(profileSaving = true) }
@@ -226,7 +239,11 @@ class GroupsRepository @Inject constructor(
         }.await()
         refreshGroups(); selectGroup(id); publishCurrent()
     }
-    fun selectGroup(id: String) { val g = groupList.firstOrNull { it.id == id } ?: return; _state.value = _state.value.copy(selectedGroup = g, members = emptyList(), loading = true); attachMembers(g) }
+    fun selectGroup(id: String) {
+        val g = groupList.firstOrNull { it.id == id } ?: return
+        selection.edit().putString(KEY_SELECTED, id).apply()
+        _state.value = _state.value.copy(selectedGroup = g, members = emptyList(), loading = true); attachMembers(g)
+    }
     fun leaveGroup() = launchBusy {
         val u = requireUser(); val g = _state.value.selectedGroup ?: error("Select a group first."); val ref = dbRequired().collection("groups").document(g.id)
         dbRequired().runTransaction { tx ->
@@ -256,10 +273,12 @@ class GroupsRepository @Inject constructor(
     // CHAT_PAGE and fetches older pages only as you scroll up, which keeps reads low on Spark.
 
     /** Starts listening to [groupId]'s newest messages. Call when the chat screen opens. */
-    fun openChat(groupId: String) {
+    fun openChat(groupId: String) = synchronized(listenerLock) { openChatLocked(groupId) }
+
+    private fun openChatLocked(groupId: String) {
         val uid = activeUser?.uid ?: return
         if (_chat.value.groupId == groupId && chatListener != null) return
-        closeChat()
+        closeChatLocked()
         com.flowstate.focus.push.ChatNotifications.clear(context, groupId)
         _chat.update { it.copy(groupId = groupId, messages = emptyList(), loaded = false, reachedStart = false, error = null, unreadGroups = it.unreadGroups - groupId, unreadCounts = it.unreadCounts - groupId) }
         chatListener = messagesRef(groupId).orderBy("sentAt", Query.Direction.DESCENDING).limit(CHAT_PAGE)
@@ -355,7 +374,9 @@ class GroupsRepository @Inject constructor(
     }
 
     /** Stops listening. Call when the chat screen closes. */
-    fun closeChat() {
+    fun closeChat() = synchronized(listenerLock) { closeChatLocked() }
+
+    private fun closeChatLocked() {
         clearTyping()
         chatListener?.remove(); chatListener = null
         readsListener?.remove(); readsListener = null
@@ -388,28 +409,43 @@ class GroupsRepository @Inject constructor(
         }
     }
 
-    /** Sends [text] to [groupId], optionally as a reply to [replyTo]. It shows at once and is marked sent when the server accepts it. */
+    /**
+     * Sends [text] to [groupId], optionally as a reply to [replyTo]. It shows at once (pending) and is marked
+     * sent when the server accepts it. Returns true once the server accepted it, false if it was rejected.
+     *
+     * 1.8.7: the failure handling (drop the pending bubble, show the error, put the text back as the group's
+     * draft) runs from the Firestore task itself, not after the caller's await. Until 1.8.6 it ran only in
+     * the awaiting coroutine, which belongs to the chat screen: leaving the chat while a send was pending
+     * cancelled it, and a later rejection then lost the message silently.
+     */
     suspend fun sendChat(groupId: String, text: String, replyTo: ChatMessage? = null): Boolean {
         val clean = text.trim()
         if (clean.isEmpty() || clean.length > CHAT_MAX_CHARS) return false
         val me = activeUser ?: return false
-        val ref = messagesRef(groupId).document()
-        val data = mutableMapOf<String, Any>("uid" to me.uid, "name" to me.name, "avatarId" to me.avatarId, "text" to clean, "sentAt" to FieldValue.serverTimestamp())
-        if (replyTo != null) data["replyTo"] = mapOf(
-            "id" to replyTo.id, "uid" to replyTo.uid, "name" to replyTo.name.take(40),
-            "text" to replyTo.text.take(CHAT_REPLY_QUOTE_CHARS),
-        )
-        return try {
-            ref.set(data).await()
-            requestPush(groupId, ref.id)
-            true
-        } catch (e: CancellationException) { throw e }
-        catch (e: Exception) {
+        val task = try {
+            val ref = messagesRef(groupId).document()
+            val data = mutableMapOf<String, Any>("uid" to me.uid, "name" to me.name, "avatarId" to me.avatarId, "text" to clean, "sentAt" to FieldValue.serverTimestamp())
+            if (replyTo != null) data["replyTo"] = mapOf(
+                "id" to replyTo.id, "uid" to replyTo.uid, "name" to replyTo.name.take(40),
+                "text" to replyTo.text.take(CHAT_REPLY_QUOTE_CHARS),
+            )
+            ref.set(data)
+                .addOnSuccessListener { requestPush(groupId, ref.id) }
+                .addOnFailureListener { e ->
+                    Log.w("Flowstate", "Group chat send failed", e)
+                    if (_chat.value.groupId == groupId && chatById.remove(ref.id) != null) publishChat()
+                    _chat.update { it.copy(error = chatError(e)) }
+                    drafts.restoreIfEmpty(groupId, clean)
+                }
+        } catch (e: Exception) {
+            // Firebase not configured or the client was shut down: nothing was queued.
             Log.w("Flowstate", "Group chat send failed", e)
-            chatById.remove(ref.id); publishChat()
             _chat.update { it.copy(error = chatError(e)) }
-            false
+            return false
         }
+        return try { task.await(); true }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { false }
     }
 
     /** Changes the text of one of your own messages for everyone; it is marked "Edited". */
@@ -420,19 +456,26 @@ class GroupsRepository @Inject constructor(
         val old = chatById[messageId] ?: return false
         if (old.uid != me.uid) return false
         chatById[messageId] = old.copy(text = clean, edited = true); publishChat()
-        return try {
+        val task = try {
             messagesRef(groupId).document(messageId)
-                .update(mapOf("text" to clean, "editedAt" to FieldValue.serverTimestamp())).await()
-            true
-        } catch (e: CancellationException) { throw e }
-        catch (e: Exception) {
+                .update(mapOf("text" to clean, "editedAt" to FieldValue.serverTimestamp()))
+                .addOnFailureListener { e ->
+                    // 1.8.7: reverted from the task (see sendChat), so leaving the chat cannot skip it.
+                    Log.w("Flowstate", "Group chat edit failed", e)
+                    if (_chat.value.groupId == groupId && chatById[messageId]?.text == clean) {
+                        chatById[messageId] = old; publishChat()
+                    }
+                    _chat.update { it.copy(error = chatError(e)) }
+                }
+        } catch (e: Exception) {
             Log.w("Flowstate", "Group chat edit failed", e)
-            if (_chat.value.groupId == groupId && chatById[messageId]?.text == clean) {
-                chatById[messageId] = old; publishChat()
-            }
+            if (chatById[messageId]?.text == clean) { chatById[messageId] = old; publishChat() }
             _chat.update { it.copy(error = chatError(e)) }
-            false
+            return false
         }
+        return try { task.await(); true }
+        catch (e: CancellationException) { throw e }
+        catch (e: Exception) { false }
     }
 
     /** Deletes one of your own messages for everyone. */
@@ -559,8 +602,10 @@ class GroupsRepository @Inject constructor(
     fun dismissPing(ping: EmojiPing) {
         val uid = activeUser?.uid ?: return
         // The same friend can have a ping waiting in more than one shared group; clear them all.
-        val groups = pingsByGroup.filterValues { list -> list.any { it.fromUid == ping.fromUid } }.keys.toList()
-        groups.forEach { id -> pingsByGroup[id] = pingsByGroup[id].orEmpty().filterNot { it.fromUid == ping.fromUid } }
+        val groups = synchronized(listenerLock) {
+            pingsByGroup.filterValues { list -> list.any { it.fromUid == ping.fromUid } }.keys.toList()
+                .also { ids -> ids.forEach { id -> pingsByGroup[id] = pingsByGroup[id].orEmpty().filterNot { it.fromUid == ping.fromUid } } }
+        }
         publishPings()
         scope.launch {
             groups.forEach { id -> runCatching { dbRequired().collection("groups").document(id).collection("pings").document("${ping.fromUid}_$uid").delete().await() } }
@@ -601,15 +646,20 @@ class GroupsRepository @Inject constructor(
             publishCurrent()
         } catch (e: Exception) { setError(e); _state.value = _state.value.copy(loading = false) }
     }
-    private fun attachGroups(groups: List<FocusGroup>) {
+    private fun attachGroups(groups: List<FocusGroup>) = synchronized(listenerLock) { attachGroupsLocked(groups) }
+
+    private fun attachGroupsLocked(@Suppress("UNUSED_PARAMETER") groups: List<FocusGroup>) {
         groupListener?.remove(); val listenerUid = activeUser?.uid ?: return
         groupListener = db?.collection("groups")?.whereArrayContains("memberIds", listenerUid)?.addSnapshotListener { snap, err ->
             if (authRequired().currentUser?.uid != listenerUid || activeUser?.uid != listenerUid) return@addSnapshotListener
             if (err != null) { setError(err); _state.value = _state.value.copy(loading = false); return@addSnapshotListener }
+            // 1.8.7: an empty first snapshot from the offline cache is not "you left every group"; keep the
+            // current selection until the server answers, so an open chat is not closed under the user.
+            if (snap != null && snap.isEmpty && snap.metadata.isFromCache && groupList.isNotEmpty()) return@addSnapshotListener
             groupList = snap?.documents.orEmpty().mapNotNull { d -> d.getString("name")?.let { FocusGroup(d.id, it, (d.get("memberIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()) } }
             attachPings(groupList, listenerUid)
             val previous = _state.value.selectedGroup
-            val oldId = previous?.id
+            val oldId = previous?.id ?: selection.getString(KEY_SELECTED, null)
             val chosen = groupList.firstOrNull { it.id == oldId } ?: groupList.firstOrNull()
             _state.update { it.copy(groups = groupList, selectedGroup = chosen, loading = false) }
             if (chosen != null && (chosen.id != oldId || chosen.memberIds != previous?.memberIds)) attachMembers(chosen)
@@ -617,7 +667,9 @@ class GroupsRepository @Inject constructor(
         }
     }
     /** Listens for emoji pings addressed to this user in every group they are in. */
-    private fun attachPings(groups: List<FocusGroup>, uid: String) {
+    private fun attachPings(groups: List<FocusGroup>, uid: String) = synchronized(listenerLock) { attachPingsLocked(groups, uid) }
+
+    private fun attachPingsLocked(groups: List<FocusGroup>, uid: String) {
         val ids = groups.map { it.id }.toSet()
         (pingListeners.keys - ids).forEach { id -> pingListeners.remove(id)?.remove(); pingsByGroup.remove(id) }
         groups.filter { it.id !in pingListeners }.forEach { g ->
@@ -628,15 +680,16 @@ class GroupsRepository @Inject constructor(
                         // A failed listener never recovers on its own (for example, it started before the
                         // 1.4.3 rules were published). Drop it and try again shortly.
                         Log.w("Flowstate", "Emoji ping listener failed for group ${g.id}", err)
-                        pingListeners.remove(g.id)?.remove()
+                        synchronized(listenerLock) { pingListeners.remove(g.id)?.remove() }
                         scope.launch(Dispatchers.Main) { delay(PING_RETRY_MS); if (activeUser?.uid == uid && g.id !in pingListeners) attachPings(groupList, uid) }
                         return@addSnapshotListener
                     }
-                    pingsByGroup[g.id] = snap?.documents.orEmpty().mapNotNull { d ->
+                    val decoded = snap?.documents.orEmpty().mapNotNull { d ->
                         val emoji = d.getString("emoji")?.takeIf { it in EmojiPings.ALL } ?: return@mapNotNull null
                         EmojiPing(g.id, g.name, d.getString("fromUid").orEmpty(), d.getString("fromName").orEmpty().ifBlank { "A friend" },
                             PresetAvatars.fallback(d.getString("fromAvatarId")), emoji, d.getTimestamp("sentAt")?.toDate()?.time ?: System.currentTimeMillis())
                     }
+                    synchronized(listenerLock) { pingsByGroup[g.id] = decoded }
                     publishPings()
                 }
         }
@@ -644,17 +697,20 @@ class GroupsRepository @Inject constructor(
     }
     private fun publishPings() {
         // A friend in two groups may have pinged in both; show only their newest.
-        val all = pingsByGroup.values.flatten().groupBy { it.fromUid }.values.mapNotNull { list -> list.maxByOrNull { it.sentAt } }.sortedBy { it.sentAt }
+        val all = synchronized(listenerLock) { pingsByGroup.values.flatten() }.groupBy { it.fromUid }.values.mapNotNull { list -> list.maxByOrNull { it.sentAt } }.sortedBy { it.sentAt }
         _state.update { it.copy(incomingPings = all) }
     }
     /** Re-listens for pings from scratch; called whenever the app comes to the foreground. */
     fun refreshPings() {
         val uid = activeUser?.uid ?: return
-        pingListeners.values.forEach { it.remove() }; pingListeners.clear()
-        attachPings(groupList, uid)
+        synchronized(listenerLock) {
+            pingListeners.values.forEach { it.remove() }; pingListeners.clear()
+            attachPingsLocked(groupList, uid)
+        }
     }
-    private fun clearPingListeners() { pingListeners.values.forEach { it.remove() }; pingListeners.clear(); pingsByGroup.clear() }
-    private fun attachMembers(group: FocusGroup) {
+    private fun clearPingListeners() = synchronized(listenerLock) { pingListeners.values.forEach { it.remove() }; pingListeners.clear(); pingsByGroup.clear() }
+    private fun attachMembers(group: FocusGroup) = synchronized(listenerLock) { attachMembersLocked(group) }
+    private fun attachMembersLocked(group: FocusGroup) {
         clearMemberListeners(); selectedMembers = emptyList()
         val u = activeUser ?: return
         memberListeners += attachChatBadge(group, u.uid)
@@ -718,8 +774,8 @@ class GroupsRepository @Inject constructor(
     }
     private fun encodeTimer(t: TimerState): Map<String, Any> = mapOf("mode" to t.mode.name, "phase" to t.phase.name, "status" to t.status.name, "phaseDurationMs" to t.phaseDurationMs, "phaseStartedAt" to t.phaseStartedAt, "pausedAt" to t.pausedAt, "subject" to t.subject.take(80), "platform" to livePlatform)
     private fun decodeTimer(m: Map<*, *>): TimerState? = runCatching { TimerState(mode = TimerMode.fromName(m["mode"] as? String), phase = Phase.valueOf(m["phase"] as String), status = com.flowstate.focus.domain.Status.valueOf(m["status"] as String), phaseDurationMs = (m["phaseDurationMs"] as Number).toLong(), phaseStartedAt = (m["phaseStartedAt"] as Number).toLong(), pausedAt = (m["pausedAt"] as? Number)?.toLong() ?: 0, subject = m["subject"] as? String ?: "") }.getOrNull()
-    private fun cleanupListeners() { groupListener?.remove(); groupListener = null; clearMemberListeners(); clearPingListeners(); closeChat(); _chat.value = ChatState(); syncJob?.cancel(); syncJob = null }
-    private fun clearMemberListeners() { memberListeners.forEach { it.remove() }; memberListeners.clear() }
+    private fun cleanupListeners() = synchronized(listenerLock) { groupListener?.remove(); groupListener = null; clearMemberListeners(); clearPingListeners(); closeChatLocked(); _chat.value = ChatState(); syncJob?.cancel(); syncJob = null }
+    private fun clearMemberListeners() = synchronized(listenerLock) { memberListeners.forEach { it.remove() }; memberListeners.clear() }
     private fun requireUser() = authRequired().currentUser ?: error("Sign in first.")
     private fun authRequired() = auth ?: error("Firebase is not configured.")
     private fun dbRequired() = db ?: error("Firebase is not configured.")
@@ -746,7 +802,7 @@ class GroupsRepository @Inject constructor(
     private fun emailOk(s: String) = s.trim().length <= 254 && android.util.Patterns.EMAIL_ADDRESS.matcher(s.trim()).matches()
     private fun weekStartIst(now: Long): Long = weeklyWeekStartIst(now)
     private fun weekKey(ms: Long): String = weeklyWeekKeyIst(ms)
-    private companion object { const val APP_NAME="flowstate-groups"; const val MAX_GROUP_SIZE=20; const val WEEK_MS=7*24*60*60*1000L; const val ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const val LEGACY_RETRY_MS=15*60_000L; const val PUSH_ATTEMPTS=3 }
+    private companion object { const val APP_NAME="flowstate-groups"; const val MAX_GROUP_SIZE=20; const val WEEK_MS=7*24*60*60*1000L; const val ALPHABET="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const val LEGACY_RETRY_MS=15*60_000L; const val PUSH_ATTEMPTS=3; const val KEY_SELECTED="selected_group" }
 }
 
 private const val PING_RETRY_MS = 15_000L

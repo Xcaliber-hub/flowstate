@@ -91,6 +91,10 @@ interface TaskDao {
 
     @Query("DELETE FROM tasks WHERE done = 1")
     suspend fun clearDone()
+
+    /** 1.8.8: the Today's tasks widget ticks a task by id. */
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    suspend fun byId(id: Long): TaskEntity?
 }
 
 @Dao

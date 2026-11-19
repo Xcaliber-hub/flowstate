@@ -105,6 +105,10 @@ class AmbientPlayer @Inject constructor(@ApplicationContext private val context:
                 Thread.sleep(250L * rebuilds)
             }
         } catch (_: InterruptedException) {
+        } catch (e: RuntimeException) {
+            // 1.8.7: an AudioTrack call failing after the audio server died (IllegalStateException) used to escape
+            // this raw thread and kill the app. Give up on this thread; the next play starts a fresh one.
+            Log.w("Flowstate", "Ambient audio thread failed", e)
         } finally {
             synchronized(lock) { abandonFocus() }
         }
@@ -138,7 +142,7 @@ class AmbientPlayer @Inject constructor(@ApplicationContext private val context:
             // Park while silent and nothing should play.
             synchronized(lock) {
                 while (!audible && fade <= 0f && synth.isSilent()) {
-                    if (t.playState == AudioTrack.PLAYSTATE_PLAYING) { t.pause(); t.flush() }
+                    if (t.playState == AudioTrack.PLAYSTATE_PLAYING) runCatching { t.pause(); t.flush() }
                     abandonFocus()
                     lock.wait()
                 }

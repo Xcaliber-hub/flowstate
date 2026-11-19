@@ -192,8 +192,16 @@ class FocusViewModel @Inject constructor(
         const val MAX_BREAK_MIN = 60
     }
 
-    private fun startService() =
-        ContextCompat.startForegroundService(context, Intent(context, TimerService::class.java))
+    /**
+     * 1.8.7: Android 12+ throws ForegroundServiceStartNotAllowedException (an IllegalStateException) when the app
+     * is not in a state that may start a foreground service, e.g. the view model being created while the activity
+     * is restored in the background. The timer itself runs in [TimerEngine]; the notification comes back through
+     * [TimerService.ensureRunning] on the next state change, so a refused start is logged instead of crashing.
+     */
+    private fun startService() {
+        runCatching { ContextCompat.startForegroundService(context, Intent(context, TimerService::class.java)) }
+            .onFailure { android.util.Log.w("Flowstate", "Could not start the timer service", it) }
+    }
 }
 
 /** Longest session subject; long enough for every syllabus chapter name (57), under the 80 the cloud allows. */

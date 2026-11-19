@@ -25,7 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -35,6 +35,26 @@ import com.flowstate.focus.R
 
 // All twenty-four approved designs are bundled locally; no uploads or remote images.
 private const val PICKER_COLUMNS = 3
+
+/**
+ * 1.8.7: avatars are 440-464 px artworks shown at 32-58 dp. painterResource() decoded a full-size copy
+ * (~0.85 MB) for every avatar on screen, again on every recomposition of a new list row, on the main
+ * thread: chat scrolling and the leaderboard churned memory (OOM risk on 2-3 GB phones). Decode once at
+ * half size (still >= the 58 dp xxhdpi size) and share it.
+ */
+private val avatarCache = android.util.LruCache<Int, androidx.compose.ui.graphics.ImageBitmap>(PRESET_CACHE_SIZE)
+private const val PRESET_CACHE_SIZE = 24
+
+@Composable
+private fun avatarBitmap(resource: Int): androidx.compose.ui.graphics.ImageBitmap? {
+    val resources = androidx.compose.ui.platform.LocalContext.current.resources
+    return androidx.compose.runtime.remember(resource) {
+        avatarCache.get(resource) ?: runCatching {
+            val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = 2 }
+            android.graphics.BitmapFactory.decodeResource(resources, resource, options)
+        }.getOrNull()?.asImageBitmap()?.also { avatarCache.put(resource, it) }
+    }
+}
 
 private data class AvatarArtwork(val id: String, val label: String, val resource: Int)
 private val approvedArtwork = listOf(
@@ -74,7 +94,8 @@ internal fun ProfileAvatar(name: String, avatarId: String, size: Int, ring: Long
             .semantics { contentDescription = if (artwork == null) "$name initial" else "$name, ${artwork.label} avatar" },
         contentAlignment = Alignment.Center,
     ) {
-        if (artwork != null) Image(painterResource(artwork.resource), contentDescription = null,
+        val bitmap = artwork?.let { avatarBitmap(it.resource) }
+        if (bitmap != null) Image(bitmap, contentDescription = null,
             modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
         else Text(name.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSecondaryContainer)

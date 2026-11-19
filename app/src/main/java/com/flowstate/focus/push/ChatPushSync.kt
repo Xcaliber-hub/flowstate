@@ -29,7 +29,7 @@ class ChatPushSync @Inject constructor(
     private val groups: GroupsRepository,
     private val settings: SettingsRepository,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = com.flowstate.focus.util.AppScopes.background(Dispatchers.IO, "ChatPushSync")
     private val prefs = context.getSharedPreferences("chat_push_topics", Context.MODE_PRIVATE)
     @Volatile private var desired: Set<String> = emptySet()
 
@@ -45,13 +45,13 @@ class ChatPushSync @Inject constructor(
                 settings.settings.map { it.chatNotifications },
             ) { ids, on -> if (on) ids.map { topic(it) }.toSet() else emptySet() }
                 .distinctUntilChanged()
-                .collect { want -> desired = want; apply(want) }
+                .collect { want -> desired = want; runCatching { apply(want) }.onFailure { Log.w("Flowstate", "Topic sync failed", it) } }
         }
     }
 
     fun resubscribeAll() {
         if (!available) return
-        scope.launch { prefs.edit().clear().apply(); apply(desired) }
+        scope.launch { prefs.edit().clear().apply(); runCatching { apply(desired) }.onFailure { Log.w("Flowstate", "Topic resubscribe failed", it) } }
     }
 
     private suspend fun apply(want: Set<String>) {

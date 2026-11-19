@@ -65,7 +65,7 @@ fun depthColors(
 }
 
 /**
- * Draws only the tinted shadow. It never clips ([clip] = false), so ripples and Liquid UI scaling of
+ * Draws only the tinted shadow. It never clips ([clip] = false), so ripples and scaling of
  * the content are untouched; the surface that follows is responsible for its own shape.
  */
 fun Modifier.depthShadow(shape: Shape, color: Color, elevation: Dp = Depth.Card): Modifier =

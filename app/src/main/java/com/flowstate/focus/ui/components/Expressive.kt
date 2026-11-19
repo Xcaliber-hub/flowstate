@@ -186,11 +186,11 @@ fun WavySlider(
                 setProgress { change(it.coerceIn(0f, 1f)); finished(); true }
             }
             .pointerInput(Unit) {
-                detectTapGestures { change((it.x / size.width).coerceIn(0f, 1f)); finished() }
+                detectTapGestures { if (size.width > 0) { change((it.x / size.width).coerceIn(0f, 1f)); finished() } }
             }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(onDragEnd = { finished() }) { ch, _ ->
-                    change((ch.position.x / size.width).coerceIn(0f, 1f))
+                    if (size.width > 0) change((ch.position.x / size.width).coerceIn(0f, 1f))
                 }
             },
         contentAlignment = Alignment.CenterStart,
@@ -230,11 +230,11 @@ fun SplitSlider(
                 setProgress { change(it.coerceIn(0f, 1f)); finished(); true }
             }
             .pointerInput(Unit) {
-                detectTapGestures { change((it.x / size.width).coerceIn(0f, 1f)); finished() }
+                detectTapGestures { if (size.width > 0) { change((it.x / size.width).coerceIn(0f, 1f)); finished() } }
             }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(onDragEnd = { finished() }) { ch, _ ->
-                    change((ch.position.x / size.width).coerceIn(0f, 1f))
+                    if (size.width > 0) change((ch.position.x / size.width).coerceIn(0f, 1f))
                 }
             },
     ) {
@@ -246,6 +246,9 @@ fun SplitSlider(
         val big = CornerRadius(trackH / 2f)
         val small = CornerRadius(6.dp.toPx())
         val frac = if (on) current.coerceIn(0f, 1f) else 0f
+        // 1.8.7: with a row narrower than its fixed parts (split screen, largest display size) the slider gets
+        // zero width and coerceIn(min > max) threw IllegalArgumentException while drawing the ambient sheet.
+        if (size.width < hw * 2f) return@Canvas
         val hx = (hw / 2f + (size.width - hw) * frac).coerceIn(hw / 2f, size.width - hw / 2f)
         if (on && hx - hw / 2 - gap > 2f) {
             drawPath(Path().apply {

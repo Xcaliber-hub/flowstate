@@ -45,7 +45,7 @@ import kotlinx.coroutines.isActive
  * and the other device stops. "Keep on PC" folds the card down to a single line.
  */
 @Composable
-fun RemoteTimerCard(remote: RemoteTimer, liquid: Boolean, onTakeOver: () -> Unit) {
+fun RemoteTimerCard(remote: RemoteTimer, onTakeOver: () -> Unit) {
     // Ticks once a second while shown (a plain effect: lint misreads produceState with a loop).
     var now by remember(remote) { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(remote) {
@@ -64,7 +64,7 @@ fun RemoteTimerCard(remote: RemoteTimer, liquid: Boolean, onTakeOver: () -> Unit
         else -> "$clock left"
     }
     val deviceIcon = if (remote.onPc) Icons.Rounded.Computer else Icons.Rounded.PhoneAndroid
-    GlassCard(Modifier.fillMaxWidth(), liquid = liquid) {
+    GlassCard(Modifier.fillMaxWidth()) {
         if (kept) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Icon(deviceIcon, contentDescription = null)
@@ -110,8 +110,8 @@ fun RemoteTimerCard(remote: RemoteTimer, liquid: Boolean, onTakeOver: () -> Unit
 
 /** A dismissable one-line message, e.g. after the PC took the session over. */
 @Composable
-fun FocusNoticeCard(text: String, liquid: Boolean, onDismiss: () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth(), liquid = liquid) {
+fun FocusNoticeCard(text: String, onDismiss: () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             TextButton(onClick = onDismiss) { AutoSizeText("OK") }

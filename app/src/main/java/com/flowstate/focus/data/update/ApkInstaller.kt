@@ -30,6 +30,14 @@ class ApkInstaller @Inject constructor(@ApplicationContext private val context: 
      * the download failed. A file already downloaded for this version is reused.
      */
     suspend fun download(release: ReleaseInfo, onProgress: (Float) -> Unit): File? = withContext(Dispatchers.IO) {
+        // 1.8.7: DownloadManager disabled by the user, no external files dir (storage unmounted) or a refused
+        // destination threw out of viewModelScope and crashed the app; now the update card shows "failed".
+        try { downloadUnsafe(release, onProgress) }
+        catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (e: Exception) { android.util.Log.w("Flowstate", "Update download failed", e); null }
+    }
+
+    private suspend fun downloadUnsafe(release: ReleaseInfo, onProgress: (Float) -> Unit): File? = withContext(Dispatchers.IO) {
         val file = targetFile(release.version)
         if (file.exists() && release.apkSizeBytes > 0 && file.length() == release.apkSizeBytes) {
             onProgress(1f); return@withContext file
@@ -69,17 +77,18 @@ class ApkInstaller @Inject constructor(@ApplicationContext private val context: 
     fun openInstallPermissionSettings() {
         val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${context.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(intent)
+        // 1.8.7: some OEM builds have no such settings screen (ActivityNotFoundException).
+        runCatching { context.startActivity(intent) }.onFailure { android.util.Log.w("Flowstate", "No install-permission screen", it) }
     }
 
     /** Opens the system installer. The update keeps all data as long as the APK has the same signing key. */
-    fun install(apk: File) {
+    fun install(apk: File): Boolean = runCatching {
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.updates", apk)
         val intent = Intent(Intent.ACTION_VIEW)
             .setDataAndType(uri, APK_MIME)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(intent)
-    }
+    }.onFailure { android.util.Log.w("Flowstate", "Could not open the installer", it) }.isSuccess
 
     private companion object {
         const val APK_MIME = "application/vnd.android.package-archive"

@@ -91,7 +91,7 @@ class UpdateViewModel @Inject constructor(
             }
             when {
                 apk == null -> _state.value = UpdateState.Failed(release)
-                installer.canInstall() -> { installer.install(apk); _state.value = UpdateState.Hidden }
+                installer.canInstall() -> _state.value = if (installer.install(apk)) UpdateState.Hidden else UpdateState.Failed(release)
                 else -> _state.value = UpdateState.NeedsPermission(release, apk)
             }
         }
@@ -102,7 +102,7 @@ class UpdateViewModel @Inject constructor(
     /** Called when the user returns from the settings screen. */
     fun retryInstall() {
         val s = _state.value as? UpdateState.NeedsPermission ?: return
-        if (installer.canInstall()) { installer.install(s.apk); _state.value = UpdateState.Hidden }
+        if (installer.canInstall()) _state.value = if (installer.install(s.apk)) UpdateState.Hidden else UpdateState.Failed(s.release)
     }
 
     /** "Later" hides the pop-up until the next launch. */

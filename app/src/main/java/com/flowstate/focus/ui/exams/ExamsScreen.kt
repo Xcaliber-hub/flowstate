@@ -55,8 +55,6 @@ import com.flowstate.focus.domain.ExamCountdown
 import com.flowstate.focus.ui.components.Cookie10
 import com.flowstate.focus.ui.components.CookieBadge
 import com.flowstate.focus.ui.components.DepthSurface
-import com.flowstate.focus.ui.components.LocalNavLayout
-import com.flowstate.focus.ui.components.NavLayout
 import com.flowstate.focus.ui.components.ScreenContainer
 import com.flowstate.focus.ui.components.ScreenTopBar
 import com.flowstate.focus.ui.components.SectionLabel
@@ -134,7 +132,6 @@ fun ExamsScreen(vm: ExamsViewModel = hiltViewModel()) {
             ),
         ),
     )
-    val side = LocalNavLayout.current == NavLayout.SIDE
     val base = screenContentPadding()
     val dir = LocalLayoutDirection.current
     val padding = PaddingValues(
@@ -173,7 +170,7 @@ fun ExamsScreen(vm: ExamsViewModel = hiltViewModel()) {
                 contentColor = MaterialTheme.colorScheme.onSecondary,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 20.dp, bottom = if (side) WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp else 112.dp)
+                    .padding(end = 20.dp, bottom = 112.dp)
                     .height(64.dp),
             )
         }

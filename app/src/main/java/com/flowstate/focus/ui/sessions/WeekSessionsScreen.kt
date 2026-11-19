@@ -93,7 +93,7 @@ private fun dayTitle(date: LocalDate, today: LocalDate): String = when (date) {
 }
 
 @Composable
-fun WeekSessionsScreen(liquid: Boolean, vm: WeekSessionsViewModel = hiltViewModel()) {
+fun WeekSessionsScreen(vm: WeekSessionsViewModel = hiltViewModel()) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     var pendingDelete by remember { mutableStateOf<SessionEntity?>(null) }
     val range = "${ui.week.monday.format(rangeFormat())} – ${ui.week.sunday.format(rangeFormat())}"
@@ -116,7 +116,7 @@ fun WeekSessionsScreen(liquid: Boolean, vm: WeekSessionsViewModel = hiltViewMode
             if (ui.loaded && ui.days.isEmpty()) {
                 item(key = "empty") {
                     Entrance(0) {
-                        GlassCard(Modifier.fillMaxWidth(), liquid) {
+                        GlassCard(Modifier.fillMaxWidth()) {
                             AutoSizeText("No sessions yet this week", style = MaterialTheme.typography.titleMedium)
                             Spacer(Modifier.height(8.dp))
                             Text(
@@ -139,7 +139,7 @@ fun WeekSessionsScreen(liquid: Boolean, vm: WeekSessionsViewModel = hiltViewMode
                 }
             }
             items(ui.days, key = { it.date.toEpochDay() }) { day ->
-                GlassCard(Modifier.fillMaxWidth(), liquid) {
+                GlassCard(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             dayTitle(day.date, ui.today),

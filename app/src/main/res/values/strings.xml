@@ -5,6 +5,25 @@
     <string name="channel_chat">Group chat</string>
     <string name="a11y_label">Flowstate focus blocker</string>
     <string name="a11y_description">Detects which app is in the foreground during a focus session so Flowstate can send you back to your work. It never reads screen content.</string>
-    <string name="widget_daily_description">Today\'s focused time, daily goal progress, session count and streak.</string>
-    <string name="widget_group_description">Live focus activity for your currently selected Flowstate group.</string>
+    <!-- 1.8.8 home-screen widgets -->
+    <string name="widget_focus_ring_label">Focus ring</string>
+    <string name="widget_focus_ring_description">The running session in a ring: subject, live time, round, and stop, pause and skip.</string>
+    <string name="widget_now_focusing_label">Now focusing</string>
+    <string name="widget_now_focusing_description">A slim bar with the current subject, round, when your break starts and the live time.</string>
+    <string name="widget_quick_start_label">Quick start</string>
+    <string name="widget_quick_start_description">Start a 25 min Pomodoro, 50 min of deep work, a stopwatch or a 5 min break in one tap.</string>
+    <string name="widget_exam_countdown_label">Exam countdown</string>
+    <string name="widget_exam_countdown_description">Days to your next exam and how much of its syllabus is done.</string>
+    <string name="widget_daily_progress_label">Daily progress</string>
+    <string name="widget_daily_progress_description">Today\'s focused time, daily goal progress, sessions, streak and this week\'s focus.</string>
+    <string name="widget_streak_heatmap_label">Streak heatmap</string>
+    <string name="widget_streak_heatmap_description">Your current and best streak, and the last four weeks shaded by focus time.</string>
+    <string name="widget_today_tasks_label">Today\'s tasks</string>
+    <string name="widget_today_tasks_description">Up to four tasks for today. Tick them off right from the home screen.</string>
+    <string name="widget_group_focus_label">Group focus</string>
+    <string name="widget_group_focus_description">Who in your group is focusing right now, on what, and for how long.</string>
+    <string name="widget_syllabus_rings_label">Syllabus rings</string>
+    <string name="widget_syllabus_rings_description">Progress per subject for the exam picked on the Syllabus tab, and what is up next.</string>
+    <string name="widget_break_mode_label">Break mode</string>
+    <string name="widget_break_mode_description">Your break counting down with a tip, Skip break and pause. Start a 5 min break when idle.</string>
 </resources>

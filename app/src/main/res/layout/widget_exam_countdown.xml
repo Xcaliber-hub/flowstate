@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1.8.8 Exam countdown, 2x2: next exam, days to go, date, syllabus bar and chapters done. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_glass_dark"
+    android:clipToPadding="false"
+    android:orientation="vertical"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="16dp">
+    <TextView
+        android:id="@+id/exam_name"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="JEE MAIN"
+        android:textColor="#D0CDDA"
+        android:textSize="11.5sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.09" />
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="bottom"
+        android:layout_marginTop="6dp">
+        <TextView
+            android:id="@+id/days"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="68"
+            android:textColor="#F9F8FF"
+            android:textSize="46sp"
+            android:fontFamily="sans-serif" />
+        <TextView
+            android:id="@+id/days_label"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="days to go"
+            android:textColor="#D0CDDA"
+            android:textSize="13sp"
+            android:layout_marginStart="6dp"
+            android:layout_marginBottom="5dp" />
+    </LinearLayout>
+    <TextView
+        android:id="@+id/date"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:text="Thu, 21 Jan 2027"
+        android:textColor="#8CF9F8FF"
+        android:textSize="11.5sp"
+        android:layout_marginTop="3dp" />
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+    <LinearLayout
+        android:id="@+id/syllabus_block"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <TextView
+                android:id="@+id/syllabus_label"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="Syllabus"
+                android:textColor="#D0CDDA"
+                android:textSize="11.5sp" />
+            <TextView
+                android:id="@+id/syllabus_pct"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:includeFontPadding="false"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:text="57%"
+                android:textColor="#B7A4F5"
+                android:textSize="11.5sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+        <ImageView
+            android:id="@+id/syllabus_bar"
+            android:layout_width="match_parent"
+            android:layout_height="6dp"
+            android:scaleType="fitXY"
+            android:importantForAccessibility="no"
+            android:layout_marginTop="6dp" />
+        <TextView
+            android:id="@+id/syllabus_chapters"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:text="41 of 72 chapters done"
+            android:textColor="#8CF9F8FF"
+            android:textSize="10.5sp"
+            android:layout_marginTop="6dp" />
+    </LinearLayout>
+    <TextView
+        android:id="@+id/empty_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:includeFontPadding="false"
+        android:maxLines="3"
+        android:ellipsize="end"
+        android:text="Add an exam in Flowstate to count down to it"
+        android:textColor="#D0CDDA"
+        android:textSize="12sp"
+        android:visibility="gone" />
+</LinearLayout>

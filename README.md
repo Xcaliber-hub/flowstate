@@ -17,6 +17,89 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
   </tr>
 </table>
 
+## 1.8.8: Ten glass home-screen widgets, and Liquid glass UI
+
+Long-press the home screen › Widgets › Flowstate. The two 1.8.5 widgets are redesigned in place (same class names, so ones already on the home screen carry over) and eight are new:
+
+| Widget | Size | What it shows |
+| --- | --- | --- |
+| Focus ring | 2×2 | Ring for the phase, subject, live time, "Round 2 of 4", stop / pause-resume / skip. Idle: "Ready" and a start button. |
+| Now focusing | 4×1 | Round ring ("2/4"), status dot with FOCUSING / PAUSED / BREAK, subject, "Break at 5:41 pm", big time, play/pause. Idle prompt. |
+| Quick start | 4×1 | 25 min Pomodoro (filled with your accent), 50 min Deep work, Stopwatch, 5 min Break. Starts through the timer service and follows *Strict by default*; while a session runs here or on your PC it opens the app instead. |
+| Exam countdown | 2×2 | Next exam (pinned, else nearest), days to go, date, syllabus bar and "41 of 72 chapters done" when a bundled syllabus matches the exam's name. |
+| Daily progress | 4×2 | Today's time, % of goal with a bar, sessions, streak and this week's bars (today in the accent). |
+| Streak heatmap | 2×2 | Current and best streak, last 28 days shaded by focus vs. your daily goal. |
+| Today's tasks | 2×2 | Up to four tasks due today (plus open undated/overdue ones), tick boxes that work from the home screen, "2 of 4", "+ Add task" opens Tasks with the add sheet. |
+| Group focus | 4×2 | Group, "3 of 8 live", up to three live members with avatar, subject, a bar and minutes. Status messages unchanged. |
+| Syllabus rings | 2×2 | One ring per subject (four for IAT) for the exam picked on the Syllabus tab, and "Up next". |
+| Break mode | 2×2 | Teal glass, break label, live countdown, a tip, Skip break and pause. Outside a break: the time to your next Pomodoro break, or a "Start a 5 min break" button. |
+
+- **Theme sync.** Widgets use the app's palette: the chosen accent preset (all seven, Slate included) as a brighter variant on dark glass and the app's own accent on light glass; with dynamic colour on Android 12+, the wallpaper accent (`system_accent1_200` dark, `system_accent1_600` light). Light / dark / system mode is followed, and a system dark-mode or wallpaper-colour change redraws them. Text on the accent is #17131F or white, whichever reads better. Syllabus rings: accent, then teal and blue, skipping one too close in hue to the accent.
+- **Glass:** 28 dp corners, translucent gradient, top sheen and a 1 dp white rim (`widget_glass_dark/light`, teal `widget_glass_break_*`). One layout per widget; dark and light are switched at runtime, so the `_light` layouts are gone.
+- **Battery:** the time is a Chronometer that ticks on the launcher's side; nothing in the app runs every second. Widgets refresh when what they show changes (timer state, theme, tasks, exams, syllabus progress, group presence, sessions), at midnight (a self-re-arming, non-waking alarm), and on Android's 30-minute update. While a phase runs, rings step about once a minute (non-waking alarm, only while a timer widget is placed).
+- **Timer actions** go to `TimerService` (`QUICK_START`, `START_BREAK`, `SKIP`, `PAUSE`, `RESUME`, `STOP`). New `TimerEngine.skipPhase()`: skips a break, or ends a Pomodoro focus block early (time so far recorded as not completed) and starts its break. Strict focus hides pause, stop and skip on the widgets, as in the notification.
+- Refresh requests are now coalesced per widget instead of dropped, so the last change of a burst is never lost. The 1.8.7 Hilt fix is kept: `FlowstateWidgetProvider` calls `super.onReceive` first.
+- Android version code is **42** (version **1.8.8**). No database, Firestore or rules change (one new read query on `tasks`).
+
+### Liquid glass UI
+### New
+- **Liquid glass UI** (Settings › Appearance › Glass UI). Under the Glass UI switch, a new choice:
+  **Liquid glass UI** or **Frosted glass UI**. Frosted is the look from before, unchanged.
+  Liquid, after iOS 26: the bottom navigation bar (and its collapsed circle), the floating timer bar
+  and the top bar (back button, title pill and options button) become clear glass. What scrolls
+  behind stays visible and only lightly blurred, bends and magnifies toward the curved rim like a
+  thick lens, fringes faintly into a rainbow at the edge, and a bright rim catches the light on the
+  top-left and bottom-right.
+- **Drag-to-switch lens.** With liquid glass, the selected tab sits in a small glass droplet. Press
+  the nav bar and drag: the droplet swells into a clear bubble that magnifies the bar under it, with
+  a rainbow edge, then springs back into a droplet on the tab you let go on.
+- Fresh installs start on liquid glass; people updating keep frosted glass until they switch.
+- Both themes and the accent colour are respected; a light scrim inside the glass keeps labels
+  readable over busy content.
+
+#### Devices
+- Android 13 and newer: full liquid glass (AGSL shader: refraction, chromatic edge, specular rim, lens bubble).
+- Android 12 / 12L: a "clear glass" version: light blur, lighter tint, stronger rim and highlights; no refraction.
+- Older Android: the frosted fallback, as before.
+
+#### Removed
+- **Liquid UI** setting and its effects (breathing cards, the wobbling progress ring glow). The nav's
+  springy motion now comes with liquid glass instead.
+- **Side navigation** (experimental): the left-edge rail, the daily-goal water bar and the
+  "Goal bar on top" switch. The floating bottom bar is always used. Saved values for these old
+  settings are ignored.
+
+## 1.8.7: Stability, and group chat drafts that stay put
+
+No device crash logs were available; these fixes come from a static review of the 1.8.6 source and release APK. See `stability_report.md` (shipped alongside this archive) for each issue, its confidence and the reasoning.
+
+### Group chat: the typed message no longer disappears
+
+- **The unsent message is kept per group on the phone** (`ChatDraftStore`), written as you type and read back when the chat opens. Until 1.8.6 it lived only in the chat screen's saved UI state, which Android throws away whenever the chat screen is closed.
+- **The chat no longer closes itself after Android killed the app in the background.** Coming back restores the chat before your account and groups have reloaded; the chat saw "no group" and left at once, taking the draft with it. It now waits up to 10 seconds for them, and the group you last opened is remembered, so the same chat comes back.
+- **Tapping a chat notification while a chat is open** switches the group instead of closing the chat and opening a new one.
+- **Edit keeps what you were writing.** Edit used to replace the message you were typing with the edited message's text, and Cancel then emptied the box. Your text is set aside and put back after the edit is saved or cancelled. Edit mode also survives rotation (before, the edited text stayed in the box and could go out as a new message).
+- **Sending works offline and on slow connections.** 1.8.5 kept the text in the box, with Send disabled, until the server confirmed it, which never happens offline. Firestore keeps a sent message on the phone, shows it at once as pending and delivers it when online, so the box now clears right away. If the server rejects the message, its text comes back in the box (or as the group's draft if you have left the chat). The failure handling now runs even if you leave the chat first; before, leaving the chat while a send was pending skipped it. Conversation starters never touch the box.
+- An empty cached group list (opening offline) no longer clears the selected group, and the chat reconnects by itself if the account session is refreshed while it is open.
+
+### Crash fixes
+
+- Background work (cloud session sync, the timer lock, chat topic subscriptions, session recording, widget refreshes, ambient audio) ran in coroutine scopes without an error handler. On Android, any unexpected exception there crashes the whole app. These scopes now log the error and keep the app running (`util/AppScopes.kt`), and the known failure points are caught where they happen.
+- Groups: listener bookkeeping was changed from the main thread and from background threads at the same time. Signing up runs the account setup twice at once, which could crash with ConcurrentModificationException. That bookkeeping is now synchronized.
+- The timer service no longer cancels a start request that is already on its way when it shuts down (Android 9+ crashes the app with "startForegroundService() did not then call startForeground()" in that case). A refused foreground-service start from the Focus screen is logged instead of crashing.
+- Layout crashes on narrow windows (split screen, largest display size): the collapsing nav bar and the ambient sound sliders could throw "Cannot coerce value to an empty range".
+- In-app updates: a disabled Download Manager, missing storage or a missing installer screen no longer crashes the app. The update card shows "failed" instead.
+- Corrupted settings, ambient or device files (for example after power loss mid-write) are reset to defaults instead of making every write fail.
+
+### Widgets
+
+- **Widgets now refresh when asked.** Hilt injects the widget's data source inside `onReceive`, and the refresh branch skipped that call. Every refresh (opening the app, a new session, a change in group presence) failed quietly on an uninitialized property, so widgets only updated on Android's 30-minute timer. A refresh request can no longer throw on devices without widget support.
+
+### Other
+
+- Avatars are decoded once at half size and shared. Before, every avatar on screen decoded its own full-size 464 px copy on the main thread.
+- Android version code is **41** (version **1.8.7**), so a build signed with the existing release key can install over 1.8.6. No Firestore rules or cloud-data changes.
+
 ## 1.8.6: Fix Android widget loading
 
 - The Daily progress and Group focus widgets used generic `View` elements for decorative bars. Android's `RemoteViews` does not support that class, which can make the launcher show its widget error placeholder. Replaced those decorative elements with supported `ImageView`s in all light and dark layouts, and added a regression test that checks every widget layout for unsupported classes.
@@ -190,7 +273,7 @@ See the setup guide for weekly-total accounting and device limitations. This is 
 
 ## Existing features preserved
 
-Pomodoro, custom countdown and stopwatch timers; standalone breaks with a break-over notification; foreground-service chronometer notification; strict focus mode; Focus Guard; app blocking through the Accessibility Service; tasks with categories, priorities and deadlines; day/week/month/year statistics and charts; calendar heatmap, streaks and daily goals; theme, dynamic color, accent, Liquid UI and CSV export; floating navigation and tablet-friendly content width.
+Pomodoro, custom countdown and stopwatch timers; standalone breaks with a break-over notification; foreground-service chronometer notification; strict focus mode; Focus Guard; app blocking through the Accessibility Service; tasks with categories, priorities and deadlines; day/week/month/year statistics and charts; calendar heatmap, streaks and daily goals; theme, dynamic color, accent, Glass UI (liquid or frosted) and CSV export; floating navigation and tablet-friendly content width.
 
 Enable app blocking in **Settings → Focus mode → App blocking service**, then grant the Accessibility permission. Notification permission is required on recent Android versions. Test background timers on real devices, especially manufacturers with aggressive battery restrictions.
 
@@ -223,10 +306,6 @@ To ship an update: bump `versionCode` and `versionName` in `app/build.gradle.kts
 ## Check-in
 
 During a focus block, Flowstate asks "Still focusing?" after every 30 min, 1 hr, 1.5 hr, 2 hr or 3 hr of running focus time (1 hr by default), both in the app and as a notification with an **I'm here** button. If nobody answers within 2 minutes, the timer pauses itself, backdated to when the prompt appeared, so those minutes are never counted. Breaks get no check-ins, and a countdown shorter than the interval never sees one. It also pauses strict blocks, since being away isn't quitting. Turn it off in Settings under **Check-in**, where you also pick the interval.
-
-## Side navigation (experimental)
-
-Settings → Appearance → **Side navigation** swaps the floating bottom bar for a compact dock on the left edge: a slim pill of icons (the selected tab in a soft tinted circle) and, under it, a **daily-goal water bar**. The bar fills like a glass of water as today's focus adds up toward your daily goal, rising live while the timer runs, with ripples and bubbles. With Liquid UI on, it reads the phone's gravity sensor (gyroscope and accelerometer fused): tilt the phone and the water leans to stay level, overshoots and sloshes back. **Goal bar on top** swaps the two. The dock stays fixed in place (it never hides on scroll) and sits centred vertically, and screens keep a lane free on the left. Turn the switch off to get the original bottom bar back.
 
 ## Text that fits
 

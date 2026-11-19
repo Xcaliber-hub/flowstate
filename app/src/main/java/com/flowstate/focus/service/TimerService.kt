@@ -30,6 +30,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -53,10 +55,16 @@ class TimerService : Service() {
 
     @Inject lateinit var engine: TimerEngine
     @Inject lateinit var ambient: AmbientController
+    // 1.8.8: widget quick starts read the user's Pomodoro setup and strict default, and never start a session
+    // while another device of the account holds the timer.
+    @Inject lateinit var settingsRepo: com.flowstate.focus.data.prefs.SettingsRepository
+    @Inject lateinit var timerLock: com.flowstate.focus.data.sync.TimerLockState
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val scope = com.flowstate.focus.util.AppScopes.background(Dispatchers.Main.immediate, "TimerService")
     private val nm by lazy { getSystemService(NotificationManager::class.java) }
     private var observing = false
+    /** 1.8.7: newest start request; stopping with it never cancels a start that is still on its way. */
+    @Volatile private var lastStartId = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -67,6 +75,9 @@ class TimerService : Service() {
             ACTION_STOP -> engine.stop()
             ACTION_CHECK_IN_OK -> engine.confirmPresence()
             ACTION_AMBIENT_STOP -> ambient.pause()
+            ACTION_SKIP -> engine.skipPhase()
+            ACTION_QUICK_START -> quickStart(intent)
+            ACTION_BREAK -> startBreakFromWidget(intent)
         }
         // startForegroundService() obliges startForeground() even when there is nothing left to show; the
         // observer below then takes the service down again straight away.
@@ -81,6 +92,15 @@ class TimerService : Service() {
             return START_NOT_STICKY
         }
         foreground = true
+        lastStartId = startId
+        if (observing && !engine.state.value.isActive && !ambient.state.value.on) {
+            // Nothing to show any more and the observer below has already reported idle (it only reacts to
+            // changes), so this start request stops the service itself.
+            foreground = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelfResult(startId)
+            return START_NOT_STICKY
+        }
         if (!observing) {
             observing = true
             scope.launch {
@@ -88,9 +108,13 @@ class TimerService : Service() {
                 val shown = ambient.state.map { it.copy(mix = AmbientMix(enabled = it.mix.active.toSet()), stopAt = 0L) }.distinctUntilChanged()
                 combine(engine.state, shown) { t, a -> t to a }.distinctUntilChanged().collect { (t, a) ->
                     if (!t.isActive && !a.on) {
+                        // 1.8.7: stopSelf() also discarded a startForegroundService() request that was already
+                        // on its way (e.g. "Start" tapped as the last session ended), and Android 9+ then
+                        // crashes the app with "startForegroundService() did not then call startForeground()".
+                        // stopSelfResult(lastStartId) leaves the service running when a newer start exists.
                         foreground = false
                         stopForeground(STOP_FOREGROUND_REMOVE)
-                        stopSelf()
+                        stopSelfResult(lastStartId)
                     } else {
                         nm.notify(Notifications.ID_TIMER, buildNotification(t, a))
                     }
@@ -98,6 +122,48 @@ class TimerService : Service() {
             }
         }
         return START_STICKY
+    }
+
+    /**
+     * 1.8.8: a session started from a widget. Runs synchronously, before startForeground() below, so the service
+     * already sees the running timer and stays up. Ignored while a session is active here or on another device
+     * (the widget opens the app in that case, this is only the backstop).
+     */
+    private fun quickStart(intent: Intent) {
+        if (engine.state.value.isActive || timerLock.remote.value != null) return
+        val st = currentSettings()
+        val mode = com.flowstate.focus.domain.TimerMode.fromName(intent.getStringExtra(EXTRA_MODE))
+        val minutes = intent.getIntExtra(EXTRA_MINUTES, st.focusMin).coerceIn(1, MAX_WIDGET_MINUTES)
+        val plan = when (mode) {
+            TimerMode.POMODORO -> com.flowstate.focus.domain.Plan(minutes * 60_000L, st.shortBreakMin * 60_000L, st.longBreakMin * 60_000L, st.rounds)
+            TimerMode.COUNTDOWN -> com.flowstate.focus.domain.Plan(focusMs = minutes * 60_000L)
+            TimerMode.STOPWATCH -> com.flowstate.focus.domain.Plan()
+        }
+        // Same rule as the Focus screen's Start: strict mode follows Settings › Strict by default.
+        engine.start(mode, plan, st.strictByDefault, "")
+    }
+
+    private fun startBreakFromWidget(intent: Intent) {
+        if (engine.state.value.isActive || timerLock.remote.value != null) return
+        val minutes = intent.getIntExtra(EXTRA_MINUTES, 5).coerceIn(1, 60)
+        engine.startBreak(minutes * 60_000L, TimerMode.POMODORO)
+    }
+
+    /** Settings for a widget start. Usually cached; on a cold start (widget tapped with the app closed) read once. */
+    private fun currentSettings(): com.flowstate.focus.domain.AppSettings =
+        settingsCache.value ?: runCatching {
+            kotlinx.coroutines.runBlocking(Dispatchers.IO) {
+                kotlinx.coroutines.withTimeoutOrNull(2_000L) { settingsRepo.settings.first() }
+            }
+        }.getOrNull() ?: com.flowstate.focus.domain.AppSettings()
+
+    private val settingsCache by lazy {
+        settingsRepo.settings.stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, null)
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        settingsCache // start collecting right away, so a later widget start does not have to wait
     }
 
     override fun onDestroy() {
@@ -196,6 +262,13 @@ class TimerService : Service() {
         const val ACTION_STOP = "com.flowstate.focus.STOP"
         const val ACTION_CHECK_IN_OK = "com.flowstate.focus.CHECK_IN_OK"
         const val ACTION_AMBIENT_STOP = "com.flowstate.focus.AMBIENT_STOP"
+        /** 1.8.8 widget actions. */
+        const val ACTION_SKIP = "com.flowstate.focus.SKIP"
+        const val ACTION_QUICK_START = "com.flowstate.focus.QUICK_START"
+        const val ACTION_BREAK = "com.flowstate.focus.START_BREAK"
+        const val EXTRA_MODE = "com.flowstate.focus.extra.MODE"
+        const val EXTRA_MINUTES = "com.flowstate.focus.extra.MINUTES"
+        private const val MAX_WIDGET_MINUTES = 180
 
         /** True while this service is in the foreground (set on the main thread). */
         @Volatile private var foreground = false

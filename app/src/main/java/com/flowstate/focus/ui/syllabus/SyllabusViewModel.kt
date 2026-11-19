@@ -57,7 +57,7 @@ class SyllabusViewModel @Inject constructor(
     todayProvider: TodayProvider,
     private val prefill: FocusPrefill,
 ) : ViewModel() {
-    private val prefs = context.getSharedPreferences("syllabus_ui", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     private val _tab = MutableStateFlow(prefs.getInt(KEY_TAB, TAB_TASKS))
     /** 0 = Tasks, 1 = Syllabus. */
@@ -97,8 +97,10 @@ class SyllabusViewModel @Inject constructor(
         const val TAB_TASKS = 0
         const val TAB_SYLLABUS = 1
         const val DEFAULT_EXAM = "jee"
-        private const val KEY_TAB = "tab"
-        private const val KEY_EXAM = "exam"
+        /** 1.8.8: also read by the Syllabus rings widget, which follows the exam picked here. */
+        const val PREFS = "syllabus_ui"
+        const val KEY_TAB = "tab"
+        const val KEY_EXAM = "exam"
 
         /** For each syllabus exam: the pinned matching upcoming exam, else the nearest one. */
         fun matchExams(syl: Syllabus, userExams: List<Exam>, today: LocalDate): Map<String, Exam> =

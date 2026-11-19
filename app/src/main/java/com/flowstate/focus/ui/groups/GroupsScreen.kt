@@ -112,21 +112,21 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, onOpenChat: () 
     ScreenContainer {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = screenContentPadding(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (!state.configured) {
-                item { GlassCard(Modifier.fillMaxWidth(), settings.liquidUi) {
+                item { GlassCard(Modifier.fillMaxWidth()) {
                     AutoSizeText("Groups are getting ready", style = MaterialTheme.typography.titleLarge)
                     Spacer(Modifier.height(8.dp))
                     Text("Sign-in and shared groups need Firebase setup by the app developer. No demo accounts or sample group data are shown.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } }
             } else if (state.user == null) {
-                item { AuthCard(state, settings.liquidUi, form, { form = it; vm.clearError() }, name, { name = it }, email, { email = it }, password, { password = it }, showPassword, { showPassword = it }, { when (form) {
+                item { AuthCard(state, form, { form = it; vm.clearError() }, name, { name = it }, email, { email = it }, password, { password = it }, showPassword, { showPassword = it }, { when (form) {
                     AuthForm.SIGN_IN -> vm.signIn(email, password)
                     AuthForm.SIGN_UP -> vm.signUp(name, email, password)
                     AuthForm.RESET -> vm.resetPassword(email)
                 } }) }
             } else {
-                item { ProfileCard(state, settings.liquidUi, onEdit = { vm.clearError(); profileSaveVersion = state.profileSaveVersion; profileName = state.user?.name.orEmpty(); profileAvatar = state.user?.avatarId.orEmpty(); dialog = "profile" }, onSignOut = { dialog = "signout" }) }
+                item { ProfileCard(state, onEdit = { vm.clearError(); profileSaveVersion = state.profileSaveVersion; profileName = state.user?.name.orEmpty(); profileAvatar = state.user?.avatarId.orEmpty(); dialog = "profile" }, onSignOut = { dialog = "signout" }) }
                 item {
-                    GlassCard(Modifier.fillMaxWidth(), settings.liquidUi) {
+                    GlassCard(Modifier.fillMaxWidth()) {
                         AutoSizeText("Your groups", style = MaterialTheme.typography.titleLarge)
                         Spacer(Modifier.height(10.dp))
                         if (state.groups.isEmpty()) Text("Create a group or join one with an invite code.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -141,7 +141,7 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, onOpenChat: () 
                     }
                 }
                 state.selectedGroup?.let { group ->
-                    item { GroupHeader(group.name, group.memberIds.size, settings.liquidUi,
+                    item { GroupHeader(group.name, group.memberIds.size,
                         chatAvatars = state.members.filter { it.uid != state.user?.uid }.ifEmpty { state.members }.take(4),
                         unread = group.id in chat.unreadGroups, unreadCount = chat.unreadCounts[group.id] ?: 0,
                         preview = chat.lastMessages[group.id]?.let { m -> (if (m.uid == state.user?.uid) "You" else m.name) + ": " + m.text },
@@ -153,8 +153,8 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, onOpenChat: () 
                         Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }, text = { AutoSizeText("Leaderboard") })
                         Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }, text = { AutoSizeText("● Live (${state.members.count { isLiveFocusing(it, now) }})") })
                     } }
-                    if (selectedTab == 0) item { WeeklyBoard(state, settings.liquidUi, now, onMemberClick = { profileMemberUid = it }) }
-                    else item { LiveRoom(state, settings.liquidUi, now, vm, onOpenFocus, timer, onMemberClick = { profileMemberUid = it }) }
+                    if (selectedTab == 0) item { WeeklyBoard(state, now, onMemberClick = { profileMemberUid = it }) }
+                    else item { LiveRoom(state, now, vm, onOpenFocus, timer, onMemberClick = { profileMemberUid = it }) }
                     item {
                         val cs = MaterialTheme.colorScheme
                         val actionColors = ButtonDefaults.outlinedButtonColors(
@@ -223,8 +223,8 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, onOpenChat: () 
 }
 
 @Composable
-private fun GroupHeader(name: String, members: Int, liquid: Boolean, chatAvatars: List<GroupMember>, unread: Boolean, unreadCount: Int, preview: String?, onChat: () -> Unit, invite: () -> Unit) {
-    GlassCard(Modifier.fillMaxWidth(), liquid) {
+private fun GroupHeader(name: String, members: Int, chatAvatars: List<GroupMember>, unread: Boolean, unreadCount: Int, preview: String?, onChat: () -> Unit, invite: () -> Unit) {
+    GlassCard(Modifier.fillMaxWidth()) {
         OutlinedButton(onClick = invite) { AutoSizeText("Invite friends") }
         Spacer(Modifier.height(8.dp))
         Text(name, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -235,10 +235,10 @@ private fun GroupHeader(name: String, members: Int, liquid: Boolean, chatAvatars
 }
 
 @Composable
-private fun AuthCard(state: GroupsState, liquid: Boolean, form: AuthForm, changeForm: (AuthForm) -> Unit, name: String, setName: (String) -> Unit, email: String, setEmail: (String) -> Unit, password: String, setPassword: (String) -> Unit, showPassword: Boolean, setShowPassword: (Boolean) -> Unit, submit: () -> Unit) {
+private fun AuthCard(state: GroupsState, form: AuthForm, changeForm: (AuthForm) -> Unit, name: String, setName: (String) -> Unit, email: String, setEmail: (String) -> Unit, password: String, setPassword: (String) -> Unit, showPassword: Boolean, setShowPassword: (Boolean) -> Unit, submit: () -> Unit) {
     val validEmail = email.trim().matches(Regex("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"))
     val passwordValid = if (form == AuthForm.SIGN_UP) password.length >= 8 else password.isNotEmpty()
-    GlassCard(Modifier.fillMaxWidth(), liquid) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Text(if (form == AuthForm.SIGN_UP) "Create your account" else if (form == AuthForm.RESET) "Reset password" else "Sign in to your groups", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(8.dp)); Text("Focus together, without changing how your personal timer works.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(16.dp))
@@ -257,9 +257,9 @@ private fun AuthCard(state: GroupsState, liquid: Boolean, form: AuthForm, change
 }
 
 @Composable
-private fun ProfileCard(state: GroupsState, liquid: Boolean, onEdit: () -> Unit, onSignOut: () -> Unit) {
+private fun ProfileCard(state: GroupsState, onEdit: () -> Unit, onSignOut: () -> Unit) {
     val user = state.user ?: return
-    GlassCard(Modifier.fillMaxWidth(), liquid) {
+    GlassCard(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             ProfileAvatar(user.name, user.avatarId, 56)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
@@ -273,7 +273,7 @@ private fun ProfileCard(state: GroupsState, liquid: Boolean, onEdit: () -> Unit,
 }
 
 @Composable
-private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsViewModel, onOpenFocus: () -> Unit, timer: TimerState, onMemberClick: (String) -> Unit) {
+private fun LiveRoom(state: GroupsState, now: Long, vm: GroupsViewModel, onOpenFocus: () -> Unit, timer: TimerState, onMemberClick: (String) -> Unit) {
     val group = state.selectedGroup ?: return
     val context = LocalContext.current
     val uid = state.user?.uid
@@ -284,7 +284,7 @@ private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsV
     val members = state.members.filterNot { locallyActive && it.uid == uid }.let { if (own != null) it + own else it }
     val active = members.filter { isLiveFocusing(it, now) }
     val inactive = members.filterNot { isLiveFocusing(it, now) }
-    GlassCard(Modifier.fillMaxWidth(), liquid) {
+    GlassCard(Modifier.fillMaxWidth()) {
         AutoSizeText("Focusing now", style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(12.dp))
         // The first row reserves one of three slots for the invite action.
@@ -335,13 +335,13 @@ private fun LiveRoom(state: GroupsState, liquid: Boolean, now: Long, vm: GroupsV
 }
 
 @Composable
-private fun WeeklyBoard(state: GroupsState, liquid: Boolean, now: Long, onMemberClick: (String) -> Unit) {
+private fun WeeklyBoard(state: GroupsState, now: Long, onMemberClick: (String) -> Unit) {
     val istZone = ZoneId.of("Asia/Kolkata")
     val todayIst = Instant.ofEpochMilli(now).atZone(istZone).toLocalDate()
     val monday = todayIst.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
     val dateFmt = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
     val sorted = rankedMembers(state.members)
-    GlassCard(Modifier.fillMaxWidth(), liquid) {
+    GlassCard(Modifier.fillMaxWidth()) {
         AutoSizeText("This week", style = MaterialTheme.typography.titleLarge)
         Text("Monday–Sunday · IST · ${monday.format(dateFmt)} – ${monday.plusDays(6).format(dateFmt)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (sorted.isEmpty()) { Spacer(Modifier.height(12.dp)); Text("No weekly focus totals yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
