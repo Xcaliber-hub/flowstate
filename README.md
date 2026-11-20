@@ -7,13 +7,13 @@ A native Android focus app built with Kotlin, Jetpack Compose, Material 3, Hilt,
 <table>
   <tr>
     <td align="center"><img src="screenshots/focus.jpg" width="260" alt="Focus timer"><br>Focus</td>
+    <td align="center"><img src="screenshots/home.jpg" width="260" alt="Home dashboard"><br>Home</td>
     <td align="center"><img src="screenshots/tasks.jpg" width="260" alt="Tasks"><br>Tasks</td>
-    <td align="center"><img src="screenshots/syllabus.jpg" width="260" alt="Syllabus tracker"><br>Syllabus</td>
   </tr>
   <tr>
+    <td align="center"><img src="screenshots/syllabus.jpg" width="260" alt="Syllabus tracker"><br>Syllabus</td>
     <td align="center"><img src="screenshots/statistics.jpg" width="260" alt="Statistics"><br>Statistics</td>
-    <td align="center"><img src="screenshots/groups-leaderboard.jpg" width="260" alt="Group leaderboard"><br>Leaderboard</td>
-    <td align="center"><img src="screenshots/groups-live.jpg" width="260" alt="Live focusing in a group"><br>Live</td>
+    <td align="center"><img src="screenshots/productivity.jpg" width="260" alt="Productivity score and heatmap"><br>Productivity</td>
   </tr>
 </table>
 
