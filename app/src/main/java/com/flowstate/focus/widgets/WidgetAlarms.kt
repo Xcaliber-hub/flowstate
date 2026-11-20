@@ -42,7 +42,7 @@ object WidgetAlarms {
         val app = context.applicationContext
         val am = app.getSystemService(AlarmManager::class.java) ?: return
         val pi = pending(app, ACTION_TIMER_STEP)
-        if (running && WidgetRefresh.anyInstalled(app, setOf(WidgetKind.FOCUS_RING, WidgetKind.NOW_FOCUSING, WidgetKind.BREAK))) {
+        if (running && WidgetRefresh.anyInstalled(app, setOf(WidgetKind.FOCUS_RING, WidgetKind.NOW_FOCUSING))) {
             runCatching { am.set(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + TIMER_STEP_MS, pi) }
         } else {
             runCatching { am.cancel(pi) }
@@ -71,7 +71,7 @@ class WidgetAlarmReceiver : BroadcastReceiver() {
             }
             WidgetAlarms.ACTION_TIMER_STEP -> {
                 val running = engine.state.value.status == Status.RUNNING
-                if (running) WidgetRefresh.request(context, setOf(WidgetKind.FOCUS_RING, WidgetKind.NOW_FOCUSING, WidgetKind.BREAK))
+                if (running) WidgetRefresh.request(context, setOf(WidgetKind.FOCUS_RING, WidgetKind.NOW_FOCUSING))
                 WidgetAlarms.syncTimerStep(context, running)
             }
         }

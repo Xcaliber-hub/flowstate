@@ -123,6 +123,7 @@ import com.flowstate.focus.data.groups.GroupMember
 import com.flowstate.focus.ui.components.AutoSizeText
 import com.flowstate.focus.ui.components.FrostedGlassSurface
 import com.flowstate.focus.ui.components.Glass
+import com.flowstate.focus.ui.components.GlassBarSurface
 import com.flowstate.focus.ui.components.GlassCircleButton
 import com.flowstate.focus.ui.components.LocalBlurSource
 import com.flowstate.focus.ui.components.LocalGlassUi
@@ -440,7 +441,13 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
-                    FrostedGlassSurface(RoundedCornerShape(TopBarHeight / 2), Modifier.weight(1f).heightIn(min = TopBarHeight), tinted = true) {
+                    // Liquid glass whenever Liquid glass UI is on, focused or not (GlassBarSurface falls back to frosted
+                    // only when the style is Frosted or the phone cannot draw liquid glass).
+                    GlassBarSurface(
+                        modifier = Modifier.weight(1f).heightIn(min = TopBarHeight),
+                        tinted = true,
+                        cornerRadius = TopBarHeight / 2,
+                    ) {
                         val ink = LocalContentColor.current
                         Column(Modifier.animateContentSize()) {
                             // Replying: the quoted message rides on top of the text field until you send or cancel.
@@ -479,7 +486,7 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                             )
                         }
                     }
-                    GlassCircleButton(if (editing != null) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.Send, if (editing != null) "Save edit" else "Send", enabled = draft.isNotBlank() && !(editing != null && submitting)) { send(draft) }
+                    GlassCircleButton(if (editing != null) Icons.Rounded.Check else Icons.AutoMirrored.Rounded.Send, if (editing != null) "Save edit" else "Send", enabled = draft.isNotBlank() && !(editing != null && submitting), liquid = true) { send(draft) }
                 }
                 if (draft.length > CHAT_MAX_CHARS - 80) Text("${draft.length}/$CHAT_MAX_CHARS",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

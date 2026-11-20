@@ -8,22 +8,18 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 
-/** 1.8.8: the ten home-screen widgets. [minIntervalMs] coalesces bursts of refresh requests per widget kind. */
+/** The six home-screen widgets (Quick start, Group focus, Syllabus rings and Break mode were removed after 1.8.8). [minIntervalMs] coalesces bursts of refresh requests per widget kind. */
 enum class WidgetKind(val provider: Class<*>, val minIntervalMs: Long) {
     FOCUS_RING(FocusRingWidgetProvider::class.java, 0L),
     NOW_FOCUSING(NowFocusingWidgetProvider::class.java, 0L),
-    QUICK_START(QuickStartWidgetProvider::class.java, 0L),
     EXAM(ExamCountdownWidgetProvider::class.java, 2_000L),
     DAILY(DailyProgressWidgetProvider::class.java, 5_000L),
     STREAK(StreakHeatmapWidgetProvider::class.java, 5_000L),
-    TASKS(TodayTasksWidgetProvider::class.java, 0L),
-    GROUP(GroupFocusWidgetProvider::class.java, 30_000L),
-    SYLLABUS(SyllabusRingsWidgetProvider::class.java, 2_000L),
-    BREAK(BreakModeWidgetProvider::class.java, 0L);
+    TASKS(TodayTasksWidgetProvider::class.java, 0L);
 
     companion object {
         /** Widgets that show the running timer. */
-        val TIMER: Set<WidgetKind> = setOf(FOCUS_RING, NOW_FOCUSING, QUICK_START, BREAK)
+        val TIMER: Set<WidgetKind> = setOf(FOCUS_RING, NOW_FOCUSING)
         /** Widgets built from the session history. */
         val HISTORY: Set<WidgetKind> = setOf(DAILY, STREAK)
         val ALL: Set<WidgetKind> = entries.toSet()
@@ -49,9 +45,6 @@ object WidgetRefresh {
 
     @JvmStatic
     fun requestDaily(context: Context) = request(context, WidgetKind.HISTORY)
-
-    @JvmStatic
-    fun requestGroup(context: Context) = request(context, setOf(WidgetKind.GROUP))
 
     @JvmStatic
     fun requestTimer(context: Context) = request(context, WidgetKind.TIMER)

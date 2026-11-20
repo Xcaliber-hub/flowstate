@@ -104,17 +104,6 @@
                 android:resource="@xml/widget_info_now_focusing" />
         </receiver>
         <receiver
-            android:name=".widgets.QuickStartWidgetProvider"
-            android:exported="true"
-            android:label="@string/widget_quick_start_label">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info_quick_start" />
-        </receiver>
-        <receiver
             android:name=".widgets.ExamCountdownWidgetProvider"
             android:exported="true"
             android:label="@string/widget_exam_countdown_label">
@@ -157,39 +146,6 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_info_today_tasks" />
-        </receiver>
-        <receiver
-            android:name=".widgets.GroupFocusWidgetProvider"
-            android:exported="true"
-            android:label="@string/widget_group_focus_label">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info_group_focus" />
-        </receiver>
-        <receiver
-            android:name=".widgets.SyllabusRingsWidgetProvider"
-            android:exported="true"
-            android:label="@string/widget_syllabus_rings_label">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info_syllabus_rings" />
-        </receiver>
-        <receiver
-            android:name=".widgets.BreakModeWidgetProvider"
-            android:exported="true"
-            android:label="@string/widget_break_mode_label">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_info_break_mode" />
         </receiver>
         <!-- 1.8.8: midnight roll-over and the once-a-minute ring step for the widgets (non-waking alarms). -->
         <receiver

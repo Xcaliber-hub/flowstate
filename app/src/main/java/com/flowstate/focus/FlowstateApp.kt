@@ -19,13 +19,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
-private data class GroupWidgetRefreshKey(
-    val configured: Boolean,
-    val uid: String?,
-    val selectedGroup: com.flowstate.focus.data.groups.FocusGroup?,
-    val members: List<com.flowstate.focus.data.groups.GroupMember>,
-)
-
 /** 1.8.8: the timer fields the widgets show. */
 private data class TimerWidgetKey(
     val status: com.flowstate.focus.domain.Status,
@@ -80,12 +73,6 @@ class FlowstateApp : Application() {
         chatPush.start()
         cloudSync.start()
         ambient.start()
-        widgetScope.launch {
-            groupsRepository.state
-                .map { state -> GroupWidgetRefreshKey(state.configured, state.user?.uid, state.selectedGroup, state.members) }
-                .distinctUntilChanged()
-                .collect { runCatching { WidgetRefresh.requestGroup(this@FlowstateApp) } }
-        }
         watchWidgetSources()
     }
 
@@ -107,7 +94,7 @@ class FlowstateApp : Application() {
                     WidgetAlarms.syncTimerStep(app, key.status == com.flowstate.focus.domain.Status.RUNNING)
                 }
         }
-        // Another device takes or releases the timer: Quick start must switch between starting and opening the app.
+        // Another device takes or releases the timer: the timer widgets must switch between starting and opening the app.
         widgetScope.launch {
             timerLock.remote
                 .map { r -> r?.let { it.deviceId to it.state.status } }
@@ -137,11 +124,11 @@ class FlowstateApp : Application() {
         }
         widgetScope.launch {
             examRepository.exams.distinctUntilChanged().drop(1)
-                .collect { WidgetRefresh.request(app, setOf(WidgetKind.EXAM, WidgetKind.SYLLABUS)) }
+                .collect { WidgetRefresh.request(app, setOf(WidgetKind.EXAM)) }
         }
         widgetScope.launch {
             syllabusRepository.progress.distinctUntilChanged().drop(1)
-                .collect { WidgetRefresh.request(app, setOf(WidgetKind.EXAM, WidgetKind.SYLLABUS)) }
+                .collect { WidgetRefresh.request(app, setOf(WidgetKind.EXAM)) }
         }
         // Session inserts and deletes, including sessions pulled from the cloud.
         widgetScope.launch {
@@ -152,7 +139,7 @@ class FlowstateApp : Application() {
         // The exam picked on the Syllabus tab (SharedPreferences, not a flow).
         val prefs = getSharedPreferences(com.flowstate.focus.ui.syllabus.SyllabusViewModel.PREFS, MODE_PRIVATE)
         syllabusPrefsListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == com.flowstate.focus.ui.syllabus.SyllabusViewModel.KEY_EXAM) WidgetRefresh.request(app, setOf(WidgetKind.SYLLABUS))
+            if (key == com.flowstate.focus.ui.syllabus.SyllabusViewModel.KEY_EXAM) WidgetRefresh.request(app, setOf(WidgetKind.EXAM))
         }.also { prefs.registerOnSharedPreferenceChangeListener(it) }
     }
 

@@ -16,9 +16,9 @@ class WidgetRemoteViewsLayoutTest {
     fun everyWidgetHasExactlyOneLayout() {
         // 1.8.8: one layout per widget; dark and light are switched at runtime, so there are no *_light copies.
         val expected = listOf(
-            "widget_break_mode.xml", "widget_daily_progress.xml", "widget_exam_countdown.xml", "widget_focus_ring.xml",
-            "widget_group_focus.xml", "widget_now_focusing.xml", "widget_quick_start.xml", "widget_streak_heatmap.xml",
-            "widget_syllabus_rings.xml", "widget_today_tasks.xml",
+            "widget_daily_progress.xml", "widget_exam_countdown.xml", "widget_focus_ring.xml",
+            "widget_now_focusing.xml", "widget_streak_heatmap.xml",
+            "widget_today_tasks.xml",
         )
         assertEquals(expected, layouts.map { it.name })
     }

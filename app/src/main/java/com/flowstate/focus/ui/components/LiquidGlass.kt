@@ -82,6 +82,8 @@ fun liquidGlassDrawn(): Boolean = liquidGlassActive() && LocalBlurSource.current
 class LiquidLens {
     internal var bounds: () -> Rect = { Rect.Zero }
     internal var strength: () -> Float = { 0f }
+    /** -1..1: how fast the lens is sliding (sign = direction). The pop-out bubble stretches with it like a drop of liquid. */
+    internal var stretch: () -> Float = { 0f }
 }
 
 /**
@@ -400,5 +402,138 @@ half4 main(float2 coord) {
     col += float3(spec, spec, spec);
 
     return half4(half3(clamp(col, 0.0, 1.0)), 1.0);
+}
+"""
+
+/**
+ * The nav bar's pop-out lens (Android 13+). Unlike [LiquidShader], which only bends the screen *behind* a bar,
+ * this one bends a recording of the screen *and* the bar with its icons, so the bubble can swell past the bar's
+ * rim and still magnify and warp everything under it, like the reference's floating glass lens.
+ * Coordinates are the bubble layer's own pixels; the bubble is a stadium centred at [center].
+ */
+@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+internal class BubbleShader {
+    private val shader = RuntimeShader(LIQUID_BUBBLE_AGSL)
+    private val last = FloatArray(PARAMS) { Float.NaN }
+    private val next = FloatArray(PARAMS)
+    private var cached: RenderEffect? = null
+
+    fun effect(
+        centerX: Float, centerY: Float, halfWidth: Float, halfHeight: Float,
+        refraction: Float, aberration: Float, magnify: Float, strength: Float, dark: Boolean,
+    ): RenderEffect {
+        next[0] = centerX; next[1] = centerY; next[2] = halfWidth; next[3] = halfHeight
+        next[4] = refraction; next[5] = aberration; next[6] = magnify; next[7] = strength
+        next[8] = if (dark) 1f else 0f
+        cached?.let { if (next.contentEquals(last)) return it }
+        shader.setFloatUniform("center", centerX, centerY)
+        shader.setFloatUniform("halfSize", halfWidth, halfHeight)
+        shader.setFloatUniform("radius", minOf(halfWidth, halfHeight))
+        shader.setFloatUniform("refraction", refraction)
+        shader.setFloatUniform("aberration", aberration)
+        shader.setFloatUniform("magnify", magnify)
+        shader.setFloatUniform("strength", strength)
+        shader.setFloatUniform("darkMode", if (dark) 1f else 0f)
+        val effect = android.graphics.RenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
+        next.copyInto(last)
+        cached = effect
+        return effect
+    }
+
+    private companion object {
+        const val PARAMS = 9
+    }
+}
+
+/**
+ * AGSL for the pop-out bubble: a thick, clear stadium lens. The middle magnifies a little; towards the rim the
+ * glass curves away so everything under it is pulled inward and bent hard (icons warp as the rim passes over
+ * them), the rim splits light into a thin rainbow, and a bright specular edge catches the light top-left with a
+ * weaker glint bottom-right. Outside the stadium it is fully transparent (anti-aliased edge).
+ */
+internal const val LIQUID_BUBBLE_AGSL = """
+uniform shader content;
+uniform float2 center;
+uniform float2 halfSize;
+uniform float radius;
+uniform float refraction;
+uniform float aberration;
+uniform float magnify;
+uniform float strength;
+uniform float darkMode;
+
+float sdRoundRect(float2 p, float2 hs, float r) {
+    float2 q = abs(p) - hs + float2(r, r);
+    return length(max(q, float2(0.0, 0.0))) + min(max(q.x, q.y), 0.0) - r;
+}
+
+float2 sdNormal(float2 p, float2 hs, float r) {
+    float e = 0.75;
+    float dx = sdRoundRect(p + float2(e, 0.0), hs, r) - sdRoundRect(p - float2(e, 0.0), hs, r);
+    float dy = sdRoundRect(p + float2(0.0, e), hs, r) - sdRoundRect(p - float2(0.0, e), hs, r);
+    float2 g = float2(dx, dy);
+    float len = length(g);
+    if (len < 0.0001) {
+        return float2(0.0, 0.0);
+    }
+    return g / len;
+}
+
+half4 main(float2 coord) {
+    float2 p = coord - center;
+    float d = sdRoundRect(p, halfSize, radius);
+    if (d > 1.0) {
+        return half4(0.0, 0.0, 0.0, 0.0);
+    }
+    float aa = clamp(0.5 - d, 0.0, 1.0);
+    float2 n = sdNormal(p, halfSize, radius);
+
+    // 0 in the flat middle, 1 at the rim, on a quarter-circle profile: the edge of a thick lens.
+    float bevel = max(min(halfSize.x, halfSize.y) * 0.62, 1.0);
+    float t = clamp(1.0 + d / bevel, 0.0, 1.0);
+    float bend = 1.0 - sqrt(max(1.0 - t * t, 0.0));
+
+    // Magnify around the centre, then pull samples inward toward the rim.
+    float2 samplePos = center + p / magnify - n * bend * refraction;
+    float spread = aberration * (0.15 + bend);
+    float3 col;
+    if (spread < 0.05) {
+        col = float3(content.eval(samplePos).rgb);
+    } else {
+        col = float3(
+            float(content.eval(samplePos + n * spread).r),
+            float(content.eval(samplePos).g),
+            float(content.eval(samplePos - n * spread).b)
+        );
+    }
+
+    // Clear glass: a touch more colour and contrast than what lies beneath.
+    float luma = dot(col, float3(0.2126, 0.7152, 0.0722));
+    col = mix(float3(luma, luma, luma), col, 1.10);
+    if (darkMode > 0.5) {
+        col = col * 0.97 + float3(0.02, 0.02, 0.025);
+    } else {
+        col = col * 0.96 + float3(0.05, 0.05, 0.05);
+    }
+
+    // Specular rim: strong top-left, softer glint bottom-right.
+    float2 lightDir = normalize(float2(-0.55, -0.83));
+    float facing = dot(n, lightDir);
+    float rim = clamp(1.0 + d / max(bevel * 0.20, 1.0), 0.0, 1.0);
+    rim = rim * rim;
+    float spec = rim * (0.55 * pow(max(facing, 0.0), 2.5) + 0.32 * pow(max(-facing, 0.0), 2.5));
+    col += float3(spec, spec, spec);
+
+    // A thin prismatic band right at the edge.
+    float ang = atan(n.y, n.x);
+    float3 prism = 0.5 + 0.5 * cos(float3(ang * 2.0, ang * 2.0 + 2.094, ang * 2.0 + 4.188));
+    col += prism * rim * 0.12 * clamp(strength, 0.0, 1.0);
+
+    // A soft shade just inside the lower edge gives the drop some thickness.
+    float lower = clamp(n.y, 0.0, 1.0) * bend;
+    col *= 1.0 - 0.10 * lower;
+
+    col = clamp(col, 0.0, 1.0);
+    return half4(half3(col) * half(aa), half(aa));
 }
 """

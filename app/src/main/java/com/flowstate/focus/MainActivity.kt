@@ -47,7 +47,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         intent.getStringExtra(com.flowstate.focus.push.ChatNotifications.EXTRA_OPEN_CHAT)?.let { openChatGroup = it }
-        intent.getStringExtra(com.flowstate.focus.widgets.GroupFocusWidgetProvider.EXTRA_OPEN_GROUP)?.let { openGroupId = it }
+        intent.getStringExtra(EXTRA_OPEN_GROUP)?.let { openGroupId = it }
         readWidgetRoute(intent)
     }
 
@@ -68,7 +68,7 @@ class MainActivity : ComponentActivity() {
         splash.setKeepOnScreenCondition { vm.settings.value == null }
         if (savedInstanceState == null) {
             openChatGroup = intent?.getStringExtra(com.flowstate.focus.push.ChatNotifications.EXTRA_OPEN_CHAT)
-            openGroupId = intent?.getStringExtra(com.flowstate.focus.widgets.GroupFocusWidgetProvider.EXTRA_OPEN_GROUP)
+            openGroupId = intent?.getStringExtra(EXTRA_OPEN_GROUP)
             readWidgetRoute(intent)
         }
         setContent {
@@ -98,6 +98,8 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        /** A group to open (kept from the removed Group focus widget; old pending intents may still carry it). */
+        const val EXTRA_OPEN_GROUP = "com.flowstate.focus.widgets.OPEN_GROUP"
         /** 1.8.8: a widget asks for a screen. One of the ROUTE_* values. */
         const val EXTRA_OPEN_ROUTE = "com.flowstate.focus.OPEN_ROUTE"
         /** With [ROUTE_TASKS]: open the Add task sheet (the Today's tasks widget's "+ Add task"). */
