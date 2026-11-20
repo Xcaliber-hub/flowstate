@@ -46,6 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -183,44 +185,79 @@ private fun NavPill(
     val selectedTab = tabs.firstOrNull { it.route == selectedRoute }
     // Liquid glass: the tab highlight is a lens the bar's shader bends (see LiquidGlass.kt).
     val lens = remember { LiquidLens() }
-    GlassBarSurface(tinted = true, blurRadius = DockBlur, lens = lens, modifier = Modifier.fillMaxSize()) {
-        // The full tab row keeps its expanded width and is clipped by the shrinking pill while it fades.
-        Box(
-            Modifier
-                .fillMaxHeight()
-                .wrapContentWidth(Alignment.Start, unbounded = true)
-                .width(fullWidth)
-                .graphicsLayer { alpha = (1f - progress() * 1.8f).coerceIn(0f, 1f) },
-        ) {
-            // Stays composed while collapsed (invisible and covered by the expand target) so the highlight keeps its place.
-            TabRow(tabs, selectedRoute, liquid, lens, enabled = !collapsed, onSelect = onSelect)
-        }
-        // Collapsed: the selected tab's icon, centred in the circle. Tapping it expands the bar.
-        if (selectedTab != null) {
+    Box(Modifier.fillMaxSize()) {
+        GlassBarSurface(tinted = true, blurRadius = DockBlur, lens = lens, modifier = Modifier.fillMaxSize()) {
+            // The full tab row keeps its expanded width and is clipped by the shrinking pill while it fades.
             Box(
                 Modifier
-                    .size(NavBarHeight)
-                    .align(Alignment.CenterStart)
-                    .graphicsLayer {
-                        val a = ((progress() - 0.4f) / 0.6f).coerceIn(0f, 1f)
-                        alpha = a
-                        scaleX = 0.7f + 0.3f * a
-                        scaleY = 0.7f + 0.3f * a
-                    },
-                contentAlignment = Alignment.Center,
+                    .fillMaxHeight()
+                    .wrapContentWidth(Alignment.Start, unbounded = true)
+                    .width(fullWidth)
+                    .graphicsLayer { alpha = (1f - progress() * 1.8f).coerceIn(0f, 1f) },
             ) {
-                Icon(selectedTab.icon, contentDescription = null, tint = LocalContentColor.current)
+                // Stays composed while collapsed (invisible and covered by the expand target) so the highlight keeps its place.
+                TabRow(tabs, selectedRoute, liquid, lens, enabled = !collapsed, onSelect = onSelect)
+            }
+            // Collapsed: the selected tab's icon, centred in the circle. Tapping it expands the bar.
+            if (selectedTab != null) {
+                Box(
+                    Modifier
+                        .size(NavBarHeight)
+                        .align(Alignment.CenterStart)
+                        .graphicsLayer {
+                            val a = ((progress() - 0.4f) / 0.6f).coerceIn(0f, 1f)
+                            alpha = a
+                            scaleX = 0.7f + 0.3f * a
+                            scaleY = 0.7f + 0.3f * a
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(selectedTab.icon, contentDescription = null, tint = LocalContentColor.current)
+                }
+            }
+            if (collapsed) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .semantics { contentDescription = "Show navigation" + (selectedTab?.let { ", ${it.label} selected" } ?: "") }
+                        .clickable(onClick = onExpand),
+                )
             }
         }
-        if (collapsed) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .semantics { contentDescription = "Show navigation" + (selectedTab?.let { ", ${it.label} selected" } ?: "") }
-                    .clickable(onClick = onExpand),
-            )
-        }
+        // Drawn after the bar so it can spill past its rim (GlassBarSurface clips its own content).
+        if (liquid) LiquidTabBubble(lens, Modifier.matchParentSize())
     }
+}
+
+/**
+ * The tab highlight's pop-out bubble. While a tab is being dragged the highlight swells past the
+ * bar's rim, like a drop of liquid lifting off the glass: a clear circle with a thin lit rim that
+ * follows the finger, then springs back into the bar when it is let go. It is drawn outside
+ * [GlassBarSurface]'s clip, which would otherwise cut it off at the bar edge.
+ */
+@Composable
+private fun LiquidTabBubble(lens: LiquidLens, modifier: Modifier) {
+    val dark = isDarkCanvas()
+    Box(
+        modifier.drawWithCache {
+            val mid = Offset(size.width / 2f, size.height / 2f)
+            val rim = LiquidColors.rimBrush(dark, mid, 1.1f)
+            val fill = if (dark) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.30f)
+            val shade = Color.Black.copy(alpha = if (dark) 0.10f else 0.04f)
+            val rimPx = 1.1.dp.toPx()
+            onDrawBehind {
+                val s = lens.strength().coerceIn(0f, 1f)
+                if (s < 0.02f) return@onDrawBehind
+                val b = lens.bounds()
+                if (b.width < 1f) return@onDrawBehind
+                val r = size.height * (0.5f + 0.34f * s)
+                val c = Offset(b.center.x, size.height / 2f)
+                drawCircle(fill.copy(alpha = fill.alpha * s), radius = r, center = c)
+                drawCircle(shade.copy(alpha = shade.alpha * s), radius = r, center = c, style = Stroke(1.6.dp.toPx()))
+                drawCircle(rim, radius = r - rimPx, center = c, alpha = s, style = Stroke(rimPx * (1.1f + 0.5f * s)))
+            }
+        },
+    )
 }
 
 /** Equal slots, icon over label, and one highlight capsule that slides between them (or follows a drag). */

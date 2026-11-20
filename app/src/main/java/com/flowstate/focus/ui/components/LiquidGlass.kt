@@ -152,13 +152,13 @@ private fun LiquidGlassSurface(
             LiquidDims(
                 margin = 12.dp.toPx(),
                 blur = (if (refracts) 2.5.dp else 5.dp).toPx(),
-                refraction = 10.dp.toPx(),
-                bevel = 14.dp.toPx(),
+                refraction = 7.dp.toPx(),
+                bevel = 8.dp.toPx(),
                 aberration = 2.2.dp.toPx(),
                 lensGrow = 3.dp.toPx(),
-                rim = (if (refracts) 1.8.dp else 2.4.dp).toPx(),
-                glow = 9.dp.toPx(),
-                edge = 4.dp.toPx(),
+                rim = (if (refracts) 0.9.dp else 1.4.dp).toPx(),
+                glow = 2.5.dp.toPx(),
+                edge = 1.dp.toPx(),
             )
         }
     }
@@ -394,7 +394,7 @@ half4 main(float2 coord) {
     // Specular edge: light from the top-left, with a weaker glint on the opposite (bottom-right) edge.
     float2 lightDir = normalize(float2(-0.6, -0.8));
     float facing = dot(n, lightDir);
-    float edge = clamp(1.0 + d / (bevel * 0.45), 0.0, 1.0);
+    float edge = clamp(1.0 + d / (bevel * 0.14), 0.0, 1.0);
     edge = edge * edge;
     float spec = edge * (0.50 * pow(max(facing, 0.0), 3.0) + 0.28 * pow(max(-facing, 0.0), 3.0));
     col += float3(spec, spec, spec);
