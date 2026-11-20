@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -65,6 +66,7 @@ class TimerService : Service() {
     private var observing = false
     /** 1.8.7: newest start request; stopping with it never cancels a start that is still on its way. */
     @Volatile private var lastStartId = 0
+    private val floating by lazy { FloatingTimerOverlay(this, onPause = { engine.pause() }, onResume = { engine.resume() }) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -120,6 +122,17 @@ class TimerService : Service() {
                     }
                 }
             }
+            scope.launch {
+                // The Live Alert capsule's own countdown ticks by itself (chronometer); this only moves the
+                // progress bar on the expanded card, so twice a minute is plenty.
+                while (true) {
+                    delay(PROGRESS_TICK_MS)
+                    val t = engine.state.value
+                    if (foreground && t.status == Status.RUNNING && !t.countsUp) {
+                        nm.notify(Notifications.ID_TIMER, buildNotification(t, ambient.state.value))
+                    }
+                }
+            }
         }
         return START_STICKY
     }
@@ -164,9 +177,19 @@ class TimerService : Service() {
     override fun onCreate() {
         super.onCreate()
         settingsCache // start collecting right away, so a later widget start does not have to wait
+        scope.launch {
+            // Floating timer tab: only while a session is active, the setting is on and Flowstate is not on screen.
+            combine(engine.state, settingsCache, AppVisibility.visible) { t, st, appVisible -> Triple(t, st, appVisible) }
+                .collect { (t, st, appVisible) ->
+                    val s = st ?: return@collect
+                    runCatching { floating.update(t, FloatingTimerColors.from(this@TimerService, s), s.floatingTimer, appVisible) }
+                        .onFailure { Log.w("Flowstate", "Floating timer", it) }
+                }
+        }
     }
 
     override fun onDestroy() {
+        runCatching { floating.remove() }
         foreground = false
         scope.cancel()
         super.onDestroy()
@@ -209,6 +232,14 @@ class TimerService : Service() {
             Phase.IDLE -> "Flowstate"
         }
         builder.setContentTitle(title).setCategory(NotificationCompat.CATEGORY_PROGRESS)
+        // Live Update (Android 16) = OxygenOS / ColorOS 16 Live Alerts capsule, Pixel status chip, lock-screen card.
+        // Rules: ongoing, has a title, standard style, no custom views, not colorized, channel not IMPORTANCE_MIN.
+        // The extra is read by the system as-is, so it works while compileSdk is still 35; older Android ignores it.
+        builder.addExtras(android.os.Bundle().apply { putBoolean(EXTRA_REQUEST_PROMOTED_ONGOING, true) })
+        if (!s.countsUp && s.phaseDurationMs > 0L) {
+            val done = (s.elapsedAt(System.currentTimeMillis()) * 1000L / s.phaseDurationMs).toInt().coerceIn(0, 1000)
+            builder.setProgress(1000, done, false)
+        }
 
         var text: String? = null
         when (s.status) {
@@ -257,6 +288,9 @@ class TimerService : Service() {
         )
 
     companion object {
+        /** Notification.EXTRA_REQUEST_PROMOTED_ONGOING (API 36). */
+        private const val EXTRA_REQUEST_PROMOTED_ONGOING = "android.requestPromotedOngoing"
+        private const val PROGRESS_TICK_MS = 30_000L
         const val ACTION_PAUSE = "com.flowstate.focus.PAUSE"
         const val ACTION_RESUME = "com.flowstate.focus.RESUME"
         const val ACTION_STOP = "com.flowstate.focus.STOP"

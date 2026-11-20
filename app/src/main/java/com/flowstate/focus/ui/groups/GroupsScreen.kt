@@ -197,6 +197,10 @@ fun GroupsScreen(settings: AppSettings, onOpenFocus: () -> Unit, onOpenChat: () 
             ranked[index], rank = index + 1, onDismiss = { profileMemberUid = null },
             canSendEmoji = groupId != null && uid != state.user?.uid,
             onSendEmoji = { emoji -> if (groupId != null) vm.sendEmoji(groupId, uid, emoji) },
+            isAdmin = state.selectedGroup?.adminUid == uid,
+            // Only the admin sees "Remove from group", and never on their own profile.
+            canRemove = state.user?.uid != null && state.selectedGroup?.adminUid == state.user?.uid && uid != state.user?.uid,
+            onRemove = { vm.removeMember(uid); profileMemberUid = null },
         )
         else LaunchedEffect(uid) { profileMemberUid = null }
     }

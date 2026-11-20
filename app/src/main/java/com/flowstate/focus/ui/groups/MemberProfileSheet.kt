@@ -46,6 +46,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -73,6 +77,11 @@ internal fun MemberProfileSheet(
     onDismiss: () -> Unit,
     canSendEmoji: Boolean = false,
     onSendEmoji: (String) -> Unit = {},
+    /** This member is the group's admin (shown under the name). */
+    isAdmin: Boolean = false,
+    /** You are the admin and this is someone else: show "Remove from group". */
+    canRemove: Boolean = false,
+    onRemove: () -> Unit = {},
 ) {
     val cs = MaterialTheme.colorScheme
     val league = League.of(member.weeklyFocusMs)
@@ -124,6 +133,15 @@ internal fun MemberProfileSheet(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (isAdmin) {
+                Text(
+                    "Group admin",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = cs.primary,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                )
+            }
             Spacer(Modifier.height(20.dp))
             DepthSurface(shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 16.dp)) {
@@ -145,6 +163,24 @@ internal fun MemberProfileSheet(
                         StatCell(sessions?.toString() ?: "—", "No. of sessions", Modifier.weight(1f))
                         StatCell(average?.let(::duration) ?: "—", "Avg focus per session", Modifier.weight(1f))
                     }
+                }
+            }
+            if (canRemove) {
+                var confirm by remember { mutableStateOf(false) }
+                Spacer(Modifier.height(16.dp))
+                OutlinedButton(
+                    onClick = { confirm = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    border = BorderStroke(1.dp, cs.error.copy(alpha = 0.7f)),
+                ) { Text("Remove from group", color = cs.error) }
+                if (confirm) {
+                    AlertDialog(
+                        onDismissRequest = { confirm = false },
+                        title = { Text("Remove ${member.name.ifBlank { "this member" }}?") },
+                        text = { Text("They'll leave the group right away. They can only come back with the invite code.") },
+                        confirmButton = { TextButton(onClick = { confirm = false; onRemove() }) { Text("Remove", color = cs.error) } },
+                        dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
+                    )
                 }
             }
         }

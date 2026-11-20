@@ -57,6 +57,17 @@ class MainActivity : ComponentActivity() {
         openRoute = route
     }
 
+    // The floating timer tab hides while Flowstate itself is on screen.
+    override fun onStart() {
+        super.onStart()
+        com.flowstate.focus.service.AppVisibility.set(true)
+    }
+
+    override fun onStop() {
+        com.flowstate.focus.service.AppVisibility.set(false)
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         com.flowstate.focus.widgets.WidgetRefresh.requestAll(this)

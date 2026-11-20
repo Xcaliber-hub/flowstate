@@ -406,15 +406,16 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
                 }
             }
 
-            // Top bar: same shape as the app's frosted top bar.
+            // Top bar: same shape as the app's top bar, in liquid glass.
             Row(
                 Modifier.align(Alignment.TopCenter).fillMaxWidth()
                     .padding(start = 16.dp, end = 16.dp, top = statusTop + TopBarTopGap).height(TopBarHeight),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                GlassCircleButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back") { onBack() }
-                FrostedGlassSurface(CircleShape, Modifier.weight(1f).height(TopBarHeight), tinted = true) {
+                GlassCircleButton(Icons.AutoMirrored.Rounded.ArrowBack, "Back", liquid = true) { onBack() }
+                // Liquid glass whenever Liquid glass UI is on (frosted only when the style is Frosted or the phone cannot draw it).
+                GlassBarSurface(modifier = Modifier.weight(1f).height(TopBarHeight), tinted = true) {
                     Row(Modifier.fillMaxSize().padding(start = 10.dp, end = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (faces.isNotEmpty()) { AvatarStack(faces, 32.dp); Spacer(Modifier.width(10.dp)) }
                         Column(Modifier.weight(1f)) {

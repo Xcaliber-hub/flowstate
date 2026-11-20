@@ -40,6 +40,8 @@ data class AppSettings(
     val blockedPackages: Set<String> = emptySet(),
     /** Push notifications for new group chat messages. Off: this phone unsubscribes from every group's pushes. */
     val chatNotifications: Boolean = true,
+    /** Floating timer tab on the home screen while a session runs (needs "Display over other apps"). */
+    val floatingTimer: Boolean = true,
     /** 1.8.4: the last few custom subjects typed on Focus, newest first (see SubjectChoices). */
     val recentSubjects: List<String> = emptyList(),
 )

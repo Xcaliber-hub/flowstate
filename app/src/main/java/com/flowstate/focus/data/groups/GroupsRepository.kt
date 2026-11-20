@@ -59,7 +59,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
  data class GroupUser(val uid: String, val name: String, val avatarId: String = "")
- data class FocusGroup(val id: String, val name: String, val memberIds: List<String>)
+ data class FocusGroup(val id: String, val name: String, val memberIds: List<String>) {
+     /** The admin is the earliest member still in the group: the creator, or the next oldest if they left. */
+     val adminUid: String? get() = memberIds.firstOrNull()
+ }
  /** [weeklySessions] and [todayFocusMs] are null when the member's app predates them (shown as "—"). */
  data class GroupMember(val uid: String, val name: String, val weeklyFocusMs: Long, val live: TimerState?, val updatedAt: Long, val avatarId: String = "", val weeklySessions: Int? = null, val todayFocusMs: Long? = null)
  /** An emoji a group friend sent; shown once when the app opens, then cleared. */
@@ -252,6 +255,27 @@ class GroupsRepository @Inject constructor(
             if (members.contains(u.uid)) tx.update(ref, "memberIds", members - u.uid); null
         }.await()
         runCatching { ref.collection("members").document(u.uid).delete().await() }
+        refreshGroups()
+    }
+    /** Admin only: removes [uid] from the selected group. They can rejoin only with the invite code. */
+    fun removeMember(uid: String) = launchBusy {
+        val u = requireUser(); val g = _state.value.selectedGroup ?: error("Select a group first.")
+        require(uid != u.uid) { "Use Leave group to leave yourself." }
+        val ref = dbRequired().collection("groups").document(g.id)
+        try {
+            dbRequired().runTransaction { tx ->
+                val snap = tx.get(ref); check(snap.exists()) { "Group no longer exists." }
+                val members = (snap.get("memberIds") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
+                check(members.firstOrNull() == u.uid) { "Only the group admin can remove members." }
+                if (members.contains(uid)) tx.update(ref, "memberIds", members - uid); null
+            }.await()
+        } catch (e: FirebaseFirestoreException) {
+            if (e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED)
+                error("Couldn't remove the member. Publish the new Firestore rules in project ${readResource(R.string.flowstate_firebase_project_id)} so admins can remove members.")
+            throw e
+        }
+        runCatching { ref.collection("members").document(uid).delete().await() }
+        _state.update { st -> st.copy(members = st.members.filterNot { it.uid == uid }) }
         refreshGroups()
     }
     /** Sends [emoji] to [toUid] in [groupId]. A newer ping to the same friend replaces the older one. */

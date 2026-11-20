@@ -102,7 +102,11 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
     val s by vm.settings.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var blockerOn by remember { mutableStateOf(isBlockerEnabled(context)) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { blockerOn = isBlockerEnabled(context) }
+    var overlayAllowed by remember { mutableStateOf(com.flowstate.focus.service.FloatingTimerOverlay.canDraw(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        blockerOn = isBlockerEnabled(context)
+        overlayAllowed = com.flowstate.focus.service.FloatingTimerOverlay.canDraw(context)
+    }
     var showDisclosure by rememberSaveable { mutableStateOf(false) }
     // Android 13+ needs permission before any chat push can show.
     val chatPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -223,6 +227,28 @@ fun SettingsScreen(onOpenBlockedApps: () -> Unit, onOpenWeekSessions: () -> Unit
                         LinkRow("Keep the timer reliable", "Exempt Flowstate from battery optimization") {
                             context.startActivity(Intent(AndroidSettings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                         }
+                        ToggleRow(
+                            "Floating timer",
+                            "A timer tab on the edge of your home screen while a session runs. Tap it to pause, drag it to move",
+                            s.floatingTimer,
+                        ) { v ->
+                            vm.update { it.copy(floatingTimer = v) }
+                            if (v && !overlayAllowed) openOverlaySettings(context)
+                        }
+                        if (s.floatingTimer && !overlayAllowed) {
+                            LinkRow("Allow the floating timer", "Turn on \"Display over other apps\" for Flowstate") { openOverlaySettings(context) }
+                        }
+                        if (Build.VERSION.SDK_INT >= 36) {
+                            // OxygenOS / ColorOS 16 ship Live Alerts switched off for every third-party app.
+                            LinkRow("Live Alerts", "Show the running timer in the status bar capsule and on the lock screen") {
+                                val pkg = context.packageName
+                                val promoted = Intent("android.settings.MANAGE_APP_PROMOTED_NOTIFICATIONS")
+                                    .putExtra(AndroidSettings.EXTRA_APP_PACKAGE, pkg)
+                                    .setData(android.net.Uri.parse("package:$pkg"))
+                                val fallback = Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(AndroidSettings.EXTRA_APP_PACKAGE, pkg)
+                                runCatching { context.startActivity(promoted) }.onFailure { runCatching { context.startActivity(fallback) } }
+                            }
+                        }
                     }
                 }
             }
@@ -303,6 +329,12 @@ private fun Group(title: String, content: @Composable () -> Unit) {
         Spacer(Modifier.height(12.dp))
         Column(verticalArrangement = Arrangement.spacedBy(14.dp)) { content() }
     }
+}
+
+private fun openOverlaySettings(context: android.content.Context) {
+    val pkg = android.net.Uri.parse("package:${context.packageName}")
+    runCatching { context.startActivity(Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION, pkg)) }
+        .onFailure { runCatching { context.startActivity(Intent(AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION)) } }
 }
 
 @Composable

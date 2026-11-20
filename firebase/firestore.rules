@@ -102,14 +102,26 @@ service cloud.firestore {
         && resource.data.memberIds.toSet().difference(request.resource.data.memberIds.toSet()).hasOnly([request.auth.uid])
         && (request.auth.uid in resource.data.memberIds ||
           (request.resource.data.memberIds.size() == resource.data.memberIds.size() + 1
-            && request.auth.uid in request.resource.data.memberIds));
+            && request.auth.uid in request.resource.data.memberIds))
+        // Admin removal: the admin is memberIds[0] (the creator, or the oldest member left). They may remove
+        // exactly one other member and must stay first in the list.
+        || (signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
+          && resource.data.memberIds is list && request.resource.data.memberIds is list
+          && resource.data.memberIds.size() > 1
+          && resource.data.memberIds[0] == request.auth.uid
+          && request.resource.data.memberIds[0] == request.auth.uid
+          && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1
+          && request.resource.data.memberIds.size() == request.resource.data.memberIds.toSet().size()
+          && request.resource.data.memberIds.toSet().hasOnly(resource.data.memberIds.toSet()));
       allow delete: if false;
       match /members/{uid} {
         allow read: if member(gid);
         // Replacing one's own snapshot also removes obsolete legacy fields.
         allow create, update: if signedIn() && uid == request.auth.uid
           && member(gid) && validMember(request.resource.data);
-        allow delete: if signedIn() && uid == request.auth.uid && groupExists(gid);
+        allow delete: if signedIn() && groupExists(gid) && (uid == request.auth.uid
+          || get(/databases/$(database)/documents/groups/$(gid)).data.memberIds[0] == request.auth.uid);
       }
       match /pings/{pingId} {
         allow read: if member(gid) && resource.data.toUid == request.auth.uid;
