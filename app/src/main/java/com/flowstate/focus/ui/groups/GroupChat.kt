@@ -225,7 +225,11 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
         LaunchedEffect(Unit) { if (state.configured) delay(CHAT_RESTORE_WAIT_MS); onBack() }
         return
     }
-    DisposableEffect(group.id) { vm.openChat(group.id); onDispose { vm.closeChat() } }
+    DisposableEffect(group.id) {
+        com.flowstate.focus.util.CrashReporter.note("Opened group chat"); com.flowstate.focus.util.CrashReporter.setInChat(true)
+        vm.openChat(group.id)
+        onDispose { vm.closeChat(); com.flowstate.focus.util.CrashReporter.setInChat(false); com.flowstate.focus.util.CrashReporter.note("Closed group chat") }
+    }
     // 1.8.7: an auth refresh closes every listener; reopen the chat instead of leaving it on an endless spinner.
     LaunchedEffect(group.id, chat.groupId, state.user?.uid) { if (chat.groupId != group.id) vm.openChat(group.id) }
     // Chat pushes need notification permission on Android 13+; ask once, the first time a chat opens.
@@ -359,7 +363,8 @@ fun GroupChatScreen(onBack: () -> Unit, vm: GroupsViewModel = hiltViewModel()) {
     }
 
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        CompositionLocalProvider(LocalBlurSource provides chatLayer) {
+        val safeGlass = remember { com.flowstate.focus.util.CrashReporter.safeChatGlass(context) }
+        CompositionLocalProvider(LocalBlurSource provides chatLayer, com.flowstate.focus.ui.components.LocalSafeGlass provides safeGlass) {
             // Everything in here is what the frosted bars blur.
             Box(Modifier.fillMaxSize().blurSource(chatLayer)) {
                 val topPad = statusTop + TopBarTopGap + TopBarHeight + 12.dp
@@ -731,7 +736,7 @@ private fun DayChip(at: Long) {
 private fun EmptyChat(groupName: String, faces: List<Pair<String, String>>, onStarter: (String) -> Unit, modifier: Modifier) {
     val cs = MaterialTheme.colorScheme
     val glass = LocalGlassUi.current
-    val cast = (faces + listOf("" to "owl", "" to "rocket", "" to "coffee")).take(3)
+    val cast = (faces + listOf("" to "chaiowl", "" to "aurora", "" to "capybara")).take(3)
     Column(modifier.padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         Box(Modifier.width(240.dp).height(150.dp)) {
             Box(Modifier.align(Alignment.BottomStart).padding(start = 8.dp)) { ProfileAvatar(cast[1].first, cast[1].second, 72) }

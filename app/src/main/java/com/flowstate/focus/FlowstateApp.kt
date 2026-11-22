@@ -58,6 +58,7 @@ class FlowstateApp : Application() {
     private val widgetScope = com.flowstate.focus.util.AppScopes.background(Dispatchers.Default, "FlowstateApp.widgets")
     override fun onCreate() {
         super.onCreate()
+        com.flowstate.focus.util.CrashReporter.install(this)
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
             NotificationChannel(Notifications.CHANNEL_TIMER, getString(R.string.channel_timer), NotificationManager.IMPORTANCE_LOW)

@@ -68,9 +68,12 @@ import kotlin.math.ceil
 fun liquidGlassActive(): Boolean = LocalGlassUi.current && LocalGlassStyle.current == GlassStyle.LIQUID
 
 /** True when liquid glass is picked and this phone can draw it (Android 12+ with a recorded backdrop). */
+/** 1.9.1: true where liquid glass must fall back to frosted (the chat on a phone whose driver crashed on it). */
+val LocalSafeGlass = androidx.compose.runtime.staticCompositionLocalOf { false }
+
 @Composable
 @ReadOnlyComposable
-fun liquidGlassDrawn(): Boolean = liquidGlassActive() && LocalBlurSource.current != null &&
+fun liquidGlassDrawn(): Boolean = liquidGlassActive() && !LocalSafeGlass.current && LocalBlurSource.current != null &&
     Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
 /**

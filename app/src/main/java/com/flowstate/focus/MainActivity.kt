@@ -103,6 +103,7 @@ class MainActivity : ComponentActivity() {
                     )
                     CheckInPrompt()
                     UpdatePrompt()
+                    com.flowstate.focus.ui.crash.CrashPrompt()
                 }
             }
         }
