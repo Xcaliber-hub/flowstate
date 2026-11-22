@@ -111,6 +111,17 @@ class FlowstateApp : Application() {
                 .distinctUntilChanged()
                 .collect { checkWidgetTheme(it) }
         }
+        // Clear liquid widgets pick light or dark text from the wallpaper, so a new wallpaper redraws them
+        // (while the app process is alive; otherwise on the next refresh).
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            runCatching {
+                android.app.WallpaperManager.getInstance(this).addOnColorsChangedListener({ _, which ->
+                    if ((which and android.app.WallpaperManager.FLAG_SYSTEM) != 0) {
+                        widgetScope.launch { checkWidgetTheme(widgetData.palette(settingsRepository.settings.first())) }
+                    }
+                }, android.os.Handler(android.os.Looper.getMainLooper()))
+            }
+        }
         widgetScope.launch {
             settingsRepository.settings.map { it.dailyGoalMin }.distinctUntilChanged().drop(1)
                 .collect { WidgetRefresh.request(app, WidgetKind.HISTORY) }
@@ -146,7 +157,7 @@ class FlowstateApp : Application() {
 
     /** Redraws every widget when the colours they should use differ from the ones they were last drawn with. */
     private fun checkWidgetTheme(palette: com.flowstate.focus.widgets.WidgetPalette) {
-        val signature = "${palette.dark}|${palette.accent}"
+        val signature = "${palette.dark}|${palette.accent}|${palette.liquid}"
         val store = getSharedPreferences(WIDGET_THEME_PREFS, MODE_PRIVATE)
         if (store.getString(KEY_WIDGET_THEME, null) == signature) return
         store.edit().putString(KEY_WIDGET_THEME, signature).apply()

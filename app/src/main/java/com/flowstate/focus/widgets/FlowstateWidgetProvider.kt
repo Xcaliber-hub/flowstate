@@ -109,6 +109,9 @@ abstract class FlowstateWidgetProvider : AppWidgetProvider() {
     /** Glass background, switched at runtime for dark / light. */
     internal fun applyGlass(views: RemoteViews, palette: WidgetPalette, breakTint: Boolean = false) {
         val res = when {
+            // Liquid: clear glass with no tint, break mode included.
+            palette.liquid && palette.dark -> R.drawable.widget_liquid_dark
+            palette.liquid -> R.drawable.widget_liquid_light
             breakTint && palette.dark -> R.drawable.widget_glass_break_dark
             breakTint -> R.drawable.widget_glass_break_light
             palette.dark -> R.drawable.widget_glass_dark
@@ -117,8 +120,16 @@ abstract class FlowstateWidgetProvider : AppWidgetProvider() {
         views.setInt(R.id.widget_root, "setBackgroundResource", res)
     }
 
-    internal fun glassPill(palette: WidgetPalette) = if (palette.dark) R.drawable.widget_pill_dark else R.drawable.widget_pill_light
-    internal fun glassCircle(palette: WidgetPalette) = if (palette.dark) R.drawable.widget_circle_dark else R.drawable.widget_circle_light
+    internal fun glassPill(palette: WidgetPalette) = when {
+        palette.liquid -> R.drawable.widget_liquid_pill
+        palette.dark -> R.drawable.widget_pill_dark
+        else -> R.drawable.widget_pill_light
+    }
+    internal fun glassCircle(palette: WidgetPalette) = when {
+        palette.liquid -> R.drawable.widget_liquid_circle
+        palette.dark -> R.drawable.widget_circle_dark
+        else -> R.drawable.widget_circle_light
+    }
 
     /** A white shape or icon drawn in [color] (ImageView.setColorFilter is remotable on every version). */
     internal fun tint(views: RemoteViews, id: Int, color: Int) = views.setInt(id, "setColorFilter", color)

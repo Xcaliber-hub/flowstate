@@ -1,5 +1,7 @@
 package com.flowstate.focus.widgets
 
+import android.app.WallpaperColors
+import android.app.WallpaperManager
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Build
@@ -14,6 +16,7 @@ import com.flowstate.focus.data.repo.TaskRepository
 import com.flowstate.focus.data.sync.TimerLockState
 import com.flowstate.focus.data.syllabus.SyllabusRepository
 import com.flowstate.focus.domain.AppSettings
+import com.flowstate.focus.domain.GlassStyle
 import com.flowstate.focus.domain.StatsCalculator
 import com.flowstate.focus.domain.ThemeMode
 import com.flowstate.focus.domain.groups.PresetAvatars
@@ -81,8 +84,25 @@ class FlowstateWidgetDataSource @Inject constructor(
     internal suspend fun palette(): WidgetPalette = palette(prefs())
 
     internal fun palette(prefs: AppSettings): WidgetPalette {
-        val dark = isDarkTheme(prefs)
-        return WidgetColors.palette(dark, accent(prefs, dark))
+        val liquid = prefs.glassStyle == GlassStyle.LIQUID
+        // Clear glass has nothing behind the text but the wallpaper, so the text follows the wallpaper rather
+        // than the app theme: light text on a dark wallpaper, dark text on a light one.
+        val dark = if (liquid) wallpaperDark() ?: isDarkTheme(prefs) else isDarkTheme(prefs)
+        return WidgetColors.palette(dark, accent(prefs, dark), liquid)
+    }
+
+    /** True for a dark home-screen wallpaper, false for a light one, null when the system won't say. */
+    private fun wallpaperDark(): Boolean? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1) return null
+        return runCatching {
+            val colors = WallpaperManager.getInstance(context).getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
+                ?: return null
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                (colors.colorHints and WallpaperColors.HINT_SUPPORTS_DARK_TEXT) == 0
+            } else {
+                WidgetColors.luminance(colors.primaryColor.toArgb()) < 0.45
+            }
+        }.getOrNull()
     }
 
     /**

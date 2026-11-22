@@ -30,6 +30,8 @@ internal data class WidgetPalette(
     val track: Int,
     /** Hairline separators. */
     val rim: Int,
+    /** 1.9.2: Liquid glass UI is on, so the card is clear glass (no tint) and text follows the wallpaper. */
+    val liquid: Boolean = false,
 )
 
 internal object WidgetColors {
@@ -72,7 +74,8 @@ internal object WidgetColors {
         return list[index.coerceIn(0, list.lastIndex)]
     }
 
-    fun palette(dark: Boolean, accent: Int): WidgetPalette = WidgetPalette(
+    fun palette(dark: Boolean, accent: Int, liquid: Boolean = false): WidgetPalette = WidgetPalette(
+        liquid = liquid,
         dark = dark,
         accent = accent or 0xFF000000.toInt(),
         onAccent = onAccent(accent),
