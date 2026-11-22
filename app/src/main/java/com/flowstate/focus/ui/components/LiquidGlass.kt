@@ -53,11 +53,11 @@ import kotlin.math.ceil
  * - Android 13+ (API 33): the bar re-draws the same recorded screen content the frosted glass uses
  *   ([LocalBlurSource]), cropped to the bar plus a small margin, into one GraphicsLayer whose RenderEffect
  *   is a light blur chained into an AGSL RuntimeShader ([LIQUID_GLASS_AGSL]). The shader does the rim
- *   refraction from a rounded-rect SDF, chromatic aberration, a small saturation and tone boost, the
+ *   refraction from a rounded-rect SDF, chromatic aberration, no colour or tone change (clear since 1.9.0), the
  *   specular edge and, for the nav bar, a magnifying lens bubble under the finger while dragging.
  *   The RuntimeShader is compiled once per bar; its RenderEffect is rebuilt only when a uniform changes
  *   (bar size, theme, lens position while dragging), not while content merely scrolls behind it.
- * - Android 12 / 12L (API 31–32): "clear glass" approximation: a small blur, a lighter tint and a stronger
+ * - Android 12 / 12L (API 31–32): "clear glass" approximation: a very small blur, no tint and a stronger
  *   rim and highlights. No refraction.
  * - Older phones, or no recorded backdrop: the frosted fallback ([FrostedGlassSurface]).
  */
@@ -108,7 +108,7 @@ fun GlassBarSurface(
 /** Fill, rim and highlight colours for the liquid look, tuned per theme so text stays readable. */
 internal object LiquidColors {
     /** The resting tab "droplet" inside the nav bar. */
-    @Composable fun dropletFill(): Color = if (isDarkCanvas()) Color.White.copy(alpha = 0.11f) else Color.White.copy(alpha = 0.42f)
+    @Composable fun dropletFill(): Color = if (isDarkCanvas()) Color.White.copy(alpha = 0.04f) else Color.White.copy(alpha = 0.10f) // clear, the rim marks it
 
     /** Rim light around the edge: brightest top-left, a second glint bottom-right, dim elsewhere. */
     fun rimBrush(dark: Boolean, center: Offset, boost: Float = 1f): Brush {
@@ -141,8 +141,8 @@ private fun LiquidGlassSurface(
     val source = LocalBlurSource.current
     val dark = isDarkCanvas()
     val bg = MaterialTheme.colorScheme.background
-    // Clear glass takes less of the theme colour than frosted, or it turns back into a coloured slab.
-    val wash = if (tinted) Glass.accentWash().let { it.copy(alpha = it.alpha * 0.6f) } else null
+    // 1.9.0: liquid glass is truly clear. No theme-colour wash (even when [tinted]), no scrim and no tone
+    // shift; only refraction, the sheen and the rim say it is glass. Frosted glass keeps its tint.
     val refracts = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     // Compiled once per bar; only its uniforms change afterwards.
     val shader = remember { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) LiquidShader() else null }
@@ -153,7 +153,7 @@ private fun LiquidGlassSurface(
         with(density) {
             LiquidDims(
                 margin = 12.dp.toPx(),
-                blur = (if (refracts) 2.5.dp else 5.dp).toPx(),
+                blur = (if (refracts) 0.6.dp else 1.5.dp).toPx(), // just enough to smooth refraction steps
                 refraction = 7.dp.toPx(),
                 bevel = 8.dp.toPx(),
                 aberration = 2.2.dp.toPx(),
@@ -165,13 +165,6 @@ private fun LiquidGlassSurface(
         }
     }
     val cornerPx = cornerRadius?.let { with(density) { it.toPx() } }
-    // A light scrim inside the glass keeps labels readable over busy content.
-    val scrim = when {
-        dark && refracts -> Color.Black.copy(alpha = 0.20f)
-        dark -> Color.Black.copy(alpha = 0.26f)
-        refracts -> Color.White.copy(alpha = 0.24f)
-        else -> Color.White.copy(alpha = 0.32f)
-    }
     val rimBoost = if (refracts) 1f else 1.25f
     val shadow = depthColors().shadow
 
@@ -221,8 +214,6 @@ private fun LiquidGlassSurface(
                         }
                         translate(-m, -m) { drawLayer(backdrop) }
                     }
-                    drawRect(scrim)
-                    if (wash != null) drawRect(wash)
                     drawRect(sheen)
                     drawContent()
                     // A faint shade just inside the edge gives the rim depth (most visible in light mode),
@@ -382,16 +373,9 @@ half4 main(float2 coord) {
 
     float3 col = fetch(samplePos, dir, spread);
 
-    // A touch more colour, like light passing through real glass; more inside the bubble.
-    float luma = dot(col, float3(0.2126, 0.7152, 0.0722));
-    col = mix(float3(luma, luma, luma), col, 1.12 + 0.10 * lensMix);
-    // Keep labels readable: calm the pixels on dark glass, lift them on light glass.
-    if (darkMode > 0.5) {
-        col = col * 0.88 + float3(0.02, 0.02, 0.02);
-    } else {
-        col = col * 0.90 + float3(0.10, 0.10, 0.10);
-    }
-    col += float3(0.035 * lensMix);
+    // True transparent (1.9.0): the colours pass through unchanged, with no saturation or tone shift.
+    // darkMode stays declared and referenced so setFloatUniform("darkMode") keeps finding it.
+    col += float3(0.0 * darkMode + 0.0 * lensMix);
 
     // Specular edge: light from the top-left, with a weaker glint on the opposite (bottom-right) edge.
     float2 lightDir = normalize(float2(-0.6, -0.8));
@@ -507,14 +491,8 @@ half4 main(float2 coord) {
         );
     }
 
-    // Clear glass: a touch more colour and contrast than what lies beneath.
-    float luma = dot(col, float3(0.2126, 0.7152, 0.0722));
-    col = mix(float3(luma, luma, luma), col, 1.10);
-    if (darkMode > 0.5) {
-        col = col * 0.97 + float3(0.02, 0.02, 0.025);
-    } else {
-        col = col * 0.96 + float3(0.05, 0.05, 0.05);
-    }
+    // True transparent (1.9.0): what lies beneath passes through unchanged.
+    col += float3(0.0 * darkMode); // keeps the darkMode uniform referenced
 
     // Specular rim: strong top-left, softer glint bottom-right.
     float2 lightDir = normalize(float2(-0.55, -0.83));

@@ -251,11 +251,20 @@ private fun ProfileCard(cloud: CloudState, a: AccountActions) {
         Spacer(Modifier.height(12.dp))
         T("Avatar", 12.5.sp, color = Slate.Mist)
         Spacer(Modifier.height(8.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            (listOf("") + PresetAvatars.all.map { it.id }).forEach { id ->
-                val on = id == avatar
-                Box(Modifier.clip(CircleShape).border(2.dp, if (on) Slate.Paper else Color.Transparent, CircleShape).padding(3.dp).clickable { avatar = id }) {
-                    Avatar(name, id, 38.dp, ring = false)
+        // 1.9.0: two categories, Orbs and Stitched. The first circle (initial) clears the pick.
+        Box(Modifier.clip(CircleShape).border(2.dp, if (avatar.isEmpty()) Slate.Paper else Color.Transparent, CircleShape).padding(3.dp).clickable { avatar = "" }) {
+            Avatar(name, "", 38.dp, ring = false)
+        }
+        PresetAvatars.categories.forEach { category ->
+            Spacer(Modifier.height(12.dp))
+            T(category.name, 12.5.sp, FontWeight.SemiBold, color = Slate.Mist)
+            Spacer(Modifier.height(8.dp))
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                category.presets.map { it.id }.forEach { id ->
+                    val on = id == avatar
+                    Box(Modifier.clip(CircleShape).border(2.dp, if (on) Slate.Paper else Color.Transparent, CircleShape).padding(3.dp).clickable { avatar = id }) {
+                        Avatar(name, id, 38.dp, ring = false)
+                    }
                 }
             }
         }

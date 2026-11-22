@@ -365,7 +365,7 @@ private fun LiquidTabBubble(lens: LiquidLens, modifier: Modifier) {
         modifier.drawWithCache {
             val mid = Offset(size.width / 2f, size.height / 2f)
             val rim = LiquidColors.rimBrush(dark, mid, 1.1f)
-            val fill = if (dark) Color.White.copy(alpha = 0.07f) else Color.White.copy(alpha = 0.30f)
+            val fill = if (dark) Color.White.copy(alpha = 0.03f) else Color.White.copy(alpha = 0.08f) // clear glass
             val shade = Color.Black.copy(alpha = if (dark) 0.10f else 0.04f)
             val rimPx = 1.1.dp.toPx()
             onDrawBehind {

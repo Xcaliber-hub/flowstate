@@ -1,15 +1,23 @@
 rules_version = '2';
-// Flowstate 1.6.0 — all 24 avatars, member session/daily stats, emoji pings, group chat with replies, read receipts, typing and message editing,
+// Flowstate 1.9.0 (rules unchanged in shape since 1.6.0; 1.8.9 added admin member removal, 1.9.0 the new avatars) — 48 preset avatars, member session/daily stats, emoji pings, group chat with replies, read receipts, typing and message editing,
 // plus (new in 1.6.0) the one-device timer lock users/{uid}/state/activeTimer and synced sessions users/{uid}/sessions/{id}. Publish to flowstate-241f0 / (default).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function validAvatar(data) {
       return !('avatarId' in data) || (data.avatarId is string && data.avatarId in [
-        '', 'sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit',
-        'cloud', 'ember', 'turtle', 'jelly', 'comet', 'bloom',
-        'cat', 'owl', 'panda', 'penguin', 'cactus', 'octopus',
-        'mushroom', 'coffee', 'rocket', 'wave', 'snowflake', 'bolt'
+        // 1.9.0 Orbs and Stitched
+        '',
+        'terrarium', 'lavalamp', 'aurora', 'koi', 'nebula', 'chrome', 'eclipse', 'snowglobe',
+        'candle', 'curl', 'sakura', 'desklamp', 'dune', 'rain', 'island', 'jellyfish',
+        'chai', 'saturn', 'prism', 'lantern', 'fireflies', 'storm', 'marble', 'lighthouse',
+        'chaiowl', 'axolotl', 'capybara', 'moth', 'booksnail', 'raccoon', 'mushfrog', 'pomodoro',
+        'gradduck', 'crane', 'cassette', 'bonsai', 'mooncat', 'reading', 'kulhad', 'trail',
+        'compass', 'vinyl', 'paperplane', 'pottedcactus', 'balloon', 'flame', 'toadstools', 'sunrise',
+        // Removed sticker set (pre-1.9.0): still accepted so older clients and stored profiles keep saving
+        'sprout', 'sunbeam', 'moon', 'fox', 'orbit', 'summit', 'cloud', 'ember',
+        'turtle', 'jelly', 'comet', 'bloom', 'cat', 'owl', 'panda', 'penguin',
+        'cactus', 'octopus', 'mushroom', 'coffee', 'rocket', 'wave', 'snowflake', 'bolt'
       ]);
     }
     function validName(data) {
@@ -120,6 +128,7 @@ service cloud.firestore {
         // Replacing one's own snapshot also removes obsolete legacy fields.
         allow create, update: if signedIn() && uid == request.auth.uid
           && member(gid) && validMember(request.resource.data);
+        // The admin (memberIds[0]) can also delete a removed member's snapshot.
         allow delete: if signedIn() && groupExists(gid) && (uid == request.auth.uid
           || get(/databases/$(database)/documents/groups/$(gid)).data.memberIds[0] == request.auth.uid);
       }

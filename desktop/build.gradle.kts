@@ -79,7 +79,7 @@ kotlin.sourceSets.named("main") {
     kotlin.srcDir(generateDesktopConfig)
 }
 
-// The 24 preset avatars are bundled from the Android app as well.
+// The 48 preset avatars (Orbs and Stitched) are bundled from the Android app as well.
 tasks.named<ProcessResources>("processResources") {
     from(rootProject.file("app/src/main/res/drawable-nodpi")) {
         include("avatar_*.webp")

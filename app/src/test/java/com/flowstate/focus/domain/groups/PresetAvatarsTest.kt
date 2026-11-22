@@ -6,52 +6,35 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PresetAvatarsTest {
-    @Test fun catalogContainsAllTwentyFourApprovedIdsAndLabelsInOrder() {
-        val expected = listOf(
-            "sprout" to "Sprout", "sunbeam" to "Sunbeam", "moon" to "Moon",
-            "fox" to "Fox", "orbit" to "Orbit", "summit" to "Summit",
-            "cloud" to "Cloud", "ember" to "Ember", "turtle" to "Turtle",
-            "jelly" to "Jelly", "comet" to "Comet", "bloom" to "Bloom",
-            "cat" to "Cat", "owl" to "Owl", "panda" to "Panda",
-            "penguin" to "Penguin", "cactus" to "Cactus", "octopus" to "Octopus",
-            "mushroom" to "Mushroom", "coffee" to "Coffee", "rocket" to "Rocket",
-            "wave" to "Wave", "snowflake" to "Snowflake", "bolt" to "Bolt",
-        )
-        assertEquals(expected, PresetAvatars.all.map { it.id to it.label })
-        assertEquals(24, PresetAvatars.ids.size)
-        assertEquals(24, PresetAvatars.all.map { it.label }.toSet().size)
+    @Test fun twoCategoriesOfTwentyFourUniqueIds() {
+        assertEquals(listOf("Orbs", "Stitched"), PresetAvatars.categories.map { it.name })
+        assertEquals(24, PresetAvatars.orbs.size)
+        assertEquals(24, PresetAvatars.stitched.size)
+        assertEquals(48, PresetAvatars.ids.size)
+        assertEquals(48, PresetAvatars.all.map { it.label }.toSet().size)
+        PresetAvatars.ids.forEach { assertTrue(it, it.matches(Regex("[a-z0-9]+"))) }
     }
 
     @Test fun validatesApprovedIdsAndEmptyBackwardCompatibleValue() {
         PresetAvatars.ids.forEach { assertTrue(PresetAvatars.isValid(it)) }
         assertTrue(PresetAvatars.isValid(""))
-        listOf("https://example.com/avatar.png", "review-only", "SPRout", "Cloud", "bloom ", "upload").forEach {
+        listOf("https://example.com/avatar.png", "review-only", "Aurora", "koi ", "upload").forEach {
             assertFalse(PresetAvatars.isValid(it))
         }
     }
 
-    @Test fun fallbackPreservesOnlyApprovedValues() {
-        PresetAvatars.ids.forEach { assertEquals(it, PresetAvatars.fallback(it)) }
+    @Test fun removedStickerIdsFallBackToInitials() {
+        listOf("sprout", "fox", "owl", "cactus", "mushroom", "coffee", "wave", "bolt").forEach {
+            assertFalse(PresetAvatars.isValid(it))
+            assertEquals("", PresetAvatars.fallback(it))
+        }
         assertEquals("", PresetAvatars.fallback(null))
-        assertEquals("", PresetAvatars.fallback("legacy-unknown"))
+        PresetAvatars.ids.forEach { assertEquals(it, PresetAvatars.fallback(it)) }
     }
 
-    @Test fun thirdPresetBatchIsAcceptedAfterTheOriginalTwelve() {
-        assertEquals(listOf("sprout", "sunbeam", "moon", "fox", "orbit", "summit",
-            "cloud", "ember", "turtle", "jelly", "comet", "bloom"), PresetAvatars.all.take(12).map { it.id })
-        listOf("cat", "owl", "panda", "penguin", "cactus", "octopus",
-            "mushroom", "coffee", "rocket", "wave", "snowflake", "bolt").forEach {
-            assertTrue(PresetAvatars.isValid(it))
-            assertEquals(it, PresetAvatars.fallback(it))
-        }
-    }
-
-    @Test fun additionalPresetsAreAcceptedWithoutChangingOriginalIds() {
-        assertEquals(listOf("sprout", "sunbeam", "moon", "fox", "orbit", "summit"),
-            PresetAvatars.all.take(6).map { it.id })
-        listOf("cloud", "ember", "turtle", "jelly", "comet", "bloom").forEach {
-            assertTrue(PresetAvatars.isValid(it))
-            assertEquals(it, PresetAvatars.fallback(it))
-        }
+    @Test fun categoryOfFindsTheRightTab() {
+        assertEquals(0, PresetAvatars.categoryOf("aurora"))
+        assertEquals(1, PresetAvatars.categoryOf("chaiowl"))
+        assertEquals(0, PresetAvatars.categoryOf(""))
     }
 }

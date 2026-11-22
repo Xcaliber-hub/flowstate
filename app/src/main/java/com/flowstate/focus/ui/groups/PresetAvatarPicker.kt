@@ -32,8 +32,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.flowstate.focus.R
+import com.flowstate.focus.domain.groups.PresetAvatars
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 
-// All twenty-four approved designs are bundled locally; no uploads or remote images.
+// All approved designs are bundled locally; no uploads or remote images. 1.9.0: two categories, Orbs and
+// Stitched, 24 each; the original sticker set was removed.
 private const val PICKER_COLUMNS = 3
 
 /**
@@ -43,7 +49,7 @@ private const val PICKER_COLUMNS = 3
  * half size (still >= the 58 dp xxhdpi size) and share it.
  */
 private val avatarCache = android.util.LruCache<Int, androidx.compose.ui.graphics.ImageBitmap>(PRESET_CACHE_SIZE)
-private const val PRESET_CACHE_SIZE = 24
+private const val PRESET_CACHE_SIZE = 32 // one tab of 24 plus the avatars on screen behind the dialog
 
 @Composable
 private fun avatarBitmap(resource: Int): androidx.compose.ui.graphics.ImageBitmap? {
@@ -57,32 +63,62 @@ private fun avatarBitmap(resource: Int): androidx.compose.ui.graphics.ImageBitma
 }
 
 private data class AvatarArtwork(val id: String, val label: String, val resource: Int)
-private val approvedArtwork = listOf(
-    AvatarArtwork("sprout", "Sprout", R.drawable.avatar_sprout),
-    AvatarArtwork("sunbeam", "Sunbeam", R.drawable.avatar_sunbeam),
-    AvatarArtwork("moon", "Moon", R.drawable.avatar_moon),
-    AvatarArtwork("fox", "Fox", R.drawable.avatar_fox),
-    AvatarArtwork("orbit", "Orbit", R.drawable.avatar_orbit),
-    AvatarArtwork("summit", "Summit", R.drawable.avatar_summit),
-    AvatarArtwork("cloud", "Cloud", R.drawable.avatar_cloud),
-    AvatarArtwork("ember", "Ember", R.drawable.avatar_ember),
-    AvatarArtwork("turtle", "Turtle", R.drawable.avatar_turtle),
-    AvatarArtwork("jelly", "Jelly", R.drawable.avatar_jelly),
-    AvatarArtwork("comet", "Comet", R.drawable.avatar_comet),
-    AvatarArtwork("bloom", "Bloom", R.drawable.avatar_bloom),
-    AvatarArtwork("cat", "Cat", R.drawable.avatar_cat),
-    AvatarArtwork("owl", "Owl", R.drawable.avatar_owl),
-    AvatarArtwork("panda", "Panda", R.drawable.avatar_panda),
-    AvatarArtwork("penguin", "Penguin", R.drawable.avatar_penguin),
-    AvatarArtwork("cactus", "Cactus", R.drawable.avatar_cactus),
-    AvatarArtwork("octopus", "Octopus", R.drawable.avatar_octopus),
-    AvatarArtwork("mushroom", "Mushroom", R.drawable.avatar_mushroom),
-    AvatarArtwork("coffee", "Coffee", R.drawable.avatar_coffee),
-    AvatarArtwork("rocket", "Rocket", R.drawable.avatar_rocket),
-    AvatarArtwork("wave", "Wave", R.drawable.avatar_wave),
-    AvatarArtwork("snowflake", "Snowflake", R.drawable.avatar_snowflake),
-    AvatarArtwork("bolt", "Bolt", R.drawable.avatar_bolt),
+
+/** Drawable for each preset id. Explicit references keep resource shrinking from dropping them. */
+private val avatarResources: Map<String, Int> = mapOf(
+    "terrarium" to R.drawable.avatar_terrarium,
+    "lavalamp" to R.drawable.avatar_lavalamp,
+    "aurora" to R.drawable.avatar_aurora,
+    "koi" to R.drawable.avatar_koi,
+    "nebula" to R.drawable.avatar_nebula,
+    "chrome" to R.drawable.avatar_chrome,
+    "eclipse" to R.drawable.avatar_eclipse,
+    "snowglobe" to R.drawable.avatar_snowglobe,
+    "candle" to R.drawable.avatar_candle,
+    "curl" to R.drawable.avatar_curl,
+    "sakura" to R.drawable.avatar_sakura,
+    "desklamp" to R.drawable.avatar_desklamp,
+    "dune" to R.drawable.avatar_dune,
+    "rain" to R.drawable.avatar_rain,
+    "island" to R.drawable.avatar_island,
+    "jellyfish" to R.drawable.avatar_jellyfish,
+    "chai" to R.drawable.avatar_chai,
+    "saturn" to R.drawable.avatar_saturn,
+    "prism" to R.drawable.avatar_prism,
+    "lantern" to R.drawable.avatar_lantern,
+    "fireflies" to R.drawable.avatar_fireflies,
+    "storm" to R.drawable.avatar_storm,
+    "marble" to R.drawable.avatar_marble,
+    "lighthouse" to R.drawable.avatar_lighthouse,
+    "chaiowl" to R.drawable.avatar_chaiowl,
+    "axolotl" to R.drawable.avatar_axolotl,
+    "capybara" to R.drawable.avatar_capybara,
+    "moth" to R.drawable.avatar_moth,
+    "booksnail" to R.drawable.avatar_booksnail,
+    "raccoon" to R.drawable.avatar_raccoon,
+    "mushfrog" to R.drawable.avatar_mushfrog,
+    "pomodoro" to R.drawable.avatar_pomodoro,
+    "gradduck" to R.drawable.avatar_gradduck,
+    "crane" to R.drawable.avatar_crane,
+    "cassette" to R.drawable.avatar_cassette,
+    "bonsai" to R.drawable.avatar_bonsai,
+    "mooncat" to R.drawable.avatar_mooncat,
+    "reading" to R.drawable.avatar_reading,
+    "kulhad" to R.drawable.avatar_kulhad,
+    "trail" to R.drawable.avatar_trail,
+    "compass" to R.drawable.avatar_compass,
+    "vinyl" to R.drawable.avatar_vinyl,
+    "paperplane" to R.drawable.avatar_paperplane,
+    "pottedcactus" to R.drawable.avatar_pottedcactus,
+    "balloon" to R.drawable.avatar_balloon,
+    "flame" to R.drawable.avatar_flame,
+    "toadstools" to R.drawable.avatar_toadstools,
+    "sunrise" to R.drawable.avatar_sunrise,
 )
+
+private val approvedArtwork: List<AvatarArtwork> = PresetAvatars.all.mapNotNull { p ->
+    avatarResources[p.id]?.let { AvatarArtwork(p.id, p.label, it) }
+}
 
 @Composable
 internal fun ProfileAvatar(name: String, avatarId: String, size: Int, ring: Long? = null) {
@@ -109,8 +145,27 @@ internal fun PresetAvatarPicker(name: String, selectedId: String, enabled: Boole
         AutoSizeText("Choose an avatar", style = MaterialTheme.typography.titleSmall)
         Text("Bundled presets only. No photo uploads.", style = MaterialTheme.typography.bodySmall,
             color = colors.onSurfaceVariant)
-        // Three per row keeps all twenty-four presets to eight compact rows in the scrolling dialog.
-        approvedArtwork.chunked(PICKER_COLUMNS).forEach { row ->
+        // Category tabs: Orbs and Stitched. Opens on the tab holding the current pick.
+        var tab by rememberSaveable { mutableIntStateOf(PresetAvatars.categoryOf(selectedId)) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PresetAvatars.categories.forEachIndexed { index, category ->
+                val on = index == tab
+                Box(
+                    Modifier.weight(1f).clip(CircleShape)
+                        .background(if (on) colors.secondaryContainer else colors.surfaceContainerHigh)
+                        .border(BorderStroke(if (on) 2.dp else 1.dp, if (on) colors.primary else colors.outline), CircleShape)
+                        .selectable(on, role = Role.Tab, onClick = { tab = index })
+                        .padding(vertical = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(category.name, style = MaterialTheme.typography.labelLarge,
+                        color = if (on) colors.onSecondaryContainer else colors.onSurface)
+                }
+            }
+        }
+        val tabIds = PresetAvatars.categories[tab.coerceIn(PresetAvatars.categories.indices)].presets.map { it.id }
+        // Three per row keeps each 24-avatar category to eight compact rows in the scrolling dialog.
+        approvedArtwork.filter { it.id in tabIds }.chunked(PICKER_COLUMNS).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 row.forEach { artwork ->
                     val selected = selectedId == artwork.id
