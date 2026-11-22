@@ -794,7 +794,14 @@ private fun timeLabel(at: Long): String =
  * "Riya is typing" under it. Shown at the bottom of the chat while anyone else has a draft going.
  */
 @Composable
-private fun TypingRow(typing: List<TypingMember>, modifier: Modifier = Modifier) {
+private fun TypingRow(typingNow: List<TypingMember>, modifier: Modifier = Modifier) {
+    // When the last typer stops, LazyColumn keeps this item composed while it animates out, and by
+    // then the list is empty. Keep showing the last people seen typing instead of reading typing[0]
+    // of an empty list (the 1.9.1 IndexOutOfBounds crash).
+    val lastTyping = remember { arrayOf(typingNow) }
+    if (typingNow.isNotEmpty()) lastTyping[0] = typingNow
+    val typing = lastTyping[0]
+    if (typing.isEmpty()) return
     val cs = MaterialTheme.colorScheme
     val glass = LocalGlassUi.current
     val avatarSize = 34.dp
